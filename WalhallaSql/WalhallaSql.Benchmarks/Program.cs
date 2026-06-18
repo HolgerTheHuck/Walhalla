@@ -135,6 +135,58 @@ internal class Program
         sw.Stop();
         Console.WriteLine($"  ParseWithParameters: {sw.Elapsed.TotalNanoseconds / N:F1} ns");
 
+        ProfileInsertBatchAllocations();
+
+        engine.Dispose();
+    }
+
+    static void ProfileInsertBatchAllocations()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== InsertBatch allocation profiling ===");
+
+        ProfileStorageMode("BPlusTree", WalhallaSql.Core.StorageMode.BPlusTree);
+        ProfileStorageMode("MvccBPlusTree", WalhallaSql.Core.StorageMode.MvccBPlusTree);
+    }
+
+    static void ProfileStorageMode(string label, WalhallaSql.Core.StorageMode mode)
+    {
+        var engine = new WalhallaEngine(new WalhallaOptions(Path.Combine(Path.GetTempPath(), "WalhallaSql.Benchmarks", Guid.NewGuid().ToString("N")))
+        {
+            StorageMode = mode,
+            WalSyncMode = WalhallaSql.Core.WalSyncMode.None,
+            AutoCheckpointWalThresholdBytes = 0
+        });
+
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name VARCHAR(100) NOT NULL, Email VARCHAR(100) NOT NULL, Region VARCHAR(50) NOT NULL)");
+        engine.Execute("CREATE INDEX ix_email ON Customers (Email)");
+        engine.Execute("CREATE INDEX ix_region ON Customers (Region)");
+
+        const int BatchSize = 100;
+        var rows = new List<object?[]>(BatchSize);
+        for (int i = 1; i <= BatchSize; i++)
+            rows.Add(new object?[] { i + 100000, "User " + i, "user" + i + "@test.com", "R" + (i % 10) });
+
+        // Warmup
+        engine.InsertBatch("Customers", rows);
+        engine.Execute("DELETE FROM Customers WHERE Id > 100000");
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        long before = GC.GetTotalAllocatedBytes(true);
+        engine.InsertBatch("Customers", rows);
+        long after = GC.GetTotalAllocatedBytes(true);
+        Console.WriteLine($"[{label}] InsertBatch total allocated ({BatchSize} rows): {(after - before) / 1024.0:F2} KB = {(after - before) / (double)BatchSize:F2} B/row");
+
+        engine.Execute("DELETE FROM Customers WHERE Id > 100000");
+
+        before = GC.GetTotalAllocatedBytes(true);
+        engine.Execute("DELETE FROM Customers WHERE Id BETWEEN 100001 AND 100100");
+        after = GC.GetTotalAllocatedBytes(true);
+        Console.WriteLine($"[{label}] DELETE BETWEEN total allocated: {(after - before) / 1024.0:F2} KB");
+
         engine.Dispose();
     }
 }
@@ -167,6 +219,10 @@ public abstract class WalhallaBenchmarkBase
     // unbounded across the benchmark run — masking the actual hot path.
     private int _insertBatchOffset = SeedRowCount;
     private int _insertIdxOffset = SeedRowCount;
+
+    // Reusable row buffer for InsertBatch to avoid per-iteration List/object[] allocations.
+    private const int BatchSize = 100;
+    private object?[][] _insertBatchRows = null!;
 
     private protected virtual WalhallaEngine CreateEngine()
     {
@@ -201,6 +257,11 @@ public abstract class WalhallaBenchmarkBase
         _stmtSelectExistsSubquery = _engine.Prepare("SELECT Id, Name FROM Customers WHERE EXISTS (SELECT TotalAmount FROM Orders WHERE TotalAmount > 999)");
         _stmtSelectJoin = _engine.Prepare("SELECT c.Name, o.TotalAmount FROM Customers c INNER JOIN Orders o ON c.Id = o.CustomerId WHERE c.Id BETWEEN @min AND @max");
         _stmtSelectSelfJoin = _engine.Prepare("SELECT c1.Name, c2.Name FROM Customers c1 INNER JOIN Customers c2 ON c1.Region = c2.Region WHERE c1.Id <> c2.Id AND c1.Id = @id");
+
+        // Pre-allocate the rolling batch row buffer once.
+        _insertBatchRows = new object?[BatchSize][];
+        for (int i = 0; i < BatchSize; i++)
+            _insertBatchRows[i] = new object?[4];
     }
 
     [GlobalCleanup]
@@ -249,18 +310,26 @@ public abstract class WalhallaBenchmarkBase
     public int InsertBatch()
     {
         int start = _insertBatchOffset + 1;
-        int end = _insertBatchOffset + 100;
-        _insertBatchOffset += 100;
+        int end = _insertBatchOffset + BatchSize;
+        _insertBatchOffset += BatchSize;
 
-        var rows = new List<object?[]>();
-        for (int i = start; i <= end; i++)
-            rows.Add(new object?[] { i, "User " + i, "user" + i + "@test.com", "R" + (i % 10) });
+        // Reuse the pre-allocated row buffer; only the mutable values change.
+        Span<object?[]> rows = _insertBatchRows;
+        for (int i = 0; i < BatchSize; i++)
+        {
+            int id = start + i;
+            var row = rows[i];
+            row[0] = id;
+            row[1] = "User " + id;
+            row[2] = "user" + id + "@test.com";
+            row[3] = "R" + (id % 10);
+        }
 
-        _engine.InsertBatch("Customers", rows);
+        _engine.InsertBatch("Customers", _insertBatchRows);
 
         // Cleanup — DELETE the rows just inserted (same Id range).
         _engine.Execute($"DELETE FROM Customers WHERE Id BETWEEN {start} AND {end}");
-        return rows.Count;
+        return BatchSize;
     }
 
     [Benchmark]

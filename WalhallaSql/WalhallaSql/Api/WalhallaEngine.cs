@@ -517,7 +517,10 @@ public sealed class WalhallaEngine : IDisposable
 
         // Collect index entries � build full keys in one allocation.
         var indexMetas = GetOrBuildIndexMetadata(tableName, tableDef);
-        var allIndexEntries = new List<(int IndexId, byte[] SortKey, int TableId, long RowId)>();
+        var allIndexEntries = indexMetas.Length == 0
+            ? null
+            : new (int IndexId, byte[] SortKey, int TableId, long RowId)[rows.Count * indexMetas.Length];
+        int entryIdx = 0;
         foreach (var meta in indexMetas)
         {
             for (int i = 0; i < rows.Count; i++)
@@ -526,7 +529,7 @@ public sealed class WalhallaEngine : IDisposable
                 var fullKey = IndexKeyCodec.BuildIndexEntryKey(
                     rows[i], meta.IndexId, meta.ColumnIndices, meta.KeyTypes, tableId, rowId);
                 // IndexId = -1 signals InsertRows that SortKey is already the full key.
-                allIndexEntries.Add((-1, fullKey, 0, 0));
+                allIndexEntries![entryIdx++] = (-1, fullKey, 0, 0);
             }
         }
 

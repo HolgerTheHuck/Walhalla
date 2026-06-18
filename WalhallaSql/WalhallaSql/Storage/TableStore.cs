@@ -517,11 +517,13 @@ internal sealed class TableStore : IDisposable
             int totalEntries = encodedRows.Count + (indexEntries?.Count ?? 0);
 
             // Collect all (key, value) pairs for bulk insert.
-            // Also store keys for reuse in WAL logging below.
-            var bulkEntries = new List<KeyValuePair<byte[], byte[]>>(totalEntries);
-            var rowKeys = new List<byte[]>(encodedRows.Count);
-            List<byte[]>? indexKeys = indexEntries != null ? new List<byte[]>(indexEntries.Count) : null;
+            // Arrays are used instead of List<T> to avoid per-item container overhead
+            // and growing backing arrays during large batches.
+            var bulkEntries = new KeyValuePair<byte[], byte[]>[totalEntries];
+            var rowKeys = new byte[encodedRows.Count][];
+            byte[][]? indexKeys = indexEntries != null ? new byte[indexEntries.Count][] : null;
             long maxExplicitRowId = long.MinValue;
+            int bulkIdx = 0;
             for (var i = 0; i < encodedRows.Count; i++)
             {
                 long rowId;
@@ -547,8 +549,8 @@ internal sealed class TableStore : IDisposable
                     }
                 }
 
-                rowKeys.Add(key);
-                bulkEntries.Add(new KeyValuePair<byte[], byte[]>(key, encodedRows[i]));
+                rowKeys[i] = key;
+                bulkEntries[bulkIdx++] = new KeyValuePair<byte[], byte[]>(key, encodedRows[i]);
                 _rowCache.SetWeak(key, encodedRows[i]);
             }
             if (indexEntries != null)
@@ -559,8 +561,8 @@ internal sealed class TableStore : IDisposable
                     var key = e.IndexId == -1
                         ? e.SortKey  // Already a full key built by IndexKeyCodec.BuildIndexEntryKey
                         : BuildIndexEntryKey(e.IndexId, e.SortKey, e.TableId, e.RowId);
-                    indexKeys!.Add(key);
-                    bulkEntries.Add(new KeyValuePair<byte[], byte[]>(key, IndexEntryValue));
+                    indexKeys![i] = key;
+                    bulkEntries[bulkIdx++] = new KeyValuePair<byte[], byte[]>(key, IndexEntryValue);
                 }
             }
 
@@ -587,11 +589,11 @@ internal sealed class TableStore : IDisposable
             {
                 var operations = new WalOperation[totalEntries];
                 var idx = 0;
-                for (var i = 0; i < rowKeys.Count; i++)
+                for (var i = 0; i < rowKeys.Length; i++)
                     operations[idx++] = new WalOperation(WalRecordType.Put, rowKeys[i], encodedRows[i]);
                 if (indexKeys != null)
                 {
-                    for (int i = 0; i < indexKeys.Count; i++)
+                    for (int i = 0; i < indexKeys.Length; i++)
                         operations[idx++] = new WalOperation(WalRecordType.Put, indexKeys[i], IndexEntryValue);
                 }
                 var txId = InterlockedIncrement(ref _nextTransactionId);
@@ -2243,21 +2245,24 @@ internal sealed class TableStore : IDisposable
         }
     }
 
-    private void BulkMergeMemTable(List<KeyValuePair<byte[], byte[]>> entries)
+    private void BulkMergeMemTable(IReadOnlyList<KeyValuePair<byte[], byte[]>> entries)
     {
         if (entries.Count == 0) return;
 
-        foreach (var kv in entries)
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var kv = entries[i];
             _memDict[kv.Key] = kv.Value;
+        }
         _memSortedKeysDirty = true;
     }
 
-    private void BulkDeleteMemTable(List<byte[]> keys)
+    private void BulkDeleteMemTable(IReadOnlyList<byte[]> keys)
     {
         if (keys.Count == 0 || _memDict.Count == 0) return;
 
-        foreach (var key in keys)
-            _memDict.Remove(key);
+        for (int i = 0; i < keys.Count; i++)
+            _memDict.Remove(keys[i]);
         _memSortedKeysDirty = true;
     }
 

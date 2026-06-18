@@ -137,6 +137,18 @@ public sealed class MvccBPlusTree : IDisposable
                     throw new NotSupportedException("Unsupported page type encountered during insert traversal.");
                 }
 
+                // Fast path for new keys with available leaf space: avoid deserializing the
+                // entire leaf into a List<MvccLeafEntry>. Falls back to the full read/write path
+                // on duplicates, full pages, or overflow values (handled by StoreValue).
+                var storedValue = StoreValue(value);
+                if (MvccLeafPageSerializer.TryInsertNewKeyInPlace(currentPage, key, storedValue, commitSequence))
+                {
+                    _pager.WritePage(currentPage);
+                    currentPage.Dispose();
+                    _pager.CommitWriteBatch();
+                    return;
+                }
+
                 var leafEntries = MvccLeafPageSerializer.ReadEntries(currentPage);
 
                 var replaced = false;
@@ -144,8 +156,7 @@ public sealed class MvccBPlusTree : IDisposable
                 {
                     if (CompareKeys(leafEntries[i].Key, key) == 0)
                     {
-                        var valueToStore = StoreValue(value);
-                        leafEntries[i] = leafEntries[i].PushVersion(commitSequence, valueToStore, isTombstone: false);
+                        leafEntries[i] = leafEntries[i].PushVersion(commitSequence, storedValue, isTombstone: false);
                         replaced = true;
                         break;
                     }
@@ -153,9 +164,8 @@ public sealed class MvccBPlusTree : IDisposable
 
                 if (!replaced)
                 {
-                    var valueToStore = StoreValue(value);
                     var newEntry = new MvccLeafEntry(key.ToArray(),
-                        VersionedValue<byte[]>.Push(null, commitSequence, valueToStore, isTombstone: false));
+                        VersionedValue<byte[]>.Push(null, commitSequence, storedValue, isTombstone: false));
                     InsertSorted(leafEntries, newEntry);
                 }
 

@@ -147,7 +147,7 @@ internal sealed class BPlusTree : IDisposable
     /// O(distinctDirtyPages) RandomAccess.Write syscalls instead of
     /// O(entries * splits). Closes the InsertBatch gap measured against SQLite.
     /// </summary>
-    public void BulkUpsert(IReadOnlyList<(byte[] Key, byte[] Value)> entries)
+    public void BulkUpsert(IReadOnlyList<KeyValuePair<byte[], byte[]>> entries)
     {
         if (entries == null) throw new ArgumentNullException(nameof(entries));
         if (entries.Count == 0) return;
@@ -157,7 +157,9 @@ internal sealed class BPlusTree : IDisposable
         {
             for (var i = 0; i < entries.Count; i++)
             {
-                var (k, v) = entries[i];
+                var kv = entries[i];
+                var k = kv.Key;
+                var v = kv.Value;
                 if (k == null) throw new ArgumentNullException(nameof(entries), "Key must not be null.");
                 if (v == null) throw new ArgumentNullException(nameof(entries), "Value must not be null.");
                 if (k.Length == 0) throw new ArgumentException("Key must not be empty.", nameof(entries));

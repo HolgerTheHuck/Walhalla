@@ -121,6 +121,174 @@ internal static class MvccLeafPageSerializer
     }
 
     /// <summary>
+    /// Versucht, einen neuen Schlüssel in eine Leaf-Page einzufügen, ohne alle
+    /// vorhandenen Einträge deserialisieren zu müssen. Das spart List- und
+    /// Zwischenspeicher-Allokationen im Bulk-Insert-Pfad.
+    /// </summary>
+    /// <returns>
+    /// <see langword="true"/> wenn der Schlüssel neu eingefügt wurde;
+    /// <see langword="false"/> wenn die Page voll ist oder der Schlüssel bereits existiert.
+    /// </returns>
+    public static bool TryInsertNewKeyInPlace(OdsPage page, ReadOnlySpan<byte> key,
+        ReadOnlySpan<byte> value, ulong sequence)
+    {
+        var body = page.Body;
+        var header = page.Header;
+        var itemCount = header.ItemCount;
+
+        // Schneller Platz-Check vor dem Scan: Eintrag benötigt KeyLength + 4, VersionCount + 4,
+        // Sequence 8, Flags 1, ValueLength 4, Value.
+        var newEntrySize = sizeof(int) + key.Length + sizeof(int) + sizeof(ulong) + 1 + sizeof(int) + value.Length;
+        if (newEntrySize > body.Length)
+            return false;
+
+        var offset = 0;
+        var insertAt = itemCount;
+
+        // Bestehende Einträge scannen, um Position und belegte Größe zu ermitteln.
+        for (var i = 0; i < itemCount; i++)
+        {
+            if (offset + sizeof(int) > body.Length)
+                throw new InvalidOperationException("MVCC leaf page payload is corrupted (key length missing).");
+
+            var keyLength = BinaryPrimitives.ReadInt32LittleEndian(body[offset..]);
+            var entryStart = offset;
+            offset += sizeof(int);
+
+            if (keyLength <= 0 || offset + keyLength > body.Length)
+                throw new InvalidOperationException("MVCC leaf page contains invalid key length.");
+
+            var cmp = CompareKeys(body.Slice(offset, keyLength), key);
+            if (cmp == 0)
+                return false; // Schlüssel existiert bereits; in-place-Versionierung ist hier nicht implementiert.
+            if (cmp > 0 && insertAt == itemCount)
+                insertAt = i;
+
+            offset += keyLength;
+
+            if (offset + sizeof(int) > body.Length)
+                throw new InvalidOperationException("MVCC leaf page payload is corrupted (version count missing).");
+
+            var versionCount = BinaryPrimitives.ReadInt32LittleEndian(body[offset..]);
+            offset += sizeof(int);
+
+            if (versionCount < 0)
+                throw new InvalidOperationException("MVCC leaf page contains invalid version count.");
+
+            for (var v = 0; v < versionCount; v++)
+            {
+                if (offset + sizeof(ulong) + 1 + sizeof(int) > body.Length)
+                    throw new InvalidOperationException("MVCC leaf page payload is corrupted (version header missing).");
+
+                offset += sizeof(ulong) + 1;
+                var valueLength = BinaryPrimitives.ReadInt32LittleEndian(body[offset..]);
+                offset += sizeof(int);
+
+                if (valueLength == -1)
+                {
+                    const int OverflowPointerSize = sizeof(long) + sizeof(int) + sizeof(uint);
+                    offset += OverflowPointerSize;
+                }
+                else if (valueLength < 0)
+                {
+                    throw new InvalidOperationException("MVCC leaf page contains negative inline value length.");
+                }
+                else
+                {
+                    offset += valueLength;
+                }
+
+                if (offset > body.Length)
+                    throw new InvalidOperationException("MVCC leaf page payload is corrupted (version value truncated).");
+            }
+
+            _ = entryStart;
+        }
+
+        if (offset + newEntrySize > body.Length)
+            return false;
+
+        // Einträge ab Insert-Position nach hinten verschieben.
+        int writeOffset;
+        if (insertAt < itemCount)
+        {
+            var tailStart = FindEntryOffset(body, insertAt, itemCount);
+            var tailLength = offset - tailStart;
+            if (tailLength > 0)
+            {
+                var tailSrc = body.Slice(tailStart, tailLength);
+                var tailDst = body.Slice(tailStart + newEntrySize, tailLength);
+                tailSrc.CopyTo(tailDst);
+            }
+            writeOffset = tailStart;
+        }
+        else
+        {
+            writeOffset = offset;
+        }
+
+        // Neuen Eintrag schreiben.
+        var dest = body.Slice(writeOffset);
+        BinaryPrimitives.WriteInt32LittleEndian(dest, key.Length);
+        key.CopyTo(dest.Slice(sizeof(int)));
+        var afterKey = sizeof(int) + key.Length;
+        BinaryPrimitives.WriteInt32LittleEndian(dest.Slice(afterKey), 1); // VersionCount
+        var afterVersionCount = afterKey + sizeof(int);
+        BinaryPrimitives.WriteUInt64LittleEndian(dest.Slice(afterVersionCount), sequence);
+        dest[afterVersionCount + sizeof(ulong)] = 0; // Flags
+        var afterFlags = afterVersionCount + sizeof(ulong) + 1;
+        BinaryPrimitives.WriteInt32LittleEndian(dest.Slice(afterFlags), value.Length);
+        value.CopyTo(dest.Slice(afterFlags + sizeof(int)));
+
+        page.Header = header with
+        {
+            PageType = OdsPageType.Leaf,
+            ItemCount = itemCount + 1
+        };
+
+        // Restliche Bytes nullen, falls sie zuvor überschrieben wurden.
+        var clearStart = offset + newEntrySize;
+        if (clearStart < body.Length)
+            body.Slice(clearStart).Clear();
+
+        return true;
+    }
+
+    private static int CompareKeys(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
+    {
+        var len = Math.Min(a.Length, b.Length);
+        for (var i = 0; i < len; i++)
+        {
+            if (a[i] != b[i])
+                return a[i] < b[i] ? -1 : 1;
+        }
+        return a.Length.CompareTo(b.Length);
+    }
+
+    private static int FindEntryOffset(Span<byte> body, int index, int itemCount)
+    {
+        var offset = 0;
+        for (var i = 0; i < index && i < itemCount; i++)
+        {
+            var keyLength = BinaryPrimitives.ReadInt32LittleEndian(body[offset..]);
+            offset += sizeof(int) + keyLength;
+            var versionCount = BinaryPrimitives.ReadInt32LittleEndian(body[offset..]);
+            offset += sizeof(int);
+            for (var v = 0; v < versionCount; v++)
+            {
+                offset += sizeof(ulong) + 1;
+                var valueLength = BinaryPrimitives.ReadInt32LittleEndian(body[offset..]);
+                offset += sizeof(int);
+                if (valueLength == -1)
+                    offset += sizeof(long) + sizeof(int) + sizeof(uint);
+                else
+                    offset += valueLength;
+            }
+        }
+        return offset;
+    }
+
+    /// <summary>
     /// Schreibt alle Einträge in eine Leaf-Page.
     /// Wirft <see cref="InvalidOperationException"/>, wenn die Einträge nicht passen.
     /// </summary>

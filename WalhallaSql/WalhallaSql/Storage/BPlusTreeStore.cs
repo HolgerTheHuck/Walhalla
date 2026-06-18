@@ -42,12 +42,7 @@ internal sealed class BPlusTreeStore : IKeyValueStore
     /// </summary>
     public void BulkUpsert(IReadOnlyList<KeyValuePair<byte[], byte[]>> entries)
     {
-        // BPlusTree erwartet heute (byte[] Key, byte[] Value) Tupel.
-        // Übergangs-Adapter, bis BPlusTree selbst auf KeyValuePair umgestellt ist.
-        var tuples = new List<(byte[] Key, byte[] Value)>(entries.Count);
-        for (int i = 0; i < entries.Count; i++)
-            tuples.Add((entries[i].Key, entries[i].Value));
-        Tree.BulkUpsert(tuples);
+        Tree.BulkUpsert(entries);
     }
 
     public void BulkDelete(IReadOnlyList<byte[]> keys)
