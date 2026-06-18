@@ -74,6 +74,28 @@ public abstract class SqliteBenchmarkBase
     }
 
     [Benchmark]
+    public int SelectRangeMaterialized()
+    {
+        using var cmd = Connection.CreateCommand();
+        cmd.CommandText = "SELECT Id, Name, Email, Region FROM Customers WHERE Id BETWEEN @min AND @max";
+        cmd.Parameters.AddWithValue("@min", 1000L);
+        cmd.Parameters.AddWithValue("@max", 2000L);
+        using var reader = cmd.ExecuteReader();
+        var rows = new List<object?[]>();
+        while (reader.Read())
+        {
+            rows.Add(new object?[]
+            {
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3)
+            });
+        }
+        return rows.Count;
+    }
+
+    [Benchmark]
     public int SelectJoin()
     {
         using var cmd = Connection.CreateCommand();

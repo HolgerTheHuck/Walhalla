@@ -138,16 +138,12 @@ public sealed class MvccBPlusTreeStore : IKeyValueStore
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        ulong seq = _txManager.AcquireSnapshot();
-        try
-        {
-            foreach (var kv in _tree.ScanVisible(seq, fromInclusive, toExclusive))
-                yield return kv;
-        }
-        finally
-        {
-            _txManager.ReleaseSnapshot(seq);
-        }
+        // Für den direkten IKeyValueStore-Scan reicht die aktuelle globale Sequenz.
+        // Ein formaler Snapshot (AcquireSnapshot/ReleaseSnapshot) würde pro Scan
+        // zwei Interlocked-Ops und zwei lock-Operationen kosten; hier wollen wir nur
+        // die neuesten committed Versionen sehen.
+        ulong seq = _txManager.CurrentSequence;
+        return _tree.ScanVisible(seq, fromInclusive, toExclusive);
     }
 
     public IEnumerable<KeyValuePair<byte[], byte[]>> ScanPrefix(byte[] prefix)
@@ -155,16 +151,8 @@ public sealed class MvccBPlusTreeStore : IKeyValueStore
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(prefix);
 
-        ulong seq = _txManager.AcquireSnapshot();
-        try
-        {
-            foreach (var kv in _tree.ScanPrefixVisible(seq, prefix))
-                yield return kv;
-        }
-        finally
-        {
-            _txManager.ReleaseSnapshot(seq);
-        }
+        ulong seq = _txManager.CurrentSequence;
+        return _tree.ScanPrefixVisible(seq, prefix);
     }
 
     public void ScanValues(byte[]? fromInclusive, byte[]? toExclusive,

@@ -306,6 +306,11 @@ internal static class RowCodec
     public static void DecodeColumnsToRowBuffer(
         byte[] bytes, SqlTableDefinition table, object?[] outputValues,
         int[] decodeIndexToOutputIndex, bool lazyBlobs = false)
+        => DecodeColumnsToRowBuffer(bytes.AsSpan(), table, outputValues, decodeIndexToOutputIndex, lazyBlobs);
+
+    public static void DecodeColumnsToRowBuffer(
+        ReadOnlySpan<byte> bytes, SqlTableDefinition table, object?[] outputValues,
+        int[] decodeIndexToOutputIndex, bool lazyBlobs = false)
     {
         var columns = table.Columns;
         int colCount = columns.Count;
@@ -331,7 +336,7 @@ internal static class RowCodec
             {
                 outputValues[outputIdx] = lazyBlobs
                     ? DecodeValueLazy(bytes, ref pos, columns[i].Type)
-                    : DecodeValue(bytes.AsSpan(), ref pos, columns[i].Type);
+                    : DecodeValue(bytes, ref pos, columns[i].Type);
             }
             else
             {
@@ -616,30 +621,34 @@ internal static class RowCodec
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static object DecodeValueLazy(byte[] bytes, ref int pos, SqlScalarType type)
+        => DecodeValueLazy(bytes.AsSpan(), ref pos, type);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static object DecodeValueLazy(ReadOnlySpan<byte> bytes, ref int pos, SqlScalarType type)
     {
         switch (type)
         {
             case SqlScalarType.Int32:
             {
-                var v = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(pos, 4));
+                var v = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(pos, 4));
                 pos += 4;
                 return BoxInt32(v);
             }
             case SqlScalarType.Int16:
             {
-                var v = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(pos, 2));
+                var v = BinaryPrimitives.ReadInt16LittleEndian(bytes.Slice(pos, 2));
                 pos += 2;
                 return (short)v;
             }
             case SqlScalarType.Int64:
             {
-                var v = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(pos, 8));
+                var v = BinaryPrimitives.ReadInt64LittleEndian(bytes.Slice(pos, 8));
                 pos += 8;
                 return BoxInt64(v);
             }
             case SqlScalarType.Double:
             {
-                var raw = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(pos, 8));
+                var raw = BinaryPrimitives.ReadInt64LittleEndian(bytes.Slice(pos, 8));
                 pos += 8;
                 return BitConverter.Int64BitsToDouble(raw);
             }
@@ -647,7 +656,7 @@ internal static class RowCodec
             {
                 Span<int> bits = stackalloc int[4];
                 for (var i = 0; i < 4; i++)
-                    bits[i] = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(pos + (i * 4), 4));
+                    bits[i] = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(pos + (i * 4), 4));
                 pos += 16;
                 return new decimal(bits);
             }
@@ -659,36 +668,36 @@ internal static class RowCodec
             }
             case SqlScalarType.DateTime:
             {
-                var binary = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(pos, 8));
+                var binary = BinaryPrimitives.ReadInt64LittleEndian(bytes.Slice(pos, 8));
                 pos += 8;
                 return DateTime.FromBinary(binary);
             }
             case SqlScalarType.Date:
             {
-                var binary = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(pos, 8));
+                var binary = BinaryPrimitives.ReadInt64LittleEndian(bytes.Slice(pos, 8));
                 pos += 8;
                 return DateTime.FromBinary(binary).Date;
             }
             case SqlScalarType.Time:
             {
-                var ticks = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(pos, 8));
+                var ticks = BinaryPrimitives.ReadInt64LittleEndian(bytes.Slice(pos, 8));
                 pos += 8;
                 return new TimeSpan(ticks);
             }
             case SqlScalarType.Binary:
             {
-                var lenU = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(pos, 4));
+                var lenU = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(pos, 4));
                 if (lenU == BlobRef.Sentinel)
                 {
                     pos += 4;
-                    var blobRef = BlobRef.Decode(bytes.AsSpan(pos, BlobRef.SizeInBytes));
+                    var blobRef = BlobRef.Decode(bytes.Slice(pos, BlobRef.SizeInBytes));
                     pos += BlobRef.SizeInBytes;
                     // Return raw BlobRef; TableStore will resolve to PendingBlobValue.
                     return blobRef;
                 }
                 var len = (int)lenU;
                 pos += 4;
-                var sentinel = new PendingBlobValue(bytes, pos, len);
+                var sentinel = new PendingBlobValue(bytes.Slice(pos, len));
                 pos += len;
                 return sentinel;
             }

@@ -121,6 +121,122 @@ internal static class MvccLeafPageSerializer
     }
 
     /// <summary>
+    /// Deserialisiert einen einzelnen Eintrag ab <paramref name="offset"/>.
+    /// Wird vom allokationsarmen Scan-Pfad verwendet, wenn ein Eintrag
+    /// komplexe Versionierung benötigt (mehrere Versionen, Tombstone, OverflowChain).
+    /// </summary>
+    public static MvccLeafEntry ReadEntryAt(ReadOnlySpan<byte> body, int offset, out int nextOffset)
+    {
+        if (offset + sizeof(int) > body.Length)
+            throw new InvalidOperationException("MVCC leaf page payload is corrupted (key length missing).");
+
+        var keyLength = BinaryPrimitives.ReadInt32LittleEndian(body[offset..]);
+        offset += sizeof(int);
+
+        if (keyLength <= 0 || offset + keyLength > body.Length)
+            throw new InvalidOperationException("MVCC leaf page contains invalid key length.");
+
+        var key = body.Slice(offset, keyLength).ToArray();
+        offset += keyLength;
+
+        if (offset + sizeof(int) > body.Length)
+            throw new InvalidOperationException("MVCC leaf page payload is corrupted (version count missing).");
+
+        var versionCount = BinaryPrimitives.ReadInt32LittleEndian(body[offset..]);
+        offset += sizeof(int);
+
+        if (versionCount < 0)
+            throw new InvalidOperationException("MVCC leaf page contains invalid version count.");
+
+        var versionBuffer = new (ulong Seq, byte[]? Value, bool IsTombstone, bool IsOverflowChain)[versionCount];
+        for (var v = 0; v < versionCount; v++)
+        {
+            if (offset + sizeof(ulong) + 1 + sizeof(int) > body.Length)
+                throw new InvalidOperationException("MVCC leaf page payload is corrupted (version header missing).");
+
+            var sequence = BinaryPrimitives.ReadUInt64LittleEndian(body[offset..]);
+            offset += sizeof(ulong);
+
+            var flags = body[offset++];
+            var isTombstone = (flags & 0x01) != 0;
+            var isOverflow = (flags & 0x02) != 0;
+            var isOverflowChain = (flags & 0x04) != 0;
+
+            var valueLength = BinaryPrimitives.ReadInt32LittleEndian(body[offset..]);
+            offset += sizeof(int);
+
+            byte[]? value;
+            if (isOverflow || isOverflowChain)
+            {
+                const int OverflowPointerSize = sizeof(long) + sizeof(int) + sizeof(uint);
+                if (offset + OverflowPointerSize > body.Length)
+                    throw new InvalidOperationException("MVCC leaf page overflow pointer truncated.");
+                value = body.Slice(offset, OverflowPointerSize).ToArray();
+                offset += OverflowPointerSize;
+            }
+            else
+            {
+                if (valueLength < 0)
+                    throw new InvalidOperationException("MVCC leaf page contains negative inline value length.");
+
+                if (offset + valueLength > body.Length)
+                    throw new InvalidOperationException("MVCC leaf page inline value truncated.");
+
+                value = valueLength == 0 ? Array.Empty<byte>() : body.Slice(offset, valueLength).ToArray();
+                offset += valueLength;
+            }
+
+            versionBuffer[v] = (sequence, value, isTombstone, isOverflowChain);
+        }
+
+        VersionedValue<byte[]>? versions = null;
+        for (var vi = versionBuffer.Length - 1; vi >= 0; vi--)
+        {
+            var (seq, val, tombstone, isOverflowChain) = versionBuffer[vi];
+            versions = VersionedValue<byte[]>.Push(versions, seq, val, tombstone);
+            if (isOverflowChain && versions != null)
+                versions.IsOverflowChain = true;
+        }
+
+        nextOffset = offset;
+        return new MvccLeafEntry(key, versions);
+    }
+
+    /// <summary>
+    /// Überspringt die Versionen eines Eintrags, dessen Key außerhalb des Scan-Bereichs liegt.
+    /// </summary>
+    public static int SkipEntryVersions(ReadOnlySpan<byte> body, int offset, int versionCount)
+    {
+        for (var v = 0; v < versionCount; v++)
+        {
+            if (offset + sizeof(ulong) + 1 + sizeof(int) > body.Length)
+                throw new InvalidOperationException("MVCC leaf page payload is corrupted (version header missing).");
+
+            offset += sizeof(ulong) + 1;
+            var valueLength = BinaryPrimitives.ReadInt32LittleEndian(body[offset..]);
+            offset += sizeof(int);
+
+            if (valueLength == -1)
+            {
+                offset += sizeof(long) + sizeof(int) + sizeof(uint);
+            }
+            else if (valueLength < 0)
+            {
+                throw new InvalidOperationException("MVCC leaf page contains negative inline value length.");
+            }
+            else
+            {
+                offset += valueLength;
+            }
+
+            if (offset > body.Length)
+                throw new InvalidOperationException("MVCC leaf page payload is corrupted (version value truncated).");
+        }
+
+        return offset;
+    }
+
+    /// <summary>
     /// Versucht, einen neuen Schlüssel in eine Leaf-Page einzufügen, ohne alle
     /// vorhandenen Einträge deserialisieren zu müssen. Das spart List- und
     /// Zwischenspeicher-Allokationen im Bulk-Insert-Pfad.

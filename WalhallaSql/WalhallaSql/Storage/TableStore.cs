@@ -657,16 +657,22 @@ internal sealed class TableStore : IDisposable
         long minRowId, long maxRowId,
         RowDecoder decodeRow,
         Func<object?[], bool>? predicate,
-        List<object?[]> results,
+        List<object?[]>? results = null,
         int limit = int.MaxValue,
-        List<long>? rowIds = null)
+        List<long>? rowIds = null,
+        Action<object?[]>? onRow = null)
     {
+        if (results == null && onRow == null)
+            throw new ArgumentException("Either results or onRow must be provided.");
+
         var fromInclusive = (minRowId == long.MinValue)
             ? BuildTablePrefix((uint)tableId)
             : BuildRowKey(tableId, minRowId);
         var toExclusive = (maxRowId == long.MaxValue)
             ? BuildTablePrefix((uint)(tableId + 1))
             : BuildRowKey(tableId, maxRowId + 1);
+
+        int yielded = 0;
 
         using (LockManager.TableReadLock(0))
         {
@@ -691,13 +697,15 @@ internal sealed class TableStore : IDisposable
                 {
                     if (ByteArrayComparer.Instance.Compare(store.GetKeyAt(i), toExclusive) >= 0)
                         break;
-                    if (results.Count >= limit)
+                    if (yielded >= limit)
                         break;
 
                     var row = decodeRow(store.GetValueAt(i));
                     if (predicate == null || predicate(row))
                     {
-                        results.Add(row);
+                        yielded++;
+                        results?.Add(row);
+                        onRow?.Invoke(row);
                         rowIds?.Add(ParseRowKey(store.GetKeyAt(i)).RowId);
                     }
                 }
@@ -707,7 +715,10 @@ internal sealed class TableStore : IDisposable
                 return;
             }
             // Disk mode — collect MemTable candidates in [fromInclusive, toExclusive).
-            var seenKeys = new HashSet<byte[]>(ByteArrayContentComparer.Instance);
+            // seenKeys wird lazy initialisiert: nach einem Checkpoint ist die MemTable
+            // leer, dann sparen wir die HashSet-Allokation und die Contains-Prüfung
+            // pro Disk-Eintrag.
+            HashSet<byte[]>? seenKeys = null;
 
             // Fast path: small bounded int rowId range → direct hash probes,
             // avoids a full O(N log N) re-sort of _memSortedKeys when the MemTable
@@ -722,7 +733,7 @@ internal sealed class TableStore : IDisposable
                 long memHits = 0;
                 for (long rid = minRowId; rid <= maxRowId; rid++)
                 {
-                    if (results.Count >= limit) return;
+                    if (yielded >= limit) return;
                     var probeKey = BuildRowKey(tableId, rid);
                     if (_memDict.TryGetValue(probeKey, out var memValue))
                     {
@@ -730,8 +741,11 @@ internal sealed class TableStore : IDisposable
                         var row = decodeRow(memValue);
                         if (predicate == null || predicate(row))
                         {
-                            results.Add(row);
+                            yielded++;
+                            results?.Add(row);
+                            onRow?.Invoke(row);
                             rowIds?.Add(rid);
+                            seenKeys ??= new HashSet<byte[]>(ByteArrayContentComparer.Instance);
                             seenKeys.Add(probeKey);
                         }
                     }
@@ -752,13 +766,16 @@ internal sealed class TableStore : IDisposable
                     var key = _memSortedKeys[i];
                     if (ByteArrayComparer.Instance.Compare(key, toExclusive) >= 0)
                         break;
-                    if (results.Count >= limit) return;
+                    if (yielded >= limit) return;
 
                     var row = decodeRow(_memDict[key]);
                     if (predicate == null || predicate(row))
                     {
-                        results.Add(row);
+                        yielded++;
+                        results?.Add(row);
+                        onRow?.Invoke(row);
                         rowIds?.Add(ParseRowKey(key).RowId);
+                        seenKeys ??= new HashSet<byte[]>(ByteArrayContentComparer.Instance);
                         seenKeys.Add(key);
                     }
                 }
@@ -767,16 +784,38 @@ internal sealed class TableStore : IDisposable
             if (fullyCoveredByMem)
                 return;
 
-            foreach (var kv in _dataStore.EnumerateRange(fromInclusive, toExclusive))
+            if (seenKeys == null)
             {
-                if (seenKeys.Contains(kv.Key)) continue;
-                if (results.Count >= limit) return;
-
-                var row = decodeRow(kv.Value);
-                if (predicate == null || predicate(row))
+                // Keine MemTable-Einträge im Bereich → direkter Scan ohne Deduplizierung.
+                foreach (var kv in _dataStore.EnumerateRange(fromInclusive, toExclusive))
                 {
-                    results.Add(row);
-                    rowIds?.Add(ParseRowKey(kv.Key).RowId);
+                    if (yielded >= limit) return;
+
+                    var row = decodeRow(kv.Value);
+                    if (predicate == null || predicate(row))
+                    {
+                        yielded++;
+                        results?.Add(row);
+                        onRow?.Invoke(row);
+                        rowIds?.Add(ParseRowKey(kv.Key).RowId);
+                    }
+                }
+            }
+            else
+            {
+                foreach (var kv in _dataStore.EnumerateRange(fromInclusive, toExclusive))
+                {
+                    if (seenKeys.Contains(kv.Key)) continue;
+                    if (yielded >= limit) return;
+
+                    var row = decodeRow(kv.Value);
+                    if (predicate == null || predicate(row))
+                    {
+                        yielded++;
+                        results?.Add(row);
+                        onRow?.Invoke(row);
+                        rowIds?.Add(ParseRowKey(kv.Key).RowId);
+                    }
                 }
             }
         }

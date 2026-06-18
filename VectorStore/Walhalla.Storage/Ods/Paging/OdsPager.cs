@@ -127,14 +127,15 @@ internal sealed class OdsPager : IDisposable
             return CreatePage(pageId, rented, pooled: true);
         }
 
-        ValidatePageId(pageId);
-
-        // 2. Check LRU cache.
+        // 2. Check LRU cache BEFORE ValidatePageId — ein Cache-Hit vermeidet
+        // den _stream.Length-Syscall, der bei read-heavy Workloads signifikant ist.
         if (_pageCacheCapacity > 0 && TryGetFromCache(pageId, out var cached))
         {
             // cached is already a fresh copy made inside the cache lock.
             return CreatePage(pageId, cached, pooled: false);
         }
+
+        ValidatePageId(pageId);
 
         // 3. Read from disk.
         var buffer = ArrayPool<byte>.Shared.Rent(PageSize);
@@ -174,14 +175,14 @@ internal sealed class OdsPager : IDisposable
             return CreatePage(pageId, rented, pooled: true);
         }
 
-        ValidatePageId(pageId);
-
-        // 2. Check LRU cache.
+        // 2. Check LRU cache BEFORE ValidatePageId.
         if (_pageCacheCapacity > 0 && TryGetFromCache(pageId, out var cached))
         {
             // cached is already a fresh copy made inside the cache lock.
             return CreatePage(pageId, cached, pooled: false);
         }
+
+        ValidatePageId(pageId);
 
         // 3. Read from disk.
         var buffer = ArrayPool<byte>.Shared.Rent(PageSize);

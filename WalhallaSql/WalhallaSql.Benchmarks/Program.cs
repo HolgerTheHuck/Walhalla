@@ -33,6 +33,11 @@ internal class Program
             ProfileDeleteBreakdown();
             return;
         }
+        if (args.Length > 0 && args[0] == "--range-breakdown")
+        {
+            ProfileRangeBreakdown();
+            return;
+        }
         BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
     }
 
@@ -265,6 +270,104 @@ internal class Program
         Console.WriteLine($"  [{label}] DELETE (PK range + predicate) allocated: {(after - before) / 1024.0:F2} KB");
 
         engine.Dispose();
+    }
+
+    static void ProfileRangeBreakdown()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== SELECT range-scan cost breakdown ===");
+
+        foreach (var mode in new[] { WalhallaSql.Core.StorageMode.BPlusTree, WalhallaSql.Core.StorageMode.MvccBPlusTree })
+        {
+            var engine = new WalhallaEngine(new WalhallaOptions(Path.Combine(Path.GetTempPath(), "WalhallaSql.Benchmarks", Guid.NewGuid().ToString("N")))
+            {
+                StorageMode = mode,
+                WalSyncMode = WalhallaSql.Core.WalSyncMode.None,
+                AutoCheckpointWalThresholdBytes = 0
+            });
+
+            engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name VARCHAR(100) NOT NULL, Email VARCHAR(100) NOT NULL, Region VARCHAR(50) NOT NULL)");
+
+            const int RangeSize = 1000;
+            var rows = new List<object?[]>(RangeSize);
+            for (int i = 1; i <= RangeSize; i++)
+                rows.Add(new object?[] { i, "Customer " + i, "cust" + i + "@demo.local", "R" + (i % 10) });
+            engine.InsertBatch("Customers", rows);
+            engine.Checkpoint();
+
+            var label = mode.ToString();
+            const int N = 1000;
+            var sw = new System.Diagnostics.Stopwatch();
+
+            // Variant 1: full projection via prepared statement (benchmark path)
+            var stmtFull = engine.Prepare("SELECT Id, Name, Email, Region FROM Customers WHERE Id BETWEEN @min AND @max");
+            stmtFull.Bind("@min", 1);
+            stmtFull.Bind("@max", RangeSize);
+
+            var planFull = typeof(WalhallaPreparedStatement).GetMethod("GetPlan", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .Invoke(stmtFull, null);
+            var isStreamableFull = (bool)(planFull!.GetType().GetProperty("IsStreamable")!.GetValue(planFull)!);
+            var isFullProjectionFull = (bool)(planFull.GetType().GetProperty("IsFullProjection")!.GetValue(planFull)!);
+            Console.WriteLine($"  [{label}] full plan IsStreamable={isStreamableFull}, IsFullProjection={isFullProjectionFull}");
+
+            var stmtPartial = engine.Prepare("SELECT Name, Email FROM Customers WHERE Id BETWEEN @min AND @max");
+            stmtPartial.Bind("@min", 1);
+            stmtPartial.Bind("@max", RangeSize);
+
+            var planPartial = typeof(WalhallaPreparedStatement).GetMethod("GetPlan", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .Invoke(stmtPartial, null);
+            var isStreamablePartial = (bool)(planPartial!.GetType().GetProperty("IsStreamable")!.GetValue(planPartial)!);
+            var isFullProjectionPartial = (bool)(planPartial.GetType().GetProperty("IsFullProjection")!.GetValue(planPartial)!);
+            Console.WriteLine($"  [{label}] partial plan IsStreamable={isStreamablePartial}, IsFullProjection={isFullProjectionPartial}");
+
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            sw.Restart();
+            for (int i = 0; i < N; i++)
+            {
+                var r1 = stmtFull.Execute();
+                _ = r1.Rows.Count;
+            }
+            sw.Stop();
+            Console.WriteLine($"  [{label}] prepared SELECT 4 cols (full): {sw.Elapsed.TotalNanoseconds / N:F1} ns");
+
+            // Variant 2: partial projection via prepared statement
+            var checkPartial = stmtPartial.Execute();
+            Console.WriteLine($"  [{label}] partial row count check: {checkPartial.Rows.Count}");
+
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            sw.Restart();
+            for (int i = 0; i < N; i++)
+            {
+                var r2 = stmtPartial.Execute();
+                _ = r2.Rows.Count;
+            }
+            sw.Stop();
+            Console.WriteLine($"  [{label}] prepared SELECT 2 cols (partial): {sw.Elapsed.TotalNanoseconds / N:F1} ns");
+
+            // Variant 3: COUNT(*) aggregate via prepared statement
+            var stmtCount = engine.Prepare("SELECT COUNT(*) FROM Customers WHERE Id BETWEEN @min AND @max");
+            stmtCount.Bind("@min", 1);
+            stmtCount.Bind("@max", RangeSize);
+
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            sw.Restart();
+            for (int i = 0; i < N; i++)
+            {
+                var r3 = stmtCount.Execute();
+                _ = r3.Rows.Count;
+            }
+            sw.Stop();
+            Console.WriteLine($"  [{label}] prepared SELECT COUNT(*): {sw.Elapsed.TotalNanoseconds / N:F1} ns");
+
+            // Variant 4: allocation of the prepared full SELECT
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            long before = GC.GetTotalAllocatedBytes(true);
+            stmtFull.Execute();
+            long after = GC.GetTotalAllocatedBytes(true);
+            Console.WriteLine($"  [{label}] allocated prepared full SELECT: {(after - before) / 1024.0:F2} KB");
+
+            engine.Dispose();
+        }
     }
 
     static void ProfileMvccBulkUpsert()

@@ -28,6 +28,17 @@ internal sealed class PendingBlobValue
     }
 
     /// <summary>
+    /// Creates a sentinel by copying the supplied span. Used when the source is
+    /// a transient <see cref="ReadOnlySpan{T}"/" (e.g. from a storage page).
+    /// </summary>
+    public PendingBlobValue(ReadOnlySpan<byte> span)
+    {
+        _buffer = span.ToArray();
+        _offset = 0;
+        _length = _buffer.Length;
+    }
+
+    /// <summary>
     /// Creates a sentinel backed by a stream factory (e.g. memory-mapped sidecar).
     /// The factory is invoked once per <see cref="OpenStream"/> call.
     /// </summary>

@@ -92,6 +92,43 @@ public sealed class WalhallaPreparedStatement
             if (!range.MinInclusive) minRowId++;
             if (!range.MaxInclusive) maxRowId--;
 
+            // Fast streaming path for simple PK-range selects: no ORDER BY, DISTINCT,
+            // GROUP BY, aggregates, windows, HAVING, computed columns, LIMIT or OFFSET.
+            // Decode directly into the projected output array and build WalhallaRows
+            // without intermediate List<object?[]> buffers or ApplyPostProcessing.
+            // WhereDelegate erwartet volle Zeilen in Tabellenspalten-Reihenfolge; bei
+            // Teilprojektion darf der Stream-Pfad daher nicht den kodierten Where-Check
+            // auf dem projizierten Array ausführen.
+            bool canStream = _plan.IsStreamable
+                && !_plan.Offset.HasValue
+                && !_plan.Limit.HasValue
+                && (_plan.WhereDelegate == null || _plan.IsFullProjection);
+
+            if (canStream)
+            {
+                var schema = new ColumnSchema(_plan.OutputColumnNames);
+                var rows = new List<WalhallaRow>();
+
+                RowDecoder decoder = _plan.IsFullProjection
+                    ? encoded => RowCodec.DecodeToArray(encoded, _plan.TableDefinition)
+                    : encoded =>
+                    {
+                        var output = new object?[_plan.ProjectionIndices.Length];
+                        RowCodec.DecodeColumnsToRowBuffer(encoded, _plan.TableDefinition, output, _plan.DecodeMapping);
+                        return output;
+                    };
+
+                Func<object?[], bool>? wherePredicate = _plan.WhereDelegate != null
+                    ? row => _plan.WhereDelegate(row, _boundParams)
+                    : null;
+
+                _store.ScanRowKeyRange(_plan.TableId, minRowId, maxRowId,
+                    decoder, wherePredicate, results: null,
+                    onRow: row => rows.Add(new WalhallaRow(schema, row)));
+
+                return new WalhallaResultSet(rows, _plan.OutputColumnNames);
+            }
+
             var fullRows = new List<object?[]>();
             _store.ScanRowKeyRange(_plan.TableId, minRowId, maxRowId,
                 encoded => RowCodec.DecodeToArray(encoded, _plan.TableDefinition), null, fullRows);

@@ -325,15 +325,103 @@ public sealed class MvccBPlusTree : IDisposable
         while (currentPageId >= 0)
         {
             using var page = _pager.ReadPage(currentPageId);
-            var entries = MvccLeafPageSerializer.ReadEntries(page);
+            var buffer = page.Buffer;
+            var bodyStart = OdsPageHeader.SizeInBytes;
+            var bodyLength = buffer.Length - bodyStart - OdsPage.ChecksumSizeInBytes;
+            var header = page.Header;
+            var offset = 0;
 
-            foreach (var entry in entries)
+            for (var i = 0; i < header.ItemCount; i++)
             {
-                if (fromInclusive != null && CompareKeys(entry.Key, fromInclusive) < 0)
+                var entryStart = offset;
+
+                if (offset + sizeof(int) > bodyLength)
+                    throw new InvalidOperationException("MVCC leaf page payload is corrupted (key length missing).");
+
+                var keyLength = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bodyStart + offset));
+                offset += sizeof(int);
+
+                if (keyLength <= 0 || offset + keyLength > bodyLength)
+                    throw new InvalidOperationException("MVCC leaf page contains invalid key length.");
+
+                var keyStart = bodyStart + offset;
+                offset += keyLength;
+
+                if (offset + sizeof(int) > bodyLength)
+                    throw new InvalidOperationException("MVCC leaf page payload is corrupted (version count missing).");
+
+                var versionCount = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bodyStart + offset));
+                offset += sizeof(int);
+
+                if (versionCount < 0)
+                    throw new InvalidOperationException("MVCC leaf page contains invalid version count.");
+
+                // Bereichsprüfung vor dem teuren Deserialisieren.
+                if (fromInclusive != null && CompareKeys(new ReadOnlySpan<byte>(buffer, keyStart, keyLength), fromInclusive) < 0)
+                {
+                    offset = MvccLeafPageSerializer.SkipEntryVersions(buffer.AsSpan(bodyStart, bodyLength), offset, versionCount);
                     continue;
-                if (toExclusive != null && CompareKeys(entry.Key, toExclusive) >= 0)
+                }
+                if (toExclusive != null && CompareKeys(new ReadOnlySpan<byte>(buffer, keyStart, keyLength), toExclusive) >= 0)
                     yield break;
 
+                // Fast path: genau eine Version — der häufigste Fall in read-heavy Workloads.
+                if (versionCount == 1)
+                {
+                    if (offset + sizeof(ulong) + 1 + sizeof(int) > bodyLength)
+                        throw new InvalidOperationException("MVCC leaf page payload is corrupted (version header missing).");
+
+                    var sequence = BinaryPrimitives.ReadUInt64LittleEndian(buffer.AsSpan(bodyStart + offset));
+                    offset += sizeof(ulong);
+
+                    var flags = buffer[bodyStart + offset++];
+                    var isTombstone = (flags & 0x01) != 0;
+                    var isOverflow = (flags & 0x02) != 0;
+                    var isOverflowChain = (flags & 0x04) != 0;
+
+                    var valueLength = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bodyStart + offset));
+                    offset += sizeof(int);
+
+                    if (!isTombstone && sequence <= snapshotSeq && !isOverflowChain)
+                    {
+                        byte[] value;
+                        if (isOverflow || valueLength == -1)
+                        {
+                            const int OverflowPointerSize = sizeof(long) + sizeof(int) + sizeof(uint);
+                            if (offset + OverflowPointerSize > bodyLength)
+                                throw new InvalidOperationException("MVCC leaf page overflow pointer truncated.");
+
+                            var ptrSpan = new ReadOnlySpan<byte>(buffer, bodyStart + offset, OverflowPointerSize);
+                            value = OverflowPointer.TryDecode(ptrSpan, out var ptr)
+                                ? _overflow.ReadBlob(ptr)
+                                : ptrSpan.ToArray();
+                            offset += OverflowPointerSize;
+                        }
+                        else
+                        {
+                            if (valueLength < 0)
+                                throw new InvalidOperationException("MVCC leaf page contains negative inline value length.");
+                            if (offset + valueLength > bodyLength)
+                                throw new InvalidOperationException("MVCC leaf page inline value truncated.");
+
+                            value = valueLength == 0 ? Array.Empty<byte>() : new ReadOnlySpan<byte>(buffer, bodyStart + offset, valueLength).ToArray();
+                            offset += valueLength;
+                        }
+
+                        var key = new ReadOnlySpan<byte>(buffer, keyStart, keyLength).ToArray();
+                        yield return new KeyValuePair<byte[], byte[]>(key, value);
+                        continue;
+                    }
+
+                    offset = entryStart; // Fallback: komplexen Pfad von vorne parsen.
+                }
+                else
+                {
+                    offset = entryStart; // Mehrere Versionen: komplexen Pfad nehmen.
+                }
+
+                // Komplexer Pfad: volle Deserialisierung nur für diesen Eintrag.
+                var entry = MvccLeafPageSerializer.ReadEntryAt(buffer.AsSpan(bodyStart, bodyLength), offset, out offset);
                 var resolved = ResolveChain(entry.Versions);
                 var resolvedEntry = new MvccLeafEntry(entry.Key, resolved);
                 if (resolvedEntry.TryGetVisible(snapshotSeq, out var raw))
@@ -1362,6 +1450,11 @@ public sealed class MvccBPlusTree : IDisposable
     // ── Key-Vergleich ─────────────────────────────────────────────────────────
 
     private int CompareKeys(byte[] a, ReadOnlySpan<byte> b)
+    {
+        return _keyComparator.Compare(a, b);
+    }
+
+    private int CompareKeys(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
     {
         return _keyComparator.Compare(a, b);
     }
