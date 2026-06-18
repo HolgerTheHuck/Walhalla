@@ -188,13 +188,26 @@ public sealed class MvccBPlusTreeStore : IKeyValueStore
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(entries);
+        if (entries.Count == 0) return;
 
-        using var tx = BeginTransaction(IsolationLevel.Snapshot);
-        foreach (var kv in entries)
+        ulong commitSequence = _txManager.AcquireCommitSequence();
+
+        // WAL-Write vor dem Baum-Update (write-ahead semantics).
+        if (_walLog != null)
         {
-            tx.Upsert(kv.Key, kv.Value);
+            var operations = new WalOperation[entries.Count];
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var kv = entries[i];
+                operations[i] = new WalOperation(WalRecordType.Put, kv.Key, kv.Value);
+            }
+            _walLog.AppendBatch((long)commitSequence, operations);
         }
-        tx.Commit();
+
+        _tree.BulkUpsert(commitSequence, entries);
+
+        foreach (var kv in entries)
+            _txManager.RegisterCommitted(kv.Key, commitSequence);
     }
 
     public void BulkDelete(IReadOnlyList<byte[]> keys)

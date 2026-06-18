@@ -1,8 +1,12 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
+using Walhalla.Storage.Core;
+using Walhalla.Storage.Core.Configuration;
+using Walhalla.Storage.Trees;
 using WalhallaSql;
 using WalhallaSql.Execution;
 using WalhallaSql.Parsing;
@@ -17,6 +21,11 @@ internal class Program
         if (args.Length > 0 && args[0] == "--profile")
         {
             ProfileUpdateDelete();
+            return;
+        }
+        if (args.Length > 0 && args[0] == "--mvcc-profile")
+        {
+            ProfileMvccBulkUpsert();
             return;
         }
         BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
@@ -188,6 +197,84 @@ internal class Program
         Console.WriteLine($"[{label}] DELETE BETWEEN total allocated: {(after - before) / 1024.0:F2} KB");
 
         engine.Dispose();
+    }
+
+    static void ProfileMvccBulkUpsert()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== Isolated MvccBPlusTreeStore BulkUpsert profiling ===");
+
+        var root = Path.Combine(Path.GetTempPath(), "WalhallaSql.Benchmarks", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var odsPath = Path.Combine(root, "test.ods");
+        var walPath = Path.Combine(root, "test.wal");
+
+        const int RowCount = 100;
+        const int IndexCount = 200; // 2 indexes * 100 rows, matching Customers schema
+        var entries = new KeyValuePair<byte[], byte[]>[RowCount + IndexCount];
+
+        for (int i = 0; i < RowCount; i++)
+            entries[i] = BuildRowKv(1, 100000 + i, 30 + (i % 20));
+
+        for (int i = 0; i < IndexCount; i++)
+            entries[RowCount + i] = BuildIndexKv(i / 100, 1, 100000 + (i % 100), 20 + (i % 10));
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        // Profile 1: BulkUpsert
+        using (var store = new MvccBPlusTreeStore(odsPath, 4096, 512, order: 128,
+            walPath: walPath, walSyncMode: WalSyncMode.None))
+        {
+            long before = GC.GetTotalAllocatedBytes(true);
+            store.BulkUpsert(entries);
+            long after = GC.GetTotalAllocatedBytes(true);
+            Console.WriteLine($"[MvccBPlusTreeStore.BulkUpsert] total allocated: {(after - before) / 1024.0:F2} KB = {(after - before) / (double)(RowCount + IndexCount):F2} B/entry");
+        }
+
+        File.Delete(odsPath);
+        File.Delete(walPath);
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        // Profile 2: per-entry Upsert loop
+        using (var store = new MvccBPlusTreeStore(odsPath, 4096, 512, order: 128,
+            walPath: walPath, walSyncMode: WalSyncMode.None))
+        {
+            long before = GC.GetTotalAllocatedBytes(true);
+            foreach (var kv in entries)
+                store.Upsert(kv.Key, kv.Value);
+            long after = GC.GetTotalAllocatedBytes(true);
+            Console.WriteLine($"[MvccBPlusTreeStore.Upsert loop] total allocated: {(after - before) / 1024.0:F2} KB = {(after - before) / (double)(RowCount + IndexCount):F2} B/entry");
+        }
+
+        Directory.Delete(root, true);
+    }
+
+    static KeyValuePair<byte[], byte[]> BuildRowKv(int tableId, long rowId, int valueLen)
+    {
+        var key = new byte[4 + 8];
+        BinaryPrimitives.WriteInt32LittleEndian(key.AsSpan(0), tableId);
+        BinaryPrimitives.WriteInt64LittleEndian(key.AsSpan(4), rowId);
+        var value = new byte[valueLen];
+        Random.Shared.NextBytes(value);
+        return new KeyValuePair<byte[], byte[]>(key, value);
+    }
+
+    static KeyValuePair<byte[], byte[]> BuildIndexKv(int indexId, int tableId, long rowId, int sortKeyLen)
+    {
+        var sortKey = new byte[sortKeyLen];
+        Random.Shared.NextBytes(sortKey);
+        var key = new byte[4 + 4 + sortKeyLen + 4 + 8];
+        BinaryPrimitives.WriteUInt32LittleEndian(key.AsSpan(0), 0xFFFFFFFE);
+        BinaryPrimitives.WriteInt32LittleEndian(key.AsSpan(4), indexId);
+        sortKey.CopyTo(key.AsSpan(8));
+        BinaryPrimitives.WriteInt32LittleEndian(key.AsSpan(8 + sortKeyLen), tableId);
+        BinaryPrimitives.WriteInt64LittleEndian(key.AsSpan(12 + sortKeyLen), rowId);
+        return new KeyValuePair<byte[], byte[]>(key, Array.Empty<byte>());
     }
 }
 
@@ -521,22 +608,6 @@ public class WalhallaSqlInMemoryBenchmark : WalhallaBenchmarkBase
 }
 
 // ── MvccBPlusTree benchmarks ──────────────────────────────────────────────
-
-[ShortRunJob]
-[WarmupCount(1)]
-[IterationCount(3)]
-[MemoryDiagnoser]
-public class WalhallaSqlMvccBPlusTreeMemoryBenchmark : WalhallaBenchmarkBase
-{
-    private protected override WalhallaEngine CreateEngine()
-    {
-        _tempDir = null;
-        return new WalhallaEngine(new WalhallaOptions(":memory:")
-        {
-            StorageMode = WalhallaSql.Core.StorageMode.MvccBPlusTree
-        });
-    }
-}
 
 [ShortRunJob]
 [WarmupCount(1)]

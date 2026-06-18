@@ -365,18 +365,23 @@ public sealed class MvccBPlusTree : IDisposable
     {
         if (entries == null)
             throw new ArgumentNullException(nameof(entries));
+        if (entries.Count == 0) return;
 
-        // Simple bulk: each entry gets the same commit sequence, allowing a
-        // single MVCC snapshot to see the entire bulk as one logical write set.
         lock (_writeLock)
         {
             _pager.BeginWriteBatch();
             try
             {
-                foreach (var kv in entries)
-                {
-                    Upsert(commitSequence, kv.Key, kv.Value);
-                }
+                // Materialize and sort once. The tree order matches bytewise key order,
+                // so grouping by leaf page is trivial after sorting.
+                var sorted = entries.Count <= 256
+                    ? GC.AllocateUninitializedArray<KeyValuePair<byte[], byte[]>>(entries.Count)
+                    : new KeyValuePair<byte[], byte[]>[entries.Count];
+                for (int i = 0; i < entries.Count; i++)
+                    sorted[i] = entries[i];
+                Array.Sort(sorted, (a, b) => a.Key.AsSpan().SequenceCompareTo(b.Key));
+
+                BulkUpsertSorted(commitSequence, sorted);
                 _pager.CommitWriteBatch();
             }
             catch
@@ -385,6 +390,174 @@ public sealed class MvccBPlusTree : IDisposable
                 throw;
             }
         }
+    }
+
+    /// <summary>
+    /// Bulk-Pfad: sortierte Einträge werden pro Leaf-Page gebündelt. Das vermeidet
+    /// das mehrfache Deserialisieren/Schreiben derselben Seite und reduziert den
+    /// managed-Heap-Overhead pro Eintrag deutlich.
+    /// </summary>
+    private void BulkUpsertSorted(ulong commitSequence,
+        KeyValuePair<byte[], byte[]>[] sorted)
+    {
+        // Track the current leaf page we are filling.
+        OdsPage? leafPage = null;
+        List<MvccLeafEntry>? leafEntries = null;
+        Stack<UpsertPathFrame>? path = null;
+        int leafPageId = -1;
+
+        for (int i = 0; i < sorted.Length; i++)
+        {
+            var kv = sorted[i];
+            var key = kv.Key.AsSpan();
+            var value = kv.Value;
+            if (key.IsEmpty)
+                throw new ArgumentException("Key must not be empty.");
+
+            // Find the leaf page for this key, reusing the current leaf if possible.
+            if (leafPage == null || !BelongsToLeaf(key, leafPage))
+            {
+                // Flush previous leaf if any.
+                if (leafPage != null)
+                {
+                    FlushBulkLeaf(ref leafPage, ref leafEntries, ref path);
+                    leafPage = null;
+                    leafEntries = null;
+                    leafPageId = -1;
+                }
+
+                path = new Stack<UpsertPathFrame>();
+                var rootId = _pager.ReadRootMetadata().RootPageId;
+                var page = _pager.ReadPage(rootId);
+                while (page.Header.PageType == OdsPageType.Internal)
+                {
+                    var childIndex = FindChildIndex(page, key);
+                    path.Push(new UpsertPathFrame(page.PageId, childIndex));
+                    var childPageId = ReadChildPageId(page, childIndex);
+                    page.Dispose();
+                    page = _pager.ReadPage(childPageId);
+                }
+
+                if (page.Header.PageType != OdsPageType.Leaf)
+                {
+                    page.Dispose();
+                    throw new NotSupportedException("Unsupported page type encountered during bulk insert traversal.");
+                }
+
+                leafPage = page;
+                leafPageId = page.PageId;
+                leafEntries = MvccLeafPageSerializer.ReadEntries(leafPage);
+            }
+
+            // Insert or replace into the current leaf entry list.
+            var storedValue = StoreValue(value);
+            var newEntry = new MvccLeafEntry(kv.Key,
+                VersionedValue<byte[]>.Push(null, commitSequence, storedValue, isTombstone: false));
+
+            bool replaced = false;
+            for (int e = 0; e < leafEntries!.Count; e++)
+            {
+                if (CompareKeys(leafEntries[e].Key, key) == 0)
+                {
+                    leafEntries[e] = leafEntries[e].PushVersion(commitSequence, storedValue, isTombstone: false);
+                    replaced = true;
+                    break;
+                }
+            }
+            if (!replaced)
+                InsertSorted(leafEntries, newEntry);
+
+            // If the leaf cannot hold the entries, flush it now. The next key may
+            // land in the newly split right page, which BelongsToLeaf will detect.
+            if (!CanEntriesFit(leafPage, leafEntries))
+            {
+                FlushBulkLeaf(ref leafPage, ref leafEntries, ref path);
+                leafPage = null;
+                leafEntries = null;
+                leafPageId = -1;
+            }
+        }
+
+        if (leafPage != null)
+            FlushBulkLeaf(ref leafPage, ref leafEntries, ref path);
+    }
+
+    /// <summary>
+    /// Schreibt eine im Bulk-Pfad bearbeitete Leaf-Page zurück. Bei Überlauf wird
+    /// die Seite gesplittet und die parents entsprechend aktualisiert.
+    /// </summary>
+    private void FlushBulkLeaf(ref OdsPage? leafPage, ref List<MvccLeafEntry>? leafEntries,
+        ref Stack<UpsertPathFrame>? path)
+    {
+        if (leafPage == null || leafEntries == null)
+            return;
+
+        using var currentPage = leafPage;
+        var entries = leafEntries;
+        leafPage = null;
+        leafEntries = null;
+
+        if (TryWriteOrTruncateEntries(currentPage, entries))
+        {
+            _pager.WritePage(currentPage);
+            return;
+        }
+
+        // Leaf overflow → split and propagate.
+        var rootId = _pager.ReadRootMetadata().RootPageId;
+        var (promotedKey, newRightPageId) = SplitLeaf(currentPage, entries);
+
+        while (path!.Count > 0)
+        {
+            var frame = path.Pop();
+            using var parentPage = _pager.ReadPage(frame.PageId);
+            var parentEntries = ReadInternalEntries(parentPage);
+            parentEntries.Separators.Insert(frame.ChildIndex, promotedKey);
+            parentEntries.ChildPageIds.Insert(frame.ChildIndex + 1, newRightPageId);
+
+            if (TryWriteInternalEntries(parentPage, parentEntries))
+            {
+                _pager.WritePage(parentPage);
+                return;
+            }
+
+            (promotedKey, newRightPageId) = SplitInternal(parentPage, parentEntries);
+        }
+
+        PromoteNewRoot(rootId, promotedKey, newRightPageId);
+    }
+
+    /// <summary>
+    /// Prüft, ob der Schlüssel in die gegebene Leaf-Page gehört (linke Grenze).
+    /// Rechte Grenze wird durch die rechte Geschwister-Page abgedeckt.
+    /// </summary>
+    private bool BelongsToLeaf(ReadOnlySpan<byte> key, OdsPage leafPage)
+    {
+        var body = leafPage.Body;
+        var count = leafPage.Header.ItemCount;
+        if (count == 0) return true;
+
+        var offset = 0;
+        // first key
+        var firstKeyLen = BinaryPrimitives.ReadInt32LittleEndian(body[offset..]);
+        offset += sizeof(int);
+        var firstKey = body.Slice(offset, firstKeyLen);
+        if (_keyComparator.Compare(key, firstKey) < 0)
+            return false;
+
+        return true;
+    }
+
+    /// <summary>
+    /// Schneller Platz-Check ohne vollständige Serialisierung.
+    /// </summary>
+    private static bool CanEntriesFit(OdsPage page, List<MvccLeafEntry> entries)
+    {
+        int total = 0;
+        foreach (var e in entries)
+            total += MvccLeafPageSerializer.ComputeEntrySize(e);
+        // Leave a small headroom so a following insert of a slightly larger key still fits.
+        return total <= page.Body.Length - 64;
     }
 
     public void BulkDelete(ulong commitSequence, IReadOnlyList<byte[]> keys)
