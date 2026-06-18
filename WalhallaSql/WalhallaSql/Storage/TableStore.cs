@@ -1356,12 +1356,21 @@ internal sealed class TableStore : IDisposable
                 keys.Add(key);
                 operations[i] = new WalOperation(WalRecordType.Delete, key, null);
                 _rowCache.Remove(key);
+                _rowByKey.TryRemove(new RowKey(tableId, rowIds[i]), out _);
             }
 
             if (UsesDirectStore)
+            {
                 _dataStore.BulkDelete(keys);
+            }
             else
+            {
+                // WAL/MemTable buffer: remove from MemTable, but also delete from the
+                // underlying B+Tree in case the rows were already checkpointed. Without this,
+                // a later INSERT of the same PK would see a duplicate in _dataStore.TryGet.
                 BulkDeleteMemTable(keys);
+                _dataStore.BulkDelete(keys);
+            }
 
             if (_walLog != null)
             {

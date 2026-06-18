@@ -485,6 +485,41 @@ public class WalhallaSqlMvccBPlusTreeDiskBenchmark : WalhallaBenchmarkBase
     }
 }
 
+// ── Legacy BPlusTree benchmarks ──────────────────────────────────────────
+
+[ShortRunJob]
+[WarmupCount(1)]
+[IterationCount(3)]
+[MemoryDiagnoser]
+public class WalhallaSqlBPlusTreeDiskBenchmark : WalhallaBenchmarkBase
+{
+    private protected override WalhallaOptions CreateOptions(string rootPath)
+    {
+        var opts = new WalhallaOptions(rootPath)
+        {
+            StorageMode = WalhallaSql.Core.StorageMode.BPlusTree
+        };
+        return opts;
+    }
+}
+
+[ShortRunJob]
+[WarmupCount(1)]
+[IterationCount(3)]
+[MemoryDiagnoser]
+public class WalhallaSqlBPlusTreeFastBenchmark : WalhallaBenchmarkBase
+{
+    private protected override WalhallaOptions CreateOptions(string rootPath)
+    {
+        var opts = new WalhallaOptions(rootPath)
+        {
+            StorageMode = WalhallaSql.Core.StorageMode.BPlusTree,
+            WalSyncMode = WalhallaSql.Core.WalSyncMode.None
+        };
+        return opts;
+    }
+}
+
 // ── SQLite comparison benchmarks ─────────────────────────────────────────
 
 [ShortRunJob]
