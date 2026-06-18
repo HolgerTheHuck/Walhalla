@@ -251,7 +251,18 @@ internal class Program
         long before = GC.GetTotalAllocatedBytes(true);
         engine.Execute("DELETE FROM Customers WHERE Id BETWEEN 100001 AND 100100");
         long after = GC.GetTotalAllocatedBytes(true);
-        Console.WriteLine($"  [{label}] DELETE allocated: {(after - before) / 1024.0:F2} KB");
+        Console.WriteLine($"  [{label}] DELETE (PK range) allocated: {(after - before) / 1024.0:F2} KB");
+
+        engine.InsertBatch("Customers", rows);
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        before = GC.GetTotalAllocatedBytes(true);
+        engine.Execute("DELETE FROM Customers WHERE Id BETWEEN 100001 AND 100100 AND Name IS NOT NULL");
+        after = GC.GetTotalAllocatedBytes(true);
+        Console.WriteLine($"  [{label}] DELETE (PK range + predicate) allocated: {(after - before) / 1024.0:F2} KB");
 
         engine.Dispose();
     }

@@ -219,6 +219,26 @@ internal static class IndexKeyCodec
         return key;
     }
 
+    /// <summary>
+    /// Build an index key from a pre-projected value array (values.Length == types.Length).
+    /// </summary>
+    public static byte[] BuildIndexKey(object?[] values, SqlScalarType[] types)
+    {
+        int totalLen = 0;
+        for (int i = 0; i < values.Length; i++)
+            totalLen += 4 + GetSortableLength(values[i], types[i]);
+
+        var key = new byte[totalLen];
+        int offset = 0;
+        for (int i = 0; i < values.Length; i++)
+        {
+            int len = WriteSortableTo(key.AsSpan(offset + 4), values[i], types[i]);
+            BinaryPrimitives.WriteInt32BigEndian(key.AsSpan(offset), len);
+            offset += 4 + len;
+        }
+        return key;
+    }
+
     public static int WriteCompositeKey(Span<byte> dest, object?[] values, SqlScalarType[] types)
     {
         int offset = 0;

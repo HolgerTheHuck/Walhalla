@@ -782,6 +782,73 @@ internal sealed class TableStore : IDisposable
         }
     }
 
+    /// <summary>
+    /// Liefert nur die Row-IDs im gegebenen PK-Bereich, ohne die Rows zu decodieren.
+    /// Wird vom DELETE-Pfad verwendet, um Decodierungs- und Boxing-Allokationen
+    /// zu vermeiden, wenn keine WHERE-Prädikate auf Nicht-PK-Spalten nötig sind.
+    /// </summary>
+    public void ScanRowKeyRangeRowIdsOnly(
+        int tableId,
+        long minRowId, long maxRowId,
+        List<long> rowIds)
+    {
+        var fromInclusive = (minRowId == long.MinValue)
+            ? BuildTablePrefix((uint)tableId)
+            : BuildRowKey(tableId, minRowId);
+        var toExclusive = (maxRowId == long.MaxValue)
+            ? BuildTablePrefix((uint)(tableId + 1))
+            : BuildRowKey(tableId, maxRowId + 1);
+
+        using (LockManager.TableReadLock(0))
+        {
+            var seenKeys = new HashSet<byte[]>(ByteArrayContentComparer.Instance);
+
+            bool boundedRange = minRowId != long.MinValue && maxRowId != long.MaxValue;
+            long rangeSize = boundedRange ? (maxRowId - minRowId + 1) : long.MaxValue;
+            bool fullyCoveredByMem = false;
+            if (boundedRange && rangeSize > 0 && rangeSize <= 256
+                && (_memSortedKeysDirty || rangeSize * 4 < _memDict.Count))
+            {
+                long memHits = 0;
+                for (long rid = minRowId; rid <= maxRowId; rid++)
+                {
+                    var probeKey = BuildRowKey(tableId, rid);
+                    if (_memDict.ContainsKey(probeKey))
+                    {
+                        memHits++;
+                        rowIds.Add(rid);
+                        seenKeys.Add(probeKey);
+                    }
+                }
+                if (memHits == rangeSize)
+                    fullyCoveredByMem = true;
+            }
+            else
+            {
+                int memStartIdx = MemSortedKeysFindStart(fromInclusive);
+                int memSortedCount = _memSortedKeys.Count;
+                for (int i = memStartIdx; i < memSortedCount; i++)
+                {
+                    var key = _memSortedKeys[i];
+                    if (ByteArrayComparer.Instance.Compare(key, toExclusive) >= 0)
+                        break;
+
+                    rowIds.Add(ParseRowKey(key).RowId);
+                    seenKeys.Add(key);
+                }
+            }
+
+            if (fullyCoveredByMem)
+                return;
+
+            foreach (var kv in _dataStore.EnumerateRange(fromInclusive, toExclusive))
+            {
+                if (seenKeys.Contains(kv.Key)) continue;
+                rowIds.Add(ParseRowKey(kv.Key).RowId);
+            }
+        }
+    }
+
     public void ScanWithPredicate(
         int tableId,
         RowDecoder decodeRow,

@@ -3281,13 +3281,63 @@ public sealed class WalhallaEngine : IDisposable
             }
         }
 
+        var indexMetas = GetOrBuildIndexMetadata(delete.TableName, tableDef);
+        bool hasGinIndex = false;
+        foreach (var meta in indexMetas)
+            if (meta.Definition.IndexType == SqlIndexType.Gin) { hasGinIndex = true; break; }
+
+        var pkRange = QueryPlanner.TryExtractPkRange(delete.Where, tableDef);
+
+        // DELETE Fast-Path: reiner PK-Bereich, kein WHERE-Prädikat auf Nicht-PK-Spalten,
+        // keine GIN-Indexe, keine Trigger und keine eingehenden FK-Constraints.
+        // In diesem Fall decodieren wir die Rows nicht vollständig, sondern holen nur
+        // die Row-IDs, lesen die encoded Rows und decodieren nur die Index-Spalten.
+        bool whereOnlyOnPk = delete.Where == null || IsWhereOnlyOnPrimaryKey(delete.Where, tableDef);
+        bool canFastDelete = pkRange != null
+                             && pkRange.HasLiteralBounds
+                             && whereOnlyOnPk
+                             && !hasGinIndex
+                             && !HasTriggersFor(delete.TableName, SqlTriggerEvent.Delete)
+                             && !HasIncomingForeignKeys(tableDef);
+        if (canFastDelete)
+        {
+            long minRowId = pkRange.LiteralMin;
+            long maxRowId = pkRange.LiteralMax;
+            if (!pkRange.MinInclusive && minRowId != long.MinValue) minRowId++;
+            if (!pkRange.MaxInclusive && maxRowId != long.MaxValue) maxRowId--;
+
+            var rowIds = new List<long>();
+            _store.ScanRowKeyRangeRowIdsOnly(tableId, minRowId, maxRowId, rowIds);
+            if (rowIds.Count == 0)
+                return WalhallaResultSet.Affected(0);
+
+            var indexEntries = new List<(int IndexId, byte[] SortKey, int TableId, long RowId)>();
+            foreach (var rowId in rowIds)
+            {
+                var encoded = _store.GetRow(tableId, rowId);
+                if (encoded == null) continue;
+
+                foreach (var meta in indexMetas)
+                {
+                    var projection = RowCodec.DecodeColumns(encoded.AsSpan(), tableDef, meta.ColumnIndices);
+                    var sortKey = IndexKeyCodec.BuildIndexKey(projection, meta.KeyTypes);
+                    indexEntries.Add((meta.IndexId, sortKey, tableId, rowId));
+                }
+            }
+
+            _store.DeleteIndexEntries(indexEntries);
+            _store.DeleteRows(tableId, rowIds);
+
+            FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.After);
+            return WalhallaResultSet.Affected(rowIds.Count);
+        }
+
         // PK range fast path: WHERE PK BETWEEN literal AND literal (or </<=/>/>= on PK).
         // Avoids full table scan by seeking directly into the row-key range.
         var matchingRows = new List<object?[]>();
         var matchingRowIds = new List<long>();
-        RowDecoder decoder = encoded => RowCodec.DecodeToArray(encoded, tableDef);
+        RowDecoder decoder = encoded => RowCodec.DecodeToPooledArray(encoded, tableDef);
 
-        var pkRange = QueryPlanner.TryExtractPkRange(delete.Where, tableDef);
         if (pkRange != null && pkRange.HasLiteralBounds)
         {
             long minRowId = pkRange.LiteralMin;
@@ -3315,11 +3365,9 @@ public sealed class WalhallaEngine : IDisposable
             EnforceForeignKeyDelete(tableDef, delRowId, delRow);
         }
 
-        var indexMetas = GetOrBuildIndexMetadata(delete.TableName, tableDef);
-
         // Collect all index entries and row IDs, then flush in one WAL batch.
-        var rowIds = matchingRowIds;
-        var indexEntries = new List<(int IndexId, byte[] SortKey, int TableId, long RowId)>();
+        var rowIds2 = matchingRowIds;
+        var indexEntries2 = new List<(int IndexId, byte[] SortKey, int TableId, long RowId)>();
 
         for (var i = 0; i < matchingRows.Count; i++)
         {
@@ -3336,19 +3384,23 @@ public sealed class WalhallaEngine : IDisposable
                     {
                         var elements = GinElementExtractor.ExtractElements(jsonbValue);
                         foreach (var element in elements)
-                            indexEntries.Add((meta.IndexId, element, tableId, rowId));
+                            indexEntries2.Add((meta.IndexId, element, tableId, rowId));
                     }
                 }
                 else
                 {
                     var sortKey = IndexKeyCodec.BuildIndexKey(row, meta.ColumnIndices, meta.KeyTypes);
-                    indexEntries.Add((meta.IndexId, sortKey, tableId, rowId));
+                    indexEntries2.Add((meta.IndexId, sortKey, tableId, rowId));
                 }
             }
         }
 
-        _store.DeleteIndexEntries(indexEntries);
-        _store.DeleteRows(tableId, rowIds);
+        _store.DeleteIndexEntries(indexEntries2);
+        _store.DeleteRows(tableId, rowIds2);
+
+        // Pooled row buffers zurückgeben, um den managed Heap-Druck zu reduzieren.
+        foreach (var row in matchingRows)
+            RowCodec.ReturnPooledArray(row);
 
         FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.After);
         return WalhallaResultSet.Affected(matchingRows.Count);
@@ -4023,6 +4075,23 @@ public sealed class WalhallaEngine : IDisposable
 
     // -- Helpers ----------------------------------------------------------------
 
+    private static bool IsWhereOnlyOnPrimaryKey(SqlWhereExpression where, SqlTableDefinition tableDef)
+    {
+        var pkIndices = new HashSet<int>();
+        foreach (var col in tableDef.PrimaryKeyColumns)
+        {
+            var idx = FindColumnIndex(tableDef, col.Name);
+            if (idx >= 0) pkIndices.Add(idx);
+        }
+
+        var whereColIndices = where.CollectColumnIndices(tableDef);
+        foreach (var idx in whereColIndices)
+            if (!pkIndices.Contains(idx))
+                return false;
+
+        return true;
+    }
+
     private static object? TryExtractPkLiteral(SqlWhereExpression? where, SqlTableDefinition tableDef)
     {
         // PK==RowId fast path is only valid for SQLite-style INTEGER PRIMARY KEY alias tables.
@@ -4590,6 +4659,35 @@ public sealed class WalhallaEngine : IDisposable
                 throw new WalhallaException($"Trigger '{stmt.TriggerName}' not found.");
         }
         return WalhallaResultSet.Affected(0);
+    }
+
+    private bool HasTriggersFor(string tableName, SqlTriggerEvent evt)
+    {
+        lock (_metaSync)
+        {
+            if (!_triggersByTable.TryGetValue(tableName, out var list) || list.Count == 0)
+                return false;
+            foreach (var trigger in list)
+                if (trigger.Event == evt)
+                    return true;
+            return false;
+        }
+    }
+
+    private bool HasIncomingForeignKeys(SqlTableDefinition tableDef)
+    {
+        var collectionName = tableDef.CollectionName;
+        foreach (var tableName in _store.GetAllTables().Select(t => t.CollectionName))
+        {
+            var otherDef = _store.GetTableDefinition(tableName);
+            if (otherDef == null) continue;
+            foreach (var fk in otherDef.ForeignKeys ?? Array.Empty<SqlForeignKeyDefinition>())
+            {
+                if (string.Equals(fk.ReferencedCollection, collectionName, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+        return false;
     }
 
     private void FireTriggers(string tableName, SqlTriggerEvent evt, SqlTriggerTiming timing)
