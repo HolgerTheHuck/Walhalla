@@ -28,6 +28,11 @@ internal class Program
             ProfileMvccBulkUpsert();
             return;
         }
+        if (args.Length > 0 && args[0] == "--delete-breakdown")
+        {
+            ProfileDeleteBreakdown();
+            return;
+        }
         BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
     }
 
@@ -191,10 +196,64 @@ internal class Program
 
         engine.Execute("DELETE FROM Customers WHERE Id > 100000");
 
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
         before = GC.GetTotalAllocatedBytes(true);
         engine.Execute("DELETE FROM Customers WHERE Id BETWEEN 100001 AND 100100");
         after = GC.GetTotalAllocatedBytes(true);
         Console.WriteLine($"[{label}] DELETE BETWEEN total allocated: {(after - before) / 1024.0:F2} KB");
+
+        engine.Dispose();
+    }
+
+    static void ProfileDeleteBreakdown()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== DELETE allocation breakdown (MvccBPlusTree) ===");
+
+        // Variant 1: no secondary indexes
+        ProfileDeleteVariant("no secondary indexes", "");
+        // Variant 2: one secondary index
+        ProfileDeleteVariant("one secondary index", "CREATE INDEX ix_email ON Customers (Email);");
+        // Variant 3: two secondary indexes
+        ProfileDeleteVariant("two secondary indexes", "CREATE INDEX ix_email ON Customers (Email);CREATE INDEX ix_region ON Customers (Region);");
+    }
+
+    static void ProfileDeleteVariant(string label, string indexDdl)
+    {
+        var engine = new WalhallaEngine(new WalhallaOptions(Path.Combine(Path.GetTempPath(), "WalhallaSql.Benchmarks", Guid.NewGuid().ToString("N")))
+        {
+            StorageMode = WalhallaSql.Core.StorageMode.MvccBPlusTree,
+            WalSyncMode = WalhallaSql.Core.WalSyncMode.None,
+            AutoCheckpointWalThresholdBytes = 0
+        });
+
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name VARCHAR(100) NOT NULL, Email VARCHAR(100) NOT NULL, Region VARCHAR(50) NOT NULL)");
+        if (!string.IsNullOrEmpty(indexDdl))
+        {
+            foreach (var ddl in indexDdl.Split(';', StringSplitOptions.RemoveEmptyEntries))
+                engine.Execute(ddl);
+        }
+
+        const int BatchSize = 100;
+        var rows = new List<object?[]>(BatchSize);
+        for (int i = 1; i <= BatchSize; i++)
+            rows.Add(new object?[] { i + 100000, "User " + i, "user" + i + "@test.com", "R" + (i % 10) });
+
+        engine.InsertBatch("Customers", rows);
+        engine.Execute("DELETE FROM Customers WHERE Id > 100000");
+        engine.InsertBatch("Customers", rows);
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        long before = GC.GetTotalAllocatedBytes(true);
+        engine.Execute("DELETE FROM Customers WHERE Id BETWEEN 100001 AND 100100");
+        long after = GC.GetTotalAllocatedBytes(true);
+        Console.WriteLine($"  [{label}] DELETE allocated: {(after - before) / 1024.0:F2} KB");
 
         engine.Dispose();
     }
@@ -249,6 +308,33 @@ internal class Program
                 store.Upsert(kv.Key, kv.Value);
             long after = GC.GetTotalAllocatedBytes(true);
             Console.WriteLine($"[MvccBPlusTreeStore.Upsert loop] total allocated: {(after - before) / 1024.0:F2} KB = {(after - before) / (double)(RowCount + IndexCount):F2} B/entry");
+        }
+
+        File.Delete(odsPath);
+        File.Delete(walPath);
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        // Profile 3: BulkUpsert followed by BulkDelete
+        using (var store = new MvccBPlusTreeStore(odsPath, 4096, 512, order: 128,
+            walPath: walPath, walSyncMode: WalSyncMode.None))
+        {
+            store.BulkUpsert(entries);
+
+            var deleteKeys = new byte[RowCount][];
+            for (int i = 0; i < RowCount; i++)
+                deleteKeys[i] = (byte[])entries[i].Key.Clone();
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            long before = GC.GetTotalAllocatedBytes(true);
+            store.BulkDelete(deleteKeys);
+            long after = GC.GetTotalAllocatedBytes(true);
+            Console.WriteLine($"[MvccBPlusTreeStore.BulkDelete after BulkUpsert] total allocated: {(after - before) / 1024.0:F2} KB = {(after - before) / (double)RowCount:F2} B/key");
         }
 
         Directory.Delete(root, true);
