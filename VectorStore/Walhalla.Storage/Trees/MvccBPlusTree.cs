@@ -549,6 +549,27 @@ public sealed class MvccBPlusTree : IDisposable
     }
 
     /// <summary>
+    /// Variant for delete bulk path: the key must be within the actual key range
+    /// stored on this leaf (first..last). Otherwise it belongs to a right sibling.
+    /// Uses ReadEntries to correctly account for the MVCC leaf entry layout.
+    /// </summary>
+    private bool BelongsToLeafStrict(ReadOnlySpan<byte> key, OdsPage leafPage)
+    {
+        var count = leafPage.Header.ItemCount;
+        if (count == 0) return true;
+
+        var entries = MvccLeafPageSerializer.ReadEntries(leafPage);
+        if (entries.Count == 0) return true;
+
+        if (_keyComparator.Compare(key, entries[0].Key) < 0)
+            return false;
+        if (_keyComparator.Compare(key, entries[entries.Count - 1].Key) > 0)
+            return false;
+
+        return true;
+    }
+
+    /// <summary>
     /// Schneller Platz-Check ohne vollständige Serialisierung.
     /// </summary>
     private static bool CanEntriesFit(OdsPage page, List<MvccLeafEntry> entries)
@@ -564,16 +585,21 @@ public sealed class MvccBPlusTree : IDisposable
     {
         if (keys == null)
             throw new ArgumentNullException(nameof(keys));
+        if (keys.Count == 0) return;
 
         lock (_writeLock)
         {
             _pager.BeginWriteBatch();
             try
             {
-                foreach (var key in keys)
-                {
-                    Delete(commitSequence, key);
-                }
+                var sorted = keys.Count <= 256
+                    ? GC.AllocateUninitializedArray<byte[]>(keys.Count)
+                    : new byte[keys.Count][];
+                for (int i = 0; i < keys.Count; i++)
+                    sorted[i] = keys[i];
+                Array.Sort(sorted, (a, b) => a.AsSpan().SequenceCompareTo(b));
+
+                BulkDeleteSorted(commitSequence, sorted);
                 _pager.CommitWriteBatch();
             }
             catch
@@ -582,6 +608,80 @@ public sealed class MvccBPlusTree : IDisposable
                 throw;
             }
         }
+    }
+
+    /// <summary>
+    /// Bulk-Delete: sortierte Keys werden pro Leaf-Page gebündelt. Die Seite wird
+    /// nur einmal gelesen, alle Tombstone-Versionen werden eingefügt und dann
+    /// einmal zurückgeschrieben. Das vermeidet den per-Key Root-to-Leaf-Traversal
+    /// und die wiederholte Deserialisierung derselben Seite.
+    /// </summary>
+    private void BulkDeleteSorted(ulong commitSequence, byte[][] sortedKeys)
+    {
+        OdsPage? leafPage = null;
+        List<MvccLeafEntry>? leafEntries = null;
+        Stack<UpsertPathFrame>? path = null;
+
+        for (int i = 0; i < sortedKeys.Length; i++)
+        {
+            var key = sortedKeys[i].AsSpan();
+            if (key.IsEmpty)
+                throw new ArgumentException("Key must not be empty.");
+
+            if (leafPage == null || !BelongsToLeafStrict(key, leafPage))
+            {
+                if (leafPage != null)
+                {
+                    FlushBulkLeaf(ref leafPage, ref leafEntries, ref path);
+                    leafPage = null;
+                    leafEntries = null;
+                }
+
+                path = new Stack<UpsertPathFrame>();
+                var rootId = _pager.ReadRootMetadata().RootPageId;
+                var page = _pager.ReadPage(rootId);
+                while (page.Header.PageType == OdsPageType.Internal)
+                {
+                    var childIndex = FindChildIndex(page, key);
+                    path.Push(new UpsertPathFrame(page.PageId, childIndex));
+                    var childPageId = ReadChildPageId(page, childIndex);
+                    page.Dispose();
+                    page = _pager.ReadPage(childPageId);
+                }
+
+                if (page.Header.PageType != OdsPageType.Leaf)
+                {
+                    page.Dispose();
+                    throw new NotSupportedException("Unsupported page type encountered during bulk delete traversal.");
+                }
+
+                leafPage = page;
+                leafEntries = MvccLeafPageSerializer.ReadEntries(leafPage);
+            }
+
+            bool found = false;
+            for (int e = 0; e < leafEntries!.Count; e++)
+            {
+                if (CompareKeys(leafEntries[e].Key, key) == 0)
+                {
+                    leafEntries[e] = leafEntries[e].PushVersion(commitSequence, null, isTombstone: true);
+                    found = true;
+                    break;
+                }
+            }
+            // Missing keys are silently ignored, matching single Delete behavior.
+
+            // Tombstones add version bytes; flush before the page overflows.
+            if (found && !CanEntriesFit(leafPage, leafEntries))
+            {
+                FlushBulkLeaf(ref leafPage, ref leafEntries, ref path);
+                leafPage = null;
+                leafEntries = null;
+            }
+        }
+
+        if (leafPage != null)
+            FlushBulkLeaf(ref leafPage, ref leafEntries, ref path);
     }
 
     // ── Wartung ───────────────────────────────────────────────────────────────

@@ -243,8 +243,6 @@ internal class Program
             rows.Add(new object?[] { i + 100000, "User " + i, "user" + i + "@test.com", "R" + (i % 10) });
 
         engine.InsertBatch("Customers", rows);
-        engine.Execute("DELETE FROM Customers WHERE Id > 100000");
-        engine.InsertBatch("Customers", rows);
 
         GC.Collect();
         GC.WaitForPendingFinalizers();

@@ -214,13 +214,22 @@ public sealed class MvccBPlusTreeStore : IKeyValueStore
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(keys);
+        if (keys.Count == 0) return;
 
-        using var tx = BeginTransaction(IsolationLevel.Snapshot);
-        foreach (var key in keys)
+        ulong commitSequence = _txManager.AcquireCommitSequence();
+
+        if (_walLog != null)
         {
-            tx.Delete(key);
+            var operations = new WalOperation[keys.Count];
+            for (int i = 0; i < keys.Count; i++)
+                operations[i] = new WalOperation(WalRecordType.Delete, keys[i], null);
+            _walLog.AppendBatch((long)commitSequence, operations);
         }
-        tx.Commit();
+
+        _tree.BulkDelete(commitSequence, keys);
+
+        foreach (var key in keys)
+            _txManager.RegisterCommitted(key, commitSequence);
     }
 
     // ── IKeyValueStore: MVCC ────────────────────────────────────────────────
