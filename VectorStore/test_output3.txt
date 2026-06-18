@@ -1,0 +1,44 @@
+  Wiederherzustellende Projekte werden ermittelt...
+  Alle Projekte sind für die Wiederherstellung auf dem neuesten Stand.
+C:\Program Files\dotnet\sdk\10.0.300-preview.0.26177.108\Sdks\Microsoft.NET.Sdk\targets\Microsoft.NET.RuntimeIdentifierInference.targets(383,5): message NETSDK1057: Sie verwenden eine Vorschauversion von .NET. Weitere Informationen: https://aka.ms/dotnet-support-policy [D:\Develop\Own\VectorStore\Walhalla.VectorStore.Tests\Walhalla.VectorStore.Tests.csproj]
+C:\Program Files\dotnet\sdk\10.0.300-preview.0.26177.108\Sdks\Microsoft.NET.Sdk\targets\Microsoft.NET.RuntimeIdentifierInference.targets(383,5): message NETSDK1057: Sie verwenden eine Vorschauversion von .NET. Weitere Informationen: https://aka.ms/dotnet-support-policy [D:\Develop\Own\VectorStore\Walhalla.Storage.Blobs\Walhalla.Storage.Blobs.csproj::TargetFramework=net8.0]
+C:\Program Files\dotnet\sdk\10.0.300-preview.0.26177.108\Sdks\Microsoft.NET.Sdk\targets\Microsoft.NET.RuntimeIdentifierInference.targets(383,5): message NETSDK1057: Sie verwenden eine Vorschauversion von .NET. Weitere Informationen: https://aka.ms/dotnet-support-policy [D:\Develop\Own\VectorStore\Walhalla.Storage\Walhalla.Storage.csproj::TargetFramework=net8.0]
+  Walhalla.Storage -> D:\Develop\Own\VectorStore\Walhalla.Storage\bin\Debug\net8.0\Walhalla.Storage.dll
+  Walhalla.Storage.Blobs -> D:\Develop\Own\VectorStore\Walhalla.Storage.Blobs\bin\Debug\net8.0\Walhalla.Storage.Blobs.dll
+D:\Develop\Own\VectorStore\Walhalla.VectorStore\Collections\Snapshot.cs(26,18): warning CS0414: Dem Feld "Snapshot._disposed" wurde ein Wert zugewiesen, der aber nie verwendet wird. [D:\Develop\Own\VectorStore\Walhalla.VectorStore\Walhalla.VectorStore.csproj]
+  Walhalla.VectorStore -> D:\Develop\Own\VectorStore\Walhalla.VectorStore\bin\Debug\net8.0\Walhalla.VectorStore.dll
+C:\Program Files\dotnet\sdk\10.0.300-preview.0.26177.108\Sdks\Microsoft.NET.Sdk\targets\Microsoft.NET.RuntimeIdentifierInference.targets(383,5): message NETSDK1057: Sie verwenden eine Vorschauversion von .NET. Weitere Informationen: https://aka.ms/dotnet-support-policy [D:\Develop\Own\VectorStore\Walhalla.Storage.Blobs\Walhalla.Storage.Blobs.csproj::TargetFramework=net9.0]
+  Walhalla.Storage -> D:\Develop\Own\VectorStore\Walhalla.Storage\bin\Debug\net9.0\Walhalla.Storage.dll
+  Walhalla.Storage.Blobs -> D:\Develop\Own\VectorStore\Walhalla.Storage.Blobs\bin\Debug\net9.0\Walhalla.Storage.Blobs.dll
+  Walhalla.VectorStore.Tests -> D:\Develop\Own\VectorStore\Walhalla.VectorStore.Tests\bin\Debug\net10.0\Walhalla.VectorStore.Tests.dll
+Testlauf für "D:\Develop\Own\VectorStore\Walhalla.VectorStore.Tests\bin\Debug\net10.0\Walhalla.VectorStore.Tests.dll" (.NETCoreApp,Version=v10.0)
+Insgesamt 1 Testdateien stimmten mit dem angegebenen Muster überein.
+D:\Develop\Own\VectorStore\Walhalla.VectorStore.Tests\bin\Debug\net10.0\Walhalla.VectorStore.Tests.dll
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.5)
+[xUnit.net 00:00:00.06]   Discovering: Walhalla.VectorStore.Tests
+[xUnit.net 00:00:00.09]   Discovered:  Walhalla.VectorStore.Tests
+[xUnit.net 00:00:00.11]   Starting:    Walhalla.VectorStore.Tests
+NodeCount: 1000
+EntryLayer: 1
+Layer 0: 1000 nodes, avg neighbors: 128,0, zero: 0
+Layer 1: 19 nodes, avg neighbors: 18,0, zero: 0
+HNSW returned 10 results
+Recall@10: 100,0 %
+HNSW results: 500(0,000), 701(0,593), 815(0,599), 995(0,603), 611(0,606), 358(0,616), 294(0,619), 720(0,620), 22(0,620), 709(0,621)
+Exact results: 500(0,000), 701(0,593), 815(0,599), 995(0,603), 611(0,606), 358(0,616), 294(0,619), 720(0,620), 22(0,620), 709(0,621)
+EntryPointIndex: 37, MaxLayer: 1
+EntryPoint ID: 38, Distance to query: 0,710
+Layer 2 Nodes and their distances to query:
+ID 77 Layer 1 neighbors: 341(0,660), 76(0,725), 986(0,663), 62(0,705), 296(0,705), 977(0,653), 177(0,725), 138(0,695), 644(0,734), 614(0,669), 77(0,633), 388(0,714), 69(0,705), 74(0,676), 374(0,683), 892(0,744), 721(0,641), 660(0,668)
+ID 77 Layer 0 neighbors (first 10): 111(0,678), 78(0,730), 593(0,701), 517(0,668), 633(0,660), 160(0,678), 876(0,714), 201(0,738), 459(0,718), 999(0,720) ...
+ID 500 (index 499) exists in graph: 500, distance to query: 0,000
+ID 500 Layer 0 neighbors (first 10): 701(0,593), 815(0,599), 995(0,603), 611(0,606), 294(0,619), 22(0,620), 861(0,621), 819(0,622), 37(0,623), 172(0,623) ...
+ID 501 (index 500) exists in graph: 501, distance to query: 0,676
+Reachable from ID 77: 1000 / 1000
+[xUnit.net 00:03:57.45]   Finished:    Walhalla.VectorStore.Tests
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.GraphStructure_AfterInsert_HasConnectedNeighbors [3 m 57 s]
+
+Der Testlauf war erfolgreich.
+Gesamtzahl Tests: 1
+     Bestanden: 1
+ Gesamtzeit: 3,9639 Minuten

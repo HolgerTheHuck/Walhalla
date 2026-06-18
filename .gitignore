@@ -1,0 +1,63 @@
+## .NET
+bin/
+obj/
+out/
+publish/
+*.user
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+*.nupkg
+
+## Visual Studio / VS Code
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+
+## Pakete
+packages/
+node_modules/
+
+## Test & Benchmarks
+TestResults/
+BenchmarkDotNet.Artifacts/
+
+## Logs
+*.log
+logs/
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Svelte UI
+VectorStore/Walhalla.VectorStore.UI/dist/
+VectorStore/Walhalla.VectorStore.UI/dist-ssr/
+VectorStore/Walhalla.VectorStore.UI/.svelte-kit/
+VectorStore/Walhalla.VectorStore.UI/*.local
+
+## Claude Code lokal
+.claude/
+
+## Test-Outputs
+tmp/
+*.trx
+*_tests.txt
+test_output.txt
+test_results.txt
+
+## Temporäre DB-Dateien
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.ods
+*.wal
+*.lock
+
+## JetBrains Rider
+*.sln.iml

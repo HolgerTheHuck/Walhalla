@@ -1,0 +1,209 @@
+﻿#nullable enable
+override WalhallaSql.EfCore.WalhallaSqlDbContextOptionsExtension.ApplyServices(Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> void
+override WalhallaSql.EfCore.WalhallaSqlDbContextOptionsExtension.Info.get -> Microsoft.EntityFrameworkCore.Infrastructure.DbContextOptionsExtensionInfo!
+override WalhallaSql.EfCore.WalhallaSqlDbContextOptionsExtension.Validate(Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptions! options) -> void
+override WalhallaSql.EfCore.WalhallaSqlEfCoreContext.Dispose() -> void
+override WalhallaSql.EfCore.WalhallaSqlEfCoreContext.DisposeAsync() -> System.Threading.Tasks.ValueTask
+override WalhallaSql.EfCore.WalhallaSqlEfCoreContext.SaveChanges(bool acceptAllChangesOnSuccess) -> int
+override WalhallaSql.EfCore.WalhallaSqlEfCoreContext.SaveChangesAsync(bool acceptAllChangesOnSuccess, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+static WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationScriptBuilder.BuildAddColumnSql(WalhallaSql.EfCore.Migrations.AddColumnOperation! operation) -> string!
+static WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationScriptBuilder.BuildAddForeignKeySql(WalhallaSql.EfCore.Migrations.AddForeignKeyOperation! operation) -> string!
+static WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationScriptBuilder.BuildColumnDefinitionSql(WalhallaSql.Sql.SqlColumnDefinition! column, bool includePrimaryKey, bool includeUnique) -> string!
+static WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationScriptBuilder.BuildCreateTableSql(WalhallaSql.Sql.SqlTableDefinition! table) -> string!
+static WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationScriptBuilder.BuildMigrationSql(WalhallaSql.EfCore.Migrations.MigrationOperation! operation) -> string!
+static WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationScriptBuilder.MapForeignKeyActionSql(WalhallaSql.Sql.SqlForeignKeyAction action) -> string!
+static WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.BuildEmbeddedPathMutexName(string! databasePath, string! databaseName, string! engineTypeName) -> string!
+static WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.BuildEmbeddedPathPreOpenMutexName(string! databasePath, string! databaseName, string! engineTypeName) -> string!
+static WalhallaSql.EfCore.WalhallaSqlDbContextOptionsBuilderExtensions.UseWalhallaSql(this Microsoft.EntityFrameworkCore.DbContextOptionsBuilder! optionsBuilder, System.Data.Common.DbConnection! connection, System.Action<WalhallaSql.EfCore.WalhallaSqlDbContextOptionsBuilder!>? WalhallaSqlOptionsAction = null) -> Microsoft.EntityFrameworkCore.DbContextOptionsBuilder!
+static WalhallaSql.EfCore.WalhallaSqlDbContextOptionsBuilderExtensions.UseWalhallaSql(this Microsoft.EntityFrameworkCore.DbContextOptionsBuilder! optionsBuilder, WalhallaSql.EfCore.WalhallaSqlEfCoreOptions! layeredOptions) -> Microsoft.EntityFrameworkCore.DbContextOptionsBuilder!
+static WalhallaSql.EfCore.WalhallaSqlDbContextOptionsBuilderExtensions.UseWalhallaSql<TContext>(this Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<TContext!>! optionsBuilder, System.Data.Common.DbConnection! connection, System.Action<WalhallaSql.EfCore.WalhallaSqlDbContextOptionsBuilder!>? WalhallaSqlOptionsAction = null) -> Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<TContext!>!
+static WalhallaSql.EfCore.WalhallaSqlDbContextOptionsBuilderExtensions.UseWalhallaSql<TContext>(this Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<TContext!>! optionsBuilder, WalhallaSql.EfCore.WalhallaSqlEfCoreOptions! layeredOptions) -> Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<TContext!>!
+static WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.ForEmbeddedPath(string! dataPath) -> WalhallaSql.EfCore.WalhallaSqlEfCoreOptions!
+static WalhallaSql.EfCore.WalhallaSqlServiceCollectionExtensions.AddEntityFrameworkWalhallaSql(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+virtual WalhallaSql.EfCore.WalhallaSqlEfCoreContext.OnSaveChangesCommandExecuted(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry! entry, WalhallaSql.AdoNet.SqlExecutionResult! result) -> void
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.Any() -> bool
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.AsSingleQuery() -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.AsSplitQuery() -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.Count() -> int
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.FirstOrDefault() -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>?
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.Include<TProperty>(System.Linq.Expressions.Expression<System.Func<TEntity!, TProperty>!>! navigation) -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.Include<TProperty>(System.Linq.Expressions.Expression<System.Func<TEntity!, TProperty>!>! navigation, System.Linq.Expressions.Expression<System.Func<TProperty, bool>!>! filter) -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.OrderBy(System.Linq.Expressions.Expression<System.Func<TEntity!, object!>!>! keySelector) -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.OrderByDescending(System.Linq.Expressions.Expression<System.Func<TEntity!, object!>!>! keySelector) -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.Select(System.Linq.Expressions.Expression<System.Func<TEntity!, object!>!>! selector) -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.Single() -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.SingleOrDefault() -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>?
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.Skip(int count) -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.Take(int count) -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.ThenBy(System.Linq.Expressions.Expression<System.Func<TEntity!, object!>!>! keySelector) -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.ThenByDescending(System.Linq.Expressions.Expression<System.Func<TEntity!, object!>!>! keySelector) -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.ThenInclude<TPreviousProperty, TProperty>(System.Linq.Expressions.Expression<System.Func<TPreviousProperty, TProperty>!>! navigation) -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.ToRows() -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>!
+WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity>.Where(System.Linq.Expressions.Expression<System.Func<TEntity!, bool>!>! predicate) -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.Migrations.AddColumnOperation
+WalhallaSql.EfCore.Migrations.AddColumnOperation.AddColumnOperation(string! CollectionName, WalhallaSql.Sql.SqlColumnDefinition! Column, string? DefaultValueLiteral) -> void
+WalhallaSql.EfCore.Migrations.AddColumnOperation.CollectionName.get -> string!
+WalhallaSql.EfCore.Migrations.AddColumnOperation.CollectionName.init -> void
+WalhallaSql.EfCore.Migrations.AddColumnOperation.Column.get -> WalhallaSql.Sql.SqlColumnDefinition!
+WalhallaSql.EfCore.Migrations.AddColumnOperation.Column.init -> void
+WalhallaSql.EfCore.Migrations.AddColumnOperation.DefaultValueLiteral.get -> string?
+WalhallaSql.EfCore.Migrations.AddColumnOperation.DefaultValueLiteral.init -> void
+WalhallaSql.EfCore.Migrations.AddForeignKeyOperation
+WalhallaSql.EfCore.Migrations.AddForeignKeyOperation.AddForeignKeyOperation(string! CollectionName, WalhallaSql.Sql.SqlForeignKeyDefinition! ForeignKey) -> void
+WalhallaSql.EfCore.Migrations.AddForeignKeyOperation.CollectionName.get -> string!
+WalhallaSql.EfCore.Migrations.AddForeignKeyOperation.CollectionName.init -> void
+WalhallaSql.EfCore.Migrations.AddForeignKeyOperation.ForeignKey.get -> WalhallaSql.Sql.SqlForeignKeyDefinition!
+WalhallaSql.EfCore.Migrations.AddForeignKeyOperation.ForeignKey.init -> void
+WalhallaSql.EfCore.Migrations.AlterColumnOperation
+WalhallaSql.EfCore.Migrations.AlterColumnOperation.AlterColumnOperation(string! CollectionName, WalhallaSql.Sql.SqlColumnDefinition! Column) -> void
+WalhallaSql.EfCore.Migrations.AlterColumnOperation.CollectionName.get -> string!
+WalhallaSql.EfCore.Migrations.AlterColumnOperation.CollectionName.init -> void
+WalhallaSql.EfCore.Migrations.AlterColumnOperation.Column.get -> WalhallaSql.Sql.SqlColumnDefinition!
+WalhallaSql.EfCore.Migrations.AlterColumnOperation.Column.init -> void
+WalhallaSql.EfCore.Migrations.CreateIndexOperation
+WalhallaSql.EfCore.Migrations.CreateIndexOperation.CollectionName.get -> string!
+WalhallaSql.EfCore.Migrations.CreateIndexOperation.CollectionName.init -> void
+WalhallaSql.EfCore.Migrations.CreateIndexOperation.CreateIndexOperation(string! CollectionName, WalhallaSql.Sql.SqlIndexDefinition! Index) -> void
+WalhallaSql.EfCore.Migrations.CreateIndexOperation.Index.get -> WalhallaSql.Sql.SqlIndexDefinition!
+WalhallaSql.EfCore.Migrations.CreateIndexOperation.Index.init -> void
+WalhallaSql.EfCore.Migrations.CreateTableOperation
+WalhallaSql.EfCore.Migrations.CreateTableOperation.CreateTableOperation(WalhallaSql.Sql.SqlTableDefinition! Table) -> void
+WalhallaSql.EfCore.Migrations.CreateTableOperation.Table.get -> WalhallaSql.Sql.SqlTableDefinition!
+WalhallaSql.EfCore.Migrations.CreateTableOperation.Table.init -> void
+WalhallaSql.EfCore.Migrations.DropColumnOperation
+WalhallaSql.EfCore.Migrations.DropColumnOperation.CollectionName.get -> string!
+WalhallaSql.EfCore.Migrations.DropColumnOperation.CollectionName.init -> void
+WalhallaSql.EfCore.Migrations.DropColumnOperation.ColumnName.get -> string!
+WalhallaSql.EfCore.Migrations.DropColumnOperation.ColumnName.init -> void
+WalhallaSql.EfCore.Migrations.DropColumnOperation.DropColumnOperation(string! CollectionName, string! ColumnName) -> void
+WalhallaSql.EfCore.Migrations.DropForeignKeyOperation
+WalhallaSql.EfCore.Migrations.DropForeignKeyOperation.CollectionName.get -> string!
+WalhallaSql.EfCore.Migrations.DropForeignKeyOperation.CollectionName.init -> void
+WalhallaSql.EfCore.Migrations.DropForeignKeyOperation.ConstraintName.get -> string!
+WalhallaSql.EfCore.Migrations.DropForeignKeyOperation.ConstraintName.init -> void
+WalhallaSql.EfCore.Migrations.DropForeignKeyOperation.DropForeignKeyOperation(string! CollectionName, string! ConstraintName) -> void
+WalhallaSql.EfCore.Migrations.DropIndexOperation
+WalhallaSql.EfCore.Migrations.DropIndexOperation.CollectionName.get -> string!
+WalhallaSql.EfCore.Migrations.DropIndexOperation.CollectionName.init -> void
+WalhallaSql.EfCore.Migrations.DropIndexOperation.DropIndexOperation(string! CollectionName, string! IndexName) -> void
+WalhallaSql.EfCore.Migrations.DropIndexOperation.IndexName.get -> string!
+WalhallaSql.EfCore.Migrations.DropIndexOperation.IndexName.init -> void
+WalhallaSql.EfCore.Migrations.DropTableOperation
+WalhallaSql.EfCore.Migrations.DropTableOperation.CollectionName.get -> string!
+WalhallaSql.EfCore.Migrations.DropTableOperation.CollectionName.init -> void
+WalhallaSql.EfCore.Migrations.DropTableOperation.DropTableOperation(string! CollectionName) -> void
+WalhallaSql.EfCore.Migrations.MigrationOperation
+WalhallaSql.EfCore.Migrations.RenameColumnOperation
+WalhallaSql.EfCore.Migrations.RenameColumnOperation.CollectionName.get -> string!
+WalhallaSql.EfCore.Migrations.RenameColumnOperation.CollectionName.init -> void
+WalhallaSql.EfCore.Migrations.RenameColumnOperation.NewColumnName.get -> string!
+WalhallaSql.EfCore.Migrations.RenameColumnOperation.NewColumnName.init -> void
+WalhallaSql.EfCore.Migrations.RenameColumnOperation.OldColumnName.get -> string!
+WalhallaSql.EfCore.Migrations.RenameColumnOperation.OldColumnName.init -> void
+WalhallaSql.EfCore.Migrations.RenameColumnOperation.RenameColumnOperation(string! CollectionName, string! OldColumnName, string! NewColumnName) -> void
+WalhallaSql.EfCore.Migrations.RenameTableOperation
+WalhallaSql.EfCore.Migrations.RenameTableOperation.CollectionName.get -> string!
+WalhallaSql.EfCore.Migrations.RenameTableOperation.CollectionName.init -> void
+WalhallaSql.EfCore.Migrations.RenameTableOperation.NewCollectionName.get -> string!
+WalhallaSql.EfCore.Migrations.RenameTableOperation.NewCollectionName.init -> void
+WalhallaSql.EfCore.Migrations.RenameTableOperation.RenameTableOperation(string! CollectionName, string! NewCollectionName) -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.Exists() -> bool
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.ExistsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.GetAppliedMigrations() -> System.Collections.Generic.IReadOnlyList<Microsoft.EntityFrameworkCore.Migrations.HistoryRow!>!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.GetAppliedMigrationsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Microsoft.EntityFrameworkCore.Migrations.HistoryRow!>!>!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.GetBeginIfExistsScript(string! migrationId) -> string!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.GetBeginIfNotExistsScript(string! migrationId) -> string!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.GetCreateIfNotExistsScript() -> string!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.GetCreateScript() -> string!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.GetDeleteScript(string! migrationId) -> string!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.GetEndIfScript() -> string!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.GetInsertScript(Microsoft.EntityFrameworkCore.Migrations.HistoryRow! row) -> string!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.WalhallaSqlHistoryRepository(Microsoft.EntityFrameworkCore.Infrastructure.ICurrentDbContext! currentDbContext) -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationHistoryEntry
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationHistoryEntry.AppliedAtUtc.get -> System.DateTime
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationHistoryEntry.AppliedAtUtc.init -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationHistoryEntry.MigrationId.get -> string!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationHistoryEntry.MigrationId.init -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationHistoryEntry.OperationCount.get -> int
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationHistoryEntry.OperationCount.init -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationHistoryEntry.WalhallaSqlMigrationHistoryEntry(string! MigrationId, System.DateTime AppliedAtUtc, int OperationCount) -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationPlan
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationPlan.HasChanges.get -> bool
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationPlan.Operations.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.EfCore.Migrations.MigrationOperation!>!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationPlan.Operations.init -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationPlan.WalhallaSqlMigrationPlan(System.Collections.Generic.IReadOnlyList<WalhallaSql.EfCore.Migrations.MigrationOperation!>! Operations) -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationResult
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationResult.AppliedAtUtc.get -> System.DateTime
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationResult.AppliedAtUtc.init -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationResult.AppliedOperations.get -> int
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationResult.AppliedOperations.init -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationResult.MigrationId.get -> string!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationResult.MigrationId.init -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationResult.WalhallaSqlMigrationResult(string! MigrationId, int AppliedOperations, System.DateTime AppliedAtUtc) -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationsAssembly
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationsAssembly.Assembly.get -> System.Reflection.Assembly!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationsAssembly.CreateMigration(System.Reflection.TypeInfo! migrationClass, string! activeProvider) -> Microsoft.EntityFrameworkCore.Migrations.Migration!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationsAssembly.FindMigrationId(string! nameOrId) -> string?
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationsAssembly.Migrations.get -> System.Collections.Generic.IReadOnlyDictionary<string!, System.Reflection.TypeInfo!>!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationsAssembly.ModelSnapshot.get -> Microsoft.EntityFrameworkCore.Infrastructure.ModelSnapshot?
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationsAssembly.WalhallaSqlMigrationsAssembly(Microsoft.EntityFrameworkCore.Infrastructure.ICurrentDbContext! currentDbContext) -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationScriptBuilder
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.ApplyPlan(string! migrationId, WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationPlan! plan) -> WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationResult!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.ApplyPlannedChanges(string! migrationId) -> WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationResult!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.ClearHistory() -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.GenerateCreateScript() -> string!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.GetDatabaseInfo() -> WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.GetHistory() -> System.Collections.Generic.IReadOnlyList<WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationHistoryEntry!>!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.PlanDownMigration(Microsoft.EntityFrameworkCore.Metadata.IModel! targetModel) -> WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationPlan!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.PlanDownMigrationToEmpty() -> WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationPlan!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.PlanModelChanges() -> WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationPlan!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.PlanModelChanges(Microsoft.EntityFrameworkCore.Metadata.IModel! fromModel, Microsoft.EntityFrameworkCore.Metadata.IModel! toModel) -> WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationPlan!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.RemoveHistoryEntries(System.Collections.Generic.IReadOnlyList<string!>! migrationIds) -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.RemoveHistoryEntriesAfter(string! migrationId) -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService.WalhallaSqlMigrationService(Microsoft.EntityFrameworkCore.DbContext! context, WalhallaSql.AdoNet.WalhallaSqlDbConnection! connection, WalhallaSql.EfCore.WalhallaSqlEfCoreOptions! options, Microsoft.Extensions.Logging.ILogger<WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService!>? logger = null) -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrator
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrator.GenerateScript(string? fromMigration = null, string? toMigration = null, Microsoft.EntityFrameworkCore.Migrations.MigrationsSqlGenerationOptions options = Microsoft.EntityFrameworkCore.Migrations.MigrationsSqlGenerationOptions.Default) -> string!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrator.Migrate(string? targetMigration = null) -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrator.MigrateAsync(string? targetMigration = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrator.WalhallaSqlMigrator(Microsoft.EntityFrameworkCore.Infrastructure.ICurrentDbContext! currentDbContext, Microsoft.EntityFrameworkCore.Migrations.IMigrationsAssembly! migrationsAssembly, Microsoft.Extensions.Logging.ILogger<WalhallaSql.EfCore.Migrations.WalhallaSqlMigrator!>? logger = null) -> void
+WalhallaSql.EfCore.WalhallaSqlDbContextOptionsBuilder
+WalhallaSql.EfCore.WalhallaSqlDbContextOptionsBuilder.WalhallaSqlDbContextOptionsBuilder(Microsoft.EntityFrameworkCore.DbContextOptionsBuilder! optionsBuilder) -> void
+WalhallaSql.EfCore.WalhallaSqlDbContextOptionsBuilderExtensions
+WalhallaSql.EfCore.WalhallaSqlDbContextOptionsExtension
+WalhallaSql.EfCore.WalhallaSqlDbContextOptionsExtension.LayeredOptions.get -> WalhallaSql.EfCore.WalhallaSqlEfCoreOptions?
+WalhallaSql.EfCore.WalhallaSqlDbContextOptionsExtension.WalhallaSqlDbContextOptionsExtension() -> void
+WalhallaSql.EfCore.WalhallaSqlDbContextOptionsExtension.WithExistingConnection(System.Data.Common.DbConnection! connection) -> WalhallaSql.EfCore.WalhallaSqlDbContextOptionsExtension!
+WalhallaSql.EfCore.WalhallaSqlDbContextOptionsExtension.WithLayeredOptions(WalhallaSql.EfCore.WalhallaSqlEfCoreOptions! layeredOptions) -> WalhallaSql.EfCore.WalhallaSqlDbContextOptionsExtension!
+WalhallaSql.EfCore.WalhallaSqlDesignTimeServices
+WalhallaSql.EfCore.WalhallaSqlDesignTimeServices.ConfigureDesignTimeServices(Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> void
+WalhallaSql.EfCore.WalhallaSqlDesignTimeServices.WalhallaSqlDesignTimeServices() -> void
+WalhallaSql.EfCore.WalhallaSqlEfCoreContext
+WalhallaSql.EfCore.WalhallaSqlEfCoreContext.ExecuteSql(string! sql) -> WalhallaSql.AdoNet.SqlExecutionResult!
+WalhallaSql.EfCore.WalhallaSqlEfCoreContext.GetDatabaseInfo() -> WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo!
+WalhallaSql.EfCore.WalhallaSqlEfCoreContext.Migrations.get -> WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationService!
+WalhallaSql.EfCore.WalhallaSqlEfCoreContext.Query<TEntity>(string! collectionName) -> WalhallaSql.EfCore.Linq.WalhallaSqlLinqQuery<TEntity!>!
+WalhallaSql.EfCore.WalhallaSqlEfCoreContext.WalhallaSqlEfCoreContext(Microsoft.EntityFrameworkCore.DbContextOptions! options) -> void
+WalhallaSql.EfCore.WalhallaSqlEfCoreContext.WalhallaSqlEfCoreContext(Microsoft.EntityFrameworkCore.DbContextOptions! options, WalhallaSql.EfCore.WalhallaSqlEfCoreOptions! layeredOptions) -> void
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.AutoRepairHistory.get -> bool
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.AutoRepairHistory.init -> void
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.CollectionNameResolver.get -> System.Func<Microsoft.EntityFrameworkCore.Metadata.IEntityType!, string!>?
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.CollectionNameResolver.init -> void
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.ConnectionString.get -> string?
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.DataPath.get -> string?
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.DataPath.init -> void
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.Engine.get -> WalhallaSql.WalhallaEngine?
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.MigrationLockStaleThreshold.get -> System.TimeSpan
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.MigrationLockStaleThreshold.init -> void
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.MigrationLockWaitTimeout.get -> System.TimeSpan
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.MigrationLockWaitTimeout.init -> void
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.ResolveConnectionString() -> string!
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.ResolveDataPath() -> string?
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.StrictMigrationGuardrails.get -> bool
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.StrictMigrationGuardrails.init -> void
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.WalhallaSqlEfCoreOptions(string! connectionString) -> void
+WalhallaSql.EfCore.WalhallaSqlEfCoreOptions.WalhallaSqlEfCoreOptions(WalhallaSql.WalhallaEngine! engine, string? connectionString = null) -> void
+WalhallaSql.EfCore.WalhallaSqlServiceCollectionExtensions

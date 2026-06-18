@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+option csharp_namespace = "Walhalla.VectorStore.Grpc";
+
+package walhalla;
+
+service VectorStore {
+  rpc CreateCollection (CreateCollectionRequest) returns (CollectionInfo);
+  rpc DeleteCollection (DeleteCollectionRequest) returns (Empty);
+  rpc ListCollections (Empty) returns (CollectionList);
+
+  rpc Upsert (UpsertRequest) returns (Empty);
+  rpc Get (GetRequest) returns (VectorEntry);
+  rpc Delete (DeleteRequest) returns (Empty);
+
+  rpc Search (SearchRequest) returns (SearchResponse);
+  rpc SearchExact (SearchRequest) returns (SearchResponse);
+  rpc SearchText (TextSearchRequest) returns (SearchResponse);
+  rpc SearchHybrid (HybridSearchRequest) returns (SearchResponse);
+}
+
+enum FullTextQueryMode {
+  FULL_TEXT_QUERY_MODE_ALL = 0;
+  FULL_TEXT_QUERY_MODE_ANY = 1;
+}
+
+message Empty {}
+
+message CreateCollectionRequest {
+  string name = 1;
+  int32 dimension = 2;
+  string metric = 3;
+  bool enable_hnsw = 4;
+  bool enable_payload_index = 5;
+}
+
+message DeleteCollectionRequest {
+  string name = 1;
+}
+
+message CollectionList {
+  repeated CollectionInfo collections = 1;
+}
+
+message CollectionInfo {
+  string name = 1;
+  int32 dimension = 2;
+  string metric = 3;
+  int32 count = 4;
+  bool hnsw_enabled = 5;
+}
+
+message UpsertRequest {
+  string collection = 1;
+  uint64 id = 2;
+  repeated float vector = 3;
+  string metadata_json = 4;
+}
+
+message GetRequest {
+  string collection = 1;
+  uint64 id = 2;
+}
+
+message DeleteRequest {
+  string collection = 1;
+  uint64 id = 2;
+}
+
+message VectorEntry {
+  uint64 id = 1;
+  int32 dimension = 2;
+  string metadata_json = 3;
+}
+
+message SearchRequest {
+  string collection = 1;
+  repeated float vector = 2;
+  int32 top_k = 3;
+  optional int32 ef = 4;
+  string filter_json = 5;
+}
+
+message TextSearchRequest {
+  string collection = 1;
+  string field = 2;
+  string query = 3;
+  int32 top_k = 4;
+  FullTextQueryMode mode = 5;
+  string not_query = 6;
+}
+
+message HybridSearchRequest {
+  string collection = 1;
+  string field = 2;
+  string text_query = 3;
+  repeated float vector = 4;
+  int32 top_k = 5;
+  int32 text_candidate_count = 6;
+  FullTextQueryMode mode = 7;
+  string not_query = 8;
+}
+
+message SearchResponse {
+  repeated SearchResult results = 1;
+}
+
+message SearchResult {
+  uint64 id = 1;
+  float score = 2;
+  string metadata_json = 3;
+}

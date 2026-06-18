@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>WalhallaSql.EfCore.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.9" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational.Specification.Tests" Version="10.0.9" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Specification.Tests" Version="10.0.9" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Ef8Specs basieren auf EF Core 8.0-Specification.Tests und müssen für EF Core 10 neu geschrieben werden. -->
+    <Compile Remove="Ef8Specs\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WalhallaSql\WalhallaSql.csproj" />
+    <ProjectReference Include="..\WalhallaSql.AdoNet\WalhallaSql.AdoNet.csproj" />
+    <ProjectReference Include="..\WalhallaSql.EfCore\WalhallaSql.EfCore.csproj" />
+    <ProjectReference Include="..\WalhallaSql.PgWire\WalhallaSql.PgWire.csproj" />
+  </ItemGroup>
+
+</Project>

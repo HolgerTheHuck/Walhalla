@@ -1,0 +1,78 @@
+Der Buildvorgang wurde am 04.06.2026 20:54:03 gestartet.
+Testlauf für "E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Tests\bin\Debug\net10.0\Walhalla.VectorStore.Tests.dll" (.NETCoreApp,Version=v10.0)
+Insgesamt 1 Testdateien stimmten mit dem angegebenen Muster überein.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.8)
+[xUnit.net 00:00:00.08]   Discovering: Walhalla.VectorStore.Tests
+[xUnit.net 00:00:00.15]   Discovered:  Walhalla.VectorStore.Tests
+[xUnit.net 00:00:00.17]   Starting:    Walhalla.VectorStore.Tests
+  Bestanden Walhalla.VectorStore.Tests.ClientTests.FullTextQueryMode_AllValuesHaveStringRepresentation [5 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.CaseInsensitive_Search [15 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.FullText_Phrase_Any_And_Not [16 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.IndexPayload_MatchLookup [16 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.SearchAny_NotQuery_ExcludesNegativeMatches [1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.SearchAny_MultiTerm_OR [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.Punctuation_IsSplit [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterParserTests.Parse_FullText_ModeAndNot [20 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.TermCount_TracksCorrectly [3 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.IndexDocument_And_Search_SingleTerm [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.IndexPayload_RangeLookup [4 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.EmptyQuery_ReturnsNull [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.Evaluate_MustNot [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.Search_PhraseQuery_MatchesOrderedTokensOnly [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.Search_TermNotFound_ReturnsNull [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.Search_MultiTerm_AND [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.DocumentCount_TracksCorrectly [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.ReindexDocument_UpdatesTerms [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.RemoveDocument_RemovesFromPostings [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_Dispose_DoesNotThrow [79 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentFullTextIndexTests.IndexDocument_Reindex_RemovesOldPersistedTerms [110 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentFullTextIndexTests.SearchScored_Reopen_SupportsPhraseAndNotQueries [19 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.CreateSnapshot_CapturesState [140 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentFullTextIndexTests.SearchAnyScored_Reopen_ReturnsUnionRanked [14 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.BuildFromCollection_RebuildsIndex [127 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.IndexPayload_OverwriteExisting_RemovesOldMatchAndRangeValues [2 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.Evaluate_DoubleMatch_ReturnsNull [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentFullTextIndexTests.IndexDocument_Reopen_SearchFindsPersistedPostings [9 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_CreateIterator_ReturnsCurrentStoreState [80 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.Evaluate_GeoRadius_ReturnsNull [5 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.IndexPayload_FullText_MultipleTerms [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.Evaluate_Should [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.IndexPayload_FullText_PhraseAnyAndNotLookup [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchExact_WithFullText_PreFilter [163 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.RemovePayload_ClearsFullTextAndGeo [1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.RemovePayload_RemovesFromIndex [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.Evaluate_MustAndMustNot [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.IndexPayload_FullTextLookup [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.EvaluateForSearch_GeoRadius_ReturnsBoundingBoxCandidates [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentFullTextIndexTests.SearchScored_Reopen_RanksByTermFrequency [11 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.Reopen_WithOutdatedPayloadIndexVersion_MarksManifestColdAndFallsBack [179 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentFullTextIndexTests.RemoveDocument_Reopen_RemovesPersistedPostings [19 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_CreateIterator_ReturnsCorrectData [33 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_CreateIterator_NonExisting_ThrowsArgumentException [10 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchHnsw_NoPayloadIndex_FallsBackToPostFilter [42 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_MultipleSnapshots_SeeSameData [25 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.BuildPayloadIndexAsync_RebuildsFromExistingData [30 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.BuildPayloadIndexAsync_PersistentCollection_ClearsStaleFullTextAndGeoState [70 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_Iterator_ReturnsAllData [30 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchHnsw_WithPayloadIndex_PreFilter [33 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_CollectionNames_ListsAllCollections [17 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchExact_WithPayloadIndex_PreFilter [30 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.SearchHybridAsync_ReranksTextCandidatesByVectorDistance [58 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.SearchTextAsync_Reopen_SupportsPhraseAnyAndNot [40 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.DeleteAfterReopen_RemovesPersistentFullTextAndGeo [53 ms]
+Der aktive Testlauf wurde abgebrochen. Grund: Der Testhostprozess ist abgestürzt.
+
+Testlauf abgebrochen.
+Gesamtzahl Tests: unbekannt
+     Bestanden: 55
+ Gesamtzeit: 10,7639 Minuten
+     1>Projekt "E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Tests\Walhalla.VectorStore.Tests.csproj" auf Knoten "1", VSTest Ziel(e).
+     1>_VSTestConsole:
+         MSB4181: Die Aufgabe "VSTestTask" hat FALSE zurückgegeben, jedoch keinen Fehler protokolliert.
+     1>Die Erstellung des Projekts "E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Tests\Walhalla.VectorStore.Tests.csproj" ist abgeschlossen, VSTest Ziel(e) -- FEHLER.
+
+Fehler beim Buildvorgang.
+    0 Warnung(en)
+    0 Fehler
+
+Verstrichene Zeit 00:10:46.41

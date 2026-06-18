@@ -1,0 +1,914 @@
+﻿#nullable enable
+static WalhallaSql.Sql.SqlIndexDefinition.ForProjection(string! indexName, string! projectionName, bool isUnique) -> WalhallaSql.Sql.SqlIndexDefinition!
+static WalhallaSql.WalhallaEngine.InMemory() -> WalhallaSql.WalhallaEngine!
+static WalhallaSql.WalhallaEngine.Open(string! rootPath) -> WalhallaSql.WalhallaEngine!
+static WalhallaSql.WalhallaResultSet.Affected(int count) -> WalhallaSql.WalhallaResultSet!
+static WalhallaSql.WalhallaResultSet.Empty(string![]! columnNames) -> WalhallaSql.WalhallaResultSet!
+static WalhallaSql.WalhallaResultSet.FromRows(System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>! rows) -> WalhallaSql.WalhallaResultSet!
+WalhallaSql.Core.MemTableMode
+WalhallaSql.Core.MemTableMode.Hybrid = 2 -> WalhallaSql.Core.MemTableMode
+WalhallaSql.Core.MemTableMode.InMemory = 0 -> WalhallaSql.Core.MemTableMode
+WalhallaSql.Core.MemTableMode.OnDiskBPlusTree = 1 -> WalhallaSql.Core.MemTableMode
+WalhallaSql.Core.OdsUpdateMode
+WalhallaSql.Core.OdsUpdateMode.CheckpointOnly = 0 -> WalhallaSql.Core.OdsUpdateMode
+WalhallaSql.Core.OdsUpdateMode.Immediate = 1 -> WalhallaSql.Core.OdsUpdateMode
+WalhallaSql.Core.StorageMode
+WalhallaSql.Core.StorageMode.BPlusTree = 0 -> WalhallaSql.Core.StorageMode
+WalhallaSql.Core.StorageMode.InMemory = 1 -> WalhallaSql.Core.StorageMode
+WalhallaSql.Core.StorageMode.WTree = 2 -> WalhallaSql.Core.StorageMode
+WalhallaSql.Core.TransactionMode
+WalhallaSql.Core.TransactionMode.Locking = 0 -> WalhallaSql.Core.TransactionMode
+WalhallaSql.Core.TransactionMode.Mvcc = 1 -> WalhallaSql.Core.TransactionMode
+WalhallaSql.Core.WalSyncMode
+WalhallaSql.Core.WalSyncMode.Fsync = 0 -> WalhallaSql.Core.WalSyncMode
+WalhallaSql.Core.WalSyncMode.None = 2 -> WalhallaSql.Core.WalSyncMode
+WalhallaSql.Core.WalSyncMode.WriteThrough = 1 -> WalhallaSql.Core.WalSyncMode
+WalhallaSql.Sql.SqlAggregateCall
+WalhallaSql.Sql.SqlAggregateCall.Argument.get -> string?
+WalhallaSql.Sql.SqlAggregateCall.Argument.init -> void
+WalhallaSql.Sql.SqlAggregateCall.Function.get -> WalhallaSql.Sql.SqlAggregateFunction
+WalhallaSql.Sql.SqlAggregateCall.Function.init -> void
+WalhallaSql.Sql.SqlAggregateCall.SqlAggregateCall(WalhallaSql.Sql.SqlAggregateFunction Function, string? Argument) -> void
+WalhallaSql.Sql.SqlAggregateFunction
+WalhallaSql.Sql.SqlAggregateFunction.Avg = 2 -> WalhallaSql.Sql.SqlAggregateFunction
+WalhallaSql.Sql.SqlAggregateFunction.Count = 0 -> WalhallaSql.Sql.SqlAggregateFunction
+WalhallaSql.Sql.SqlAggregateFunction.Max = 4 -> WalhallaSql.Sql.SqlAggregateFunction
+WalhallaSql.Sql.SqlAggregateFunction.Min = 3 -> WalhallaSql.Sql.SqlAggregateFunction
+WalhallaSql.Sql.SqlAggregateFunction.Sum = 1 -> WalhallaSql.Sql.SqlAggregateFunction
+WalhallaSql.Sql.SqlAlterActionType
+WalhallaSql.Sql.SqlAlterActionType.AddColumn = 0 -> WalhallaSql.Sql.SqlAlterActionType
+WalhallaSql.Sql.SqlAlterActionType.AddConstraint = 5 -> WalhallaSql.Sql.SqlAlterActionType
+WalhallaSql.Sql.SqlAlterActionType.AlterColumn = 2 -> WalhallaSql.Sql.SqlAlterActionType
+WalhallaSql.Sql.SqlAlterActionType.DropColumn = 1 -> WalhallaSql.Sql.SqlAlterActionType
+WalhallaSql.Sql.SqlAlterActionType.DropConstraint = 6 -> WalhallaSql.Sql.SqlAlterActionType
+WalhallaSql.Sql.SqlAlterActionType.RenameColumn = 3 -> WalhallaSql.Sql.SqlAlterActionType
+WalhallaSql.Sql.SqlAlterActionType.RenameTable = 4 -> WalhallaSql.Sql.SqlAlterActionType
+WalhallaSql.Sql.SqlAlterTableStatement
+WalhallaSql.Sql.SqlAlterTableStatement.Action.get -> WalhallaSql.Sql.SqlAlterActionType
+WalhallaSql.Sql.SqlAlterTableStatement.Action.init -> void
+WalhallaSql.Sql.SqlAlterTableStatement.ColumnName.get -> string?
+WalhallaSql.Sql.SqlAlterTableStatement.ColumnName.init -> void
+WalhallaSql.Sql.SqlAlterTableStatement.ConstraintName.get -> string?
+WalhallaSql.Sql.SqlAlterTableStatement.ConstraintName.init -> void
+WalhallaSql.Sql.SqlAlterTableStatement.CheckExpression.get -> string?
+WalhallaSql.Sql.SqlAlterTableStatement.CheckExpression.init -> void
+WalhallaSql.Sql.SqlAlterTableStatement.DefaultValue.get -> object?
+WalhallaSql.Sql.SqlAlterTableStatement.DefaultValue.init -> void
+WalhallaSql.Sql.SqlAlterTableStatement.NewColumnName.get -> string?
+WalhallaSql.Sql.SqlAlterTableStatement.NewColumnName.init -> void
+WalhallaSql.Sql.SqlAlterTableStatement.NewTableName.get -> string?
+WalhallaSql.Sql.SqlAlterTableStatement.NewTableName.init -> void
+WalhallaSql.Sql.SqlAlterTableStatement.NewType.get -> WalhallaSql.Sql.SqlScalarType?
+WalhallaSql.Sql.SqlAlterTableStatement.NewType.init -> void
+WalhallaSql.Sql.SqlAlterTableStatement.NotNull.get -> bool?
+WalhallaSql.Sql.SqlAlterTableStatement.NotNull.init -> void
+WalhallaSql.Sql.SqlAlterTableStatement.Collation.get -> string?
+WalhallaSql.Sql.SqlAlterTableStatement.Collation.init -> void
+WalhallaSql.Sql.SqlAlterTableStatement.SqlAlterTableStatement(string! TableName, WalhallaSql.Sql.SqlAlterActionType Action, string? ColumnName = null, WalhallaSql.Sql.SqlScalarType? NewType = null, object? DefaultValue = null, bool? NotNull = null, string? NewColumnName = null, string? NewTableName = null, string? ConstraintName = null, string? CheckExpression = null, string? Collation = null) -> void
+WalhallaSql.Sql.SqlAlterTableStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlAlterTableStatement.TableName.init -> void
+WalhallaSql.Sql.SqlBeginTransactionStatement
+WalhallaSql.Sql.SqlCheckConstraint
+WalhallaSql.Sql.SqlCheckConstraint.Expression.get -> string!
+WalhallaSql.Sql.SqlCheckConstraint.Expression.init -> void
+WalhallaSql.Sql.SqlCheckConstraint.Name.get -> string!
+WalhallaSql.Sql.SqlCheckConstraint.Name.init -> void
+WalhallaSql.Sql.SqlCheckConstraint.SqlCheckConstraint(string! Name, string! Expression) -> void
+WalhallaSql.Sql.SqlColumnDefinition
+WalhallaSql.Sql.SqlColumnDefinition.IsNullable.get -> bool
+WalhallaSql.Sql.SqlColumnDefinition.IsNullable.init -> void
+WalhallaSql.Sql.SqlColumnDefinition.IsPrimaryKey.get -> bool
+WalhallaSql.Sql.SqlColumnDefinition.IsPrimaryKey.init -> void
+WalhallaSql.Sql.SqlColumnDefinition.IsUnique.get -> bool
+WalhallaSql.Sql.SqlColumnDefinition.IsUnique.init -> void
+WalhallaSql.Sql.SqlColumnDefinition.Collation.get -> string?
+WalhallaSql.Sql.SqlColumnDefinition.Collation.init -> void
+WalhallaSql.Sql.SqlColumnDefinition.Name.get -> string!
+WalhallaSql.Sql.SqlColumnDefinition.Name.init -> void
+WalhallaSql.Sql.SqlColumnDefinition.SqlColumnDefinition(string! Name, WalhallaSql.Sql.SqlScalarType Type, bool IsNullable = true, bool IsPrimaryKey = false, bool IsUnique = false, string? Collation = null) -> void
+WalhallaSql.Sql.SqlColumnDefinition.Type.get -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlColumnDefinition.Type.init -> void
+WalhallaSql.Sql.SqlCommitStatement
+WalhallaSql.Sql.SqlCompoundSelectStatement
+WalhallaSql.Sql.SqlCompoundSelectStatement.Left.get -> WalhallaSql.Sql.SqlSelectStatement!
+WalhallaSql.Sql.SqlCompoundSelectStatement.Left.init -> void
+WalhallaSql.Sql.SqlCompoundSelectStatement.Operator.get -> WalhallaSql.Sql.SqlSetOperator
+WalhallaSql.Sql.SqlCompoundSelectStatement.Operator.init -> void
+WalhallaSql.Sql.SqlCompoundSelectStatement.Right.get -> WalhallaSql.Sql.SqlSelectStatement!
+WalhallaSql.Sql.SqlCompoundSelectStatement.Right.init -> void
+WalhallaSql.Sql.SqlCompoundSelectStatement.SqlCompoundSelectStatement(WalhallaSql.Sql.SqlSelectStatement! Left, WalhallaSql.Sql.SqlSetOperator Operator, WalhallaSql.Sql.SqlSelectStatement! Right) -> void
+WalhallaSql.Sql.SqlConflictAction
+WalhallaSql.Sql.SqlConflictAction.DoNothing = 0 -> WalhallaSql.Sql.SqlConflictAction
+WalhallaSql.Sql.SqlConflictAction.DoUpdate = 1 -> WalhallaSql.Sql.SqlConflictAction
+WalhallaSql.Sql.SqlConflictTarget
+WalhallaSql.Sql.SqlConflictTarget.ColumnNames.get -> System.Collections.Generic.IReadOnlyList<string!>?
+WalhallaSql.Sql.SqlConflictTarget.ColumnNames.init -> void
+WalhallaSql.Sql.SqlConflictTarget.ConstraintName.get -> string?
+WalhallaSql.Sql.SqlConflictTarget.ConstraintName.init -> void
+WalhallaSql.Sql.SqlConflictTarget.SqlConflictTarget(System.Collections.Generic.IReadOnlyList<string!>? ColumnNames, string? ConstraintName) -> void
+WalhallaSql.Sql.SqlCreateIndexStatement
+WalhallaSql.Sql.SqlCreateIndexStatement.ColumnNames.get -> System.Collections.Generic.IReadOnlyList<string!>!
+WalhallaSql.Sql.SqlCreateIndexStatement.ColumnNames.init -> void
+WalhallaSql.Sql.SqlCreateIndexStatement.IndexName.get -> string!
+WalhallaSql.Sql.SqlCreateIndexStatement.IndexName.init -> void
+WalhallaSql.Sql.SqlCreateIndexStatement.IndexType.get -> WalhallaSql.Sql.SqlIndexType
+WalhallaSql.Sql.SqlCreateIndexStatement.IndexType.init -> void
+WalhallaSql.Sql.SqlCreateIndexStatement.IsUnique.get -> bool
+WalhallaSql.Sql.SqlCreateIndexStatement.IsUnique.init -> void
+WalhallaSql.Sql.SqlCreateIndexStatement.SqlCreateIndexStatement(string! IndexName, string! TableName, System.Collections.Generic.IReadOnlyList<string!>! ColumnNames, bool IsUnique, WalhallaSql.Sql.SqlIndexType IndexType = WalhallaSql.Sql.SqlIndexType.BTree) -> void
+WalhallaSql.Sql.SqlCreateIndexStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlCreateIndexStatement.TableName.init -> void
+WalhallaSql.Sql.SqlCreateProcedureStatement
+WalhallaSql.Sql.SqlCreateProcedureStatement.Body.get -> string!
+WalhallaSql.Sql.SqlCreateProcedureStatement.Body.init -> void
+WalhallaSql.Sql.SqlCreateProcedureStatement.Language.get -> string!
+WalhallaSql.Sql.SqlCreateProcedureStatement.Language.init -> void
+WalhallaSql.Sql.SqlCreateProcedureStatement.OrReplace.get -> bool
+WalhallaSql.Sql.SqlCreateProcedureStatement.OrReplace.init -> void
+WalhallaSql.Sql.SqlCreateProcedureStatement.Parameters.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlProcedureParameter!>!
+WalhallaSql.Sql.SqlCreateProcedureStatement.Parameters.init -> void
+WalhallaSql.Sql.SqlCreateProcedureStatement.ProcedureName.get -> string!
+WalhallaSql.Sql.SqlCreateProcedureStatement.ProcedureName.init -> void
+WalhallaSql.Sql.SqlCreateProcedureStatement.SqlCreateProcedureStatement(string! ProcedureName, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlProcedureParameter!>! Parameters, string! Body, bool OrReplace = false, string! Language = "sql") -> void
+WalhallaSql.Sql.SqlCreateTableStatement
+WalhallaSql.Sql.SqlCreateTableStatement.Definition.get -> WalhallaSql.Sql.SqlTableDefinition!
+WalhallaSql.Sql.SqlCreateTableStatement.Definition.init -> void
+WalhallaSql.Sql.SqlCreateTableStatement.SqlCreateTableStatement(WalhallaSql.Sql.SqlTableDefinition! Definition) -> void
+WalhallaSql.Sql.SqlCreateTriggerStatement
+WalhallaSql.Sql.SqlCreateTriggerStatement.Body.get -> string!
+WalhallaSql.Sql.SqlCreateTriggerStatement.Body.init -> void
+WalhallaSql.Sql.SqlCreateTriggerStatement.Event.get -> WalhallaSql.Sql.SqlTriggerEvent
+WalhallaSql.Sql.SqlCreateTriggerStatement.Event.init -> void
+WalhallaSql.Sql.SqlCreateTriggerStatement.OrReplace.get -> bool
+WalhallaSql.Sql.SqlCreateTriggerStatement.OrReplace.init -> void
+WalhallaSql.Sql.SqlCreateTriggerStatement.SqlCreateTriggerStatement(string! TriggerName, string! TableName, WalhallaSql.Sql.SqlTriggerEvent Event, WalhallaSql.Sql.SqlTriggerTiming Timing = WalhallaSql.Sql.SqlTriggerTiming.After, string! Body = "", bool OrReplace = false) -> void
+WalhallaSql.Sql.SqlCreateTriggerStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlCreateTriggerStatement.TableName.init -> void
+WalhallaSql.Sql.SqlCreateTriggerStatement.Timing.get -> WalhallaSql.Sql.SqlTriggerTiming
+WalhallaSql.Sql.SqlCreateTriggerStatement.Timing.init -> void
+WalhallaSql.Sql.SqlCreateTriggerStatement.TriggerName.get -> string!
+WalhallaSql.Sql.SqlCreateTriggerStatement.TriggerName.init -> void
+WalhallaSql.Sql.SqlCreateViewStatement
+WalhallaSql.Sql.SqlCreateViewStatement.SelectStatement.get -> WalhallaSql.Sql.SqlSelectStatement!
+WalhallaSql.Sql.SqlCreateViewStatement.SelectStatement.init -> void
+WalhallaSql.Sql.SqlCreateViewStatement.SqlCreateViewStatement(string! ViewName, WalhallaSql.Sql.SqlSelectStatement! SelectStatement) -> void
+WalhallaSql.Sql.SqlCreateViewStatement.ViewName.get -> string!
+WalhallaSql.Sql.SqlCreateViewStatement.ViewName.init -> void
+WalhallaSql.Sql.SqlCteDefinition
+WalhallaSql.Sql.SqlCteDefinition.Body.get -> WalhallaSql.Sql.SqlStatement!
+WalhallaSql.Sql.SqlCteDefinition.Body.init -> void
+WalhallaSql.Sql.SqlCteDefinition.Name.get -> string!
+WalhallaSql.Sql.SqlCteDefinition.Name.init -> void
+WalhallaSql.Sql.SqlCteDefinition.SqlCteDefinition(string! Name, WalhallaSql.Sql.SqlStatement! Body) -> void
+WalhallaSql.Sql.SqlDeleteStatement
+WalhallaSql.Sql.SqlDeleteStatement.Parameters.get -> System.Collections.Generic.IReadOnlyList<string!>?
+WalhallaSql.Sql.SqlDeleteStatement.Parameters.init -> void
+WalhallaSql.Sql.SqlDeleteStatement.SqlDeleteStatement(string! TableName, WalhallaSql.Sql.SqlWhereExpression? Where, System.Collections.Generic.IReadOnlyList<string!>? Parameters = null) -> void
+WalhallaSql.Sql.SqlDeleteStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlDeleteStatement.TableName.init -> void
+WalhallaSql.Sql.SqlDeleteStatement.Where.get -> WalhallaSql.Sql.SqlWhereExpression?
+WalhallaSql.Sql.SqlDeleteStatement.Where.init -> void
+WalhallaSql.Sql.SqlDescribeStatement
+WalhallaSql.Sql.SqlDescribeStatement.SqlDescribeStatement(string! TableName) -> void
+WalhallaSql.Sql.SqlDescribeStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlDescribeStatement.TableName.init -> void
+WalhallaSql.Sql.SqlSetTransactionStatement
+WalhallaSql.Sql.SqlSetTransactionStatement.IsolationLevelName.get -> string!
+WalhallaSql.Sql.SqlSetTransactionStatement.IsolationLevelName.init -> void
+WalhallaSql.Sql.SqlSetTransactionStatement.SqlSetTransactionStatement(string! IsolationLevelName) -> void
+WalhallaSql.Sql.SqlSetTransactionModeStatement
+WalhallaSql.Sql.SqlSetTransactionModeStatement.ModeName.get -> string!
+WalhallaSql.Sql.SqlSetTransactionModeStatement.ModeName.init -> void
+WalhallaSql.Sql.SqlSetTransactionModeStatement.SqlSetTransactionModeStatement(string! ModeName) -> void
+WalhallaSql.Sql.SqlVacuumStatement
+WalhallaSql.Sql.SqlVacuumStatement.TableName.get -> string?
+WalhallaSql.Sql.SqlVacuumStatement.TableName.init -> void
+WalhallaSql.Sql.SqlVacuumStatement.SqlVacuumStatement(string? TableName) -> void
+WalhallaSql.WalhallaEngine.Vacuum(string? tableName = null) -> int
+WalhallaSql.Sql.SqlAnalyzeStatement
+WalhallaSql.Sql.SqlAnalyzeStatement.TableName.get -> string?
+WalhallaSql.Sql.SqlAnalyzeStatement.TableName.init -> void
+WalhallaSql.Sql.SqlAnalyzeStatement.SqlAnalyzeStatement(string? TableName) -> void
+WalhallaSql.Sql.SqlDropIndexStatement
+WalhallaSql.Sql.SqlDropIndexStatement.IndexName.get -> string!
+WalhallaSql.Sql.SqlDropIndexStatement.IndexName.init -> void
+WalhallaSql.Sql.SqlDropIndexStatement.SqlDropIndexStatement(string! IndexName, string! TableName) -> void
+WalhallaSql.Sql.SqlDropIndexStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlDropIndexStatement.TableName.init -> void
+WalhallaSql.Sql.SqlDropProcedureStatement
+WalhallaSql.Sql.SqlDropProcedureStatement.IfExists.get -> bool
+WalhallaSql.Sql.SqlDropProcedureStatement.IfExists.init -> void
+WalhallaSql.Sql.SqlDropProcedureStatement.ProcedureName.get -> string!
+WalhallaSql.Sql.SqlDropProcedureStatement.ProcedureName.init -> void
+WalhallaSql.Sql.SqlDropProcedureStatement.SqlDropProcedureStatement(string! ProcedureName, bool IfExists = false) -> void
+WalhallaSql.Sql.SqlDropTableStatement
+WalhallaSql.Sql.SqlDropTableStatement.SqlDropTableStatement(string! TableName) -> void
+WalhallaSql.Sql.SqlDropTableStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlDropTableStatement.TableName.init -> void
+WalhallaSql.Sql.SqlDropTriggerStatement
+WalhallaSql.Sql.SqlDropTriggerStatement.IfExists.get -> bool
+WalhallaSql.Sql.SqlDropTriggerStatement.IfExists.init -> void
+WalhallaSql.Sql.SqlDropTriggerStatement.SqlDropTriggerStatement(string! TriggerName, bool IfExists = false) -> void
+WalhallaSql.Sql.SqlDropTriggerStatement.TriggerName.get -> string!
+WalhallaSql.Sql.SqlDropTriggerStatement.TriggerName.init -> void
+WalhallaSql.Sql.SqlDropViewStatement
+WalhallaSql.Sql.SqlDropViewStatement.SqlDropViewStatement(string! ViewName) -> void
+WalhallaSql.Sql.SqlDropViewStatement.ViewName.get -> string!
+WalhallaSql.Sql.SqlDropViewStatement.ViewName.init -> void
+WalhallaSql.Sql.SqlExecArgument
+WalhallaSql.Sql.SqlExecArgument.ParameterName.get -> string?
+WalhallaSql.Sql.SqlExecArgument.ParameterName.init -> void
+WalhallaSql.Sql.SqlExecArgument.SqlExecArgument(string? ParameterName, string! ValueExpression) -> void
+WalhallaSql.Sql.SqlExecArgument.ValueExpression.get -> string!
+WalhallaSql.Sql.SqlExecArgument.ValueExpression.init -> void
+WalhallaSql.Sql.SqlExecStatement
+WalhallaSql.Sql.SqlExecStatement.Arguments.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlExecArgument!>!
+WalhallaSql.Sql.SqlExecStatement.Arguments.init -> void
+WalhallaSql.Sql.SqlExecStatement.ProcedureName.get -> string!
+WalhallaSql.Sql.SqlExecStatement.ProcedureName.init -> void
+WalhallaSql.Sql.SqlExecStatement.SqlExecStatement(string! ProcedureName, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlExecArgument!>! Arguments) -> void
+WalhallaSql.Sql.SqlExplainStatement
+WalhallaSql.Sql.SqlExplainStatement.SelectSql.get -> string!
+WalhallaSql.Sql.SqlExplainStatement.SelectSql.init -> void
+WalhallaSql.Sql.SqlExplainStatement.SqlExplainStatement(string! SelectSql) -> void
+WalhallaSql.Sql.SqlForeignKeyAction
+WalhallaSql.Sql.SqlForeignKeyAction.Cascade = 1 -> WalhallaSql.Sql.SqlForeignKeyAction
+WalhallaSql.Sql.SqlForeignKeyAction.Restrict = 0 -> WalhallaSql.Sql.SqlForeignKeyAction
+WalhallaSql.Sql.SqlForeignKeyAction.SetNull = 2 -> WalhallaSql.Sql.SqlForeignKeyAction
+WalhallaSql.Sql.SqlForeignKeyDefinition
+WalhallaSql.Sql.SqlForeignKeyDefinition.ColumnNames.get -> System.Collections.Generic.IReadOnlyList<string!>!
+WalhallaSql.Sql.SqlForeignKeyDefinition.ColumnNames.init -> void
+WalhallaSql.Sql.SqlForeignKeyDefinition.ConstraintName.get -> string!
+WalhallaSql.Sql.SqlForeignKeyDefinition.ConstraintName.init -> void
+WalhallaSql.Sql.SqlForeignKeyDefinition.OnDelete.get -> WalhallaSql.Sql.SqlForeignKeyAction
+WalhallaSql.Sql.SqlForeignKeyDefinition.OnDelete.init -> void
+WalhallaSql.Sql.SqlForeignKeyDefinition.OnUpdate.get -> WalhallaSql.Sql.SqlForeignKeyAction
+WalhallaSql.Sql.SqlForeignKeyDefinition.OnUpdate.init -> void
+WalhallaSql.Sql.SqlForeignKeyDefinition.ReferencedCollection.get -> string!
+WalhallaSql.Sql.SqlForeignKeyDefinition.ReferencedCollection.init -> void
+WalhallaSql.Sql.SqlForeignKeyDefinition.ReferencedColumns.get -> System.Collections.Generic.IReadOnlyList<string!>!
+WalhallaSql.Sql.SqlForeignKeyDefinition.ReferencedColumns.init -> void
+WalhallaSql.Sql.SqlForeignKeyDefinition.SqlForeignKeyDefinition() -> void
+WalhallaSql.Sql.SqlForeignKeyDefinition.SqlForeignKeyDefinition(string! constraintName, string! columnName, string! referencedCollection, string! referencedColumn, WalhallaSql.Sql.SqlForeignKeyAction onDelete = WalhallaSql.Sql.SqlForeignKeyAction.Restrict, WalhallaSql.Sql.SqlForeignKeyAction onUpdate = WalhallaSql.Sql.SqlForeignKeyAction.Restrict) -> void
+WalhallaSql.Sql.SqlForeignKeyDefinition.SqlForeignKeyDefinition(string! constraintName, System.Collections.Generic.IReadOnlyList<string!>! columnNames, string! referencedCollection, System.Collections.Generic.IReadOnlyList<string!>! referencedColumns, WalhallaSql.Sql.SqlForeignKeyAction onDelete = WalhallaSql.Sql.SqlForeignKeyAction.Restrict, WalhallaSql.Sql.SqlForeignKeyAction onUpdate = WalhallaSql.Sql.SqlForeignKeyAction.Restrict) -> void
+WalhallaSql.Sql.SqlJsonPathKind
+WalhallaSql.Sql.SqlJsonPathKind.Member = 0 -> WalhallaSql.Sql.SqlJsonPathKind
+WalhallaSql.Sql.SqlJsonPathKind.Path = 1 -> WalhallaSql.Sql.SqlJsonPathKind
+WalhallaSql.Sql.SqlIndexDefinition
+WalhallaSql.Sql.SqlIndexDefinition.ColumnName.get -> string!
+WalhallaSql.Sql.SqlIndexDefinition.ColumnNames.get -> System.Collections.Generic.IReadOnlyList<string!>!
+WalhallaSql.Sql.SqlIndexDefinition.ColumnNames.init -> void
+WalhallaSql.Sql.SqlIndexDefinition.IndexName.get -> string!
+WalhallaSql.Sql.SqlIndexDefinition.IndexName.init -> void
+WalhallaSql.Sql.SqlIndexDefinition.IndexType.get -> WalhallaSql.Sql.SqlIndexType
+WalhallaSql.Sql.SqlIndexDefinition.IndexType.init -> void
+WalhallaSql.Sql.SqlIndexDefinition.IsInternal.get -> bool
+WalhallaSql.Sql.SqlIndexDefinition.IsInternal.init -> void
+WalhallaSql.Sql.SqlIndexDefinition.IsUnique.get -> bool
+WalhallaSql.Sql.SqlIndexDefinition.IsUnique.init -> void
+WalhallaSql.Sql.SqlIndexDefinition.SqlIndexDefinition() -> void
+WalhallaSql.Sql.SqlIndexDefinition.SqlIndexDefinition(string! indexName, string! columnName, bool isUnique) -> void
+WalhallaSql.Sql.SqlIndexDefinition.SqlIndexDefinition(string! indexName, System.Collections.Generic.IReadOnlyList<string!>! columnNames, bool isUnique) -> void
+WalhallaSql.Sql.SqlIndexDefinition.StorageFormatVersion.get -> int
+WalhallaSql.Sql.SqlIndexDefinition.StorageFormatVersion.init -> void
+WalhallaSql.Sql.SqlIndexDefinition.StringNormalization.get -> WalhallaSql.Sql.SqlStringIndexNormalizationKind
+WalhallaSql.Sql.SqlIndexDefinition.StringNormalization.init -> void
+WalhallaSql.Sql.SqlIndexDefinition.TargetProjectionName.get -> string?
+WalhallaSql.Sql.SqlIndexDefinition.TargetProjectionName.init -> void
+WalhallaSql.Sql.SqlIndexDefinition.TargetsProjection.get -> bool
+WalhallaSql.Sql.SqlInsertSelectStatement
+WalhallaSql.Sql.SqlInsertSelectStatement.Columns.get -> System.Collections.Generic.IReadOnlyList<string!>!
+WalhallaSql.Sql.SqlInsertSelectStatement.Columns.init -> void
+WalhallaSql.Sql.SqlInsertSelectStatement.SelectStatement.get -> WalhallaSql.Sql.SqlSelectStatement!
+WalhallaSql.Sql.SqlInsertSelectStatement.SelectStatement.init -> void
+WalhallaSql.Sql.SqlInsertSelectStatement.SqlInsertSelectStatement(string! TableName, System.Collections.Generic.IReadOnlyList<string!>! Columns, WalhallaSql.Sql.SqlSelectStatement! SelectStatement, WalhallaSql.Sql.SqlOnConflictClause? OnConflict = null) -> void
+WalhallaSql.Sql.SqlInsertSelectStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlInsertSelectStatement.TableName.init -> void
+WalhallaSql.Sql.SqlInsertSelectStatement.OnConflict.get -> WalhallaSql.Sql.SqlOnConflictClause?
+WalhallaSql.Sql.SqlInsertSelectStatement.OnConflict.init -> void
+WalhallaSql.Sql.SqlInsertStatement
+WalhallaSql.Sql.SqlInsertStatement.Columns.get -> System.Collections.Generic.IReadOnlyList<string!>!
+WalhallaSql.Sql.SqlInsertStatement.Columns.init -> void
+WalhallaSql.Sql.SqlInsertStatement.SqlInsertStatement(string! TableName, System.Collections.Generic.IReadOnlyList<string!>! Columns, System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyList<string!>!>! ValueRows, WalhallaSql.Sql.SqlOnConflictClause? OnConflict = null) -> void
+WalhallaSql.Sql.SqlInsertStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlInsertStatement.TableName.init -> void
+WalhallaSql.Sql.SqlInsertStatement.ValueRows.get -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyList<string!>!>!
+WalhallaSql.Sql.SqlInsertStatement.ValueRows.init -> void
+WalhallaSql.Sql.SqlInsertStatement.OnConflict.get -> WalhallaSql.Sql.SqlOnConflictClause?
+WalhallaSql.Sql.SqlInsertStatement.OnConflict.init -> void
+WalhallaSql.Sql.SqlJoinClause
+WalhallaSql.Sql.SqlJoinClause.Alias.get -> string?
+WalhallaSql.Sql.SqlJoinClause.Alias.init -> void
+WalhallaSql.Sql.SqlJoinClause.Kind.get -> WalhallaSql.Sql.SqlJoinKind
+WalhallaSql.Sql.SqlJoinClause.Kind.init -> void
+WalhallaSql.Sql.SqlJoinClause.OnPredicate.get -> WalhallaSql.Sql.SqlWhereExpression?
+WalhallaSql.Sql.SqlJoinClause.OnPredicate.init -> void
+WalhallaSql.Sql.SqlJoinClause.DerivedTable.get -> WalhallaSql.Sql.SqlSelectStatement?
+WalhallaSql.Sql.SqlJoinClause.DerivedTable.init -> void
+WalhallaSql.Sql.SqlJoinClause.SqlJoinClause(WalhallaSql.Sql.SqlJoinKind Kind, string! TableName, string? Alias, WalhallaSql.Sql.SqlWhereExpression? OnPredicate, WalhallaSql.Sql.SqlSelectStatement? DerivedTable = null) -> void
+WalhallaSql.Sql.SqlJoinClause.TableName.get -> string!
+WalhallaSql.Sql.SqlJoinClause.TableName.init -> void
+WalhallaSql.Sql.SqlJoinKind
+WalhallaSql.Sql.SqlJoinKind.Cross = 3 -> WalhallaSql.Sql.SqlJoinKind
+WalhallaSql.Sql.SqlJoinKind.Inner = 0 -> WalhallaSql.Sql.SqlJoinKind
+WalhallaSql.Sql.SqlJoinKind.Left = 1 -> WalhallaSql.Sql.SqlJoinKind
+WalhallaSql.Sql.SqlJoinKind.Right = 2 -> WalhallaSql.Sql.SqlJoinKind
+WalhallaSql.Sql.SqlMergeStatement
+WalhallaSql.Sql.SqlMergeStatement.InsertColumns.get -> System.Collections.Generic.IReadOnlyList<string!>?
+WalhallaSql.Sql.SqlMergeStatement.InsertColumns.init -> void
+WalhallaSql.Sql.SqlMergeStatement.OnPredicate.get -> WalhallaSql.Sql.SqlWhereExpression!
+WalhallaSql.Sql.SqlMergeStatement.OnPredicate.init -> void
+WalhallaSql.Sql.SqlMergeStatement.SourceAlias.get -> string!
+WalhallaSql.Sql.SqlMergeStatement.SourceAlias.init -> void
+WalhallaSql.Sql.SqlMergeStatement.SourceTable.get -> string!
+WalhallaSql.Sql.SqlMergeStatement.SourceTable.init -> void
+WalhallaSql.Sql.SqlMergeStatement.SqlMergeStatement(string! TargetTable, string! SourceTable, string! SourceAlias, WalhallaSql.Sql.SqlWhereExpression! OnPredicate, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? UpdateAssignments, System.Collections.Generic.IReadOnlyList<string!>? InsertColumns) -> void
+WalhallaSql.Sql.SqlMergeStatement.TargetTable.get -> string!
+WalhallaSql.Sql.SqlMergeStatement.TargetTable.init -> void
+WalhallaSql.Sql.SqlMergeStatement.UpdateAssignments.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+WalhallaSql.Sql.SqlMergeStatement.UpdateAssignments.init -> void
+WalhallaSql.Sql.SqlOnConflictClause
+WalhallaSql.Sql.SqlOnConflictClause.Action.get -> WalhallaSql.Sql.SqlConflictAction
+WalhallaSql.Sql.SqlOnConflictClause.Action.init -> void
+WalhallaSql.Sql.SqlOnConflictClause.SqlOnConflictClause(WalhallaSql.Sql.SqlConflictTarget? Target, WalhallaSql.Sql.SqlConflictAction Action, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? UpdateAssignments, WalhallaSql.Sql.SqlWhereExpression? Where) -> void
+WalhallaSql.Sql.SqlOnConflictClause.Target.get -> WalhallaSql.Sql.SqlConflictTarget?
+WalhallaSql.Sql.SqlOnConflictClause.Target.init -> void
+WalhallaSql.Sql.SqlOnConflictClause.UpdateAssignments.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+WalhallaSql.Sql.SqlOnConflictClause.UpdateAssignments.init -> void
+WalhallaSql.Sql.SqlOnConflictClause.Where.get -> WalhallaSql.Sql.SqlWhereExpression?
+WalhallaSql.Sql.SqlOnConflictClause.Where.init -> void
+WalhallaSql.Sql.SqlOrderByColumn
+WalhallaSql.Sql.SqlOrderByColumn.ColumnName.get -> string!
+WalhallaSql.Sql.SqlOrderByColumn.ColumnName.init -> void
+WalhallaSql.Sql.SqlOrderByColumn.Descending.get -> bool
+WalhallaSql.Sql.SqlOrderByColumn.Descending.init -> void
+WalhallaSql.Sql.SqlOrderByColumn.Collation.get -> string?
+WalhallaSql.Sql.SqlOrderByColumn.Collation.init -> void
+WalhallaSql.Sql.SqlOrderByColumn.SqlOrderByColumn(string! ColumnName, bool Descending = false, string? Collation = null) -> void
+WalhallaSql.Sql.SqlProcedureParameter
+WalhallaSql.Sql.SqlProcedureParameter.DefaultValue.get -> object?
+WalhallaSql.Sql.SqlProcedureParameter.DefaultValue.init -> void
+WalhallaSql.Sql.SqlProcedureParameter.IsNullable.get -> bool
+WalhallaSql.Sql.SqlProcedureParameter.IsNullable.init -> void
+WalhallaSql.Sql.SqlProcedureParameter.IsOutput.get -> bool
+WalhallaSql.Sql.SqlProcedureParameter.IsOutput.init -> void
+WalhallaSql.Sql.SqlProcedureParameter.Name.get -> string!
+WalhallaSql.Sql.SqlProcedureParameter.Name.init -> void
+WalhallaSql.Sql.SqlProcedureParameter.SqlProcedureParameter(string! Name, WalhallaSql.Sql.SqlScalarType Type, bool IsOutput = false, bool IsNullable = true, object? DefaultValue = null) -> void
+WalhallaSql.Sql.SqlProcedureParameter.Type.get -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlProcedureParameter.Type.init -> void
+WalhallaSql.Sql.SqlProjectionDefinition
+WalhallaSql.Sql.SqlProjectionDefinition.MaterializationMode.get -> WalhallaSql.Sql.SqlProjectionMaterializationMode
+WalhallaSql.Sql.SqlProjectionDefinition.MaterializationMode.init -> void
+WalhallaSql.Sql.SqlProjectionDefinition.PathSegments.get -> System.Collections.Generic.IReadOnlyList<string!>!
+WalhallaSql.Sql.SqlProjectionDefinition.PathSegments.init -> void
+WalhallaSql.Sql.SqlProjectionDefinition.ProjectionName.get -> string!
+WalhallaSql.Sql.SqlProjectionDefinition.ProjectionName.init -> void
+WalhallaSql.Sql.SqlProjectionDefinition.ResultType.get -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlProjectionDefinition.ResultType.init -> void
+WalhallaSql.Sql.SqlProjectionDefinition.SourceColumnName.get -> string!
+WalhallaSql.Sql.SqlProjectionDefinition.SourceColumnName.init -> void
+WalhallaSql.Sql.SqlProjectionDefinition.SqlProjectionDefinition() -> void
+WalhallaSql.Sql.SqlProjectionDefinition.SqlProjectionDefinition(string! projectionName, string! sourceColumnName, System.Collections.Generic.IReadOnlyList<string!>! pathSegments, WalhallaSql.Sql.SqlScalarType resultType, WalhallaSql.Sql.SqlProjectionMaterializationMode materializationMode = WalhallaSql.Sql.SqlProjectionMaterializationMode.IndexedOnly) -> void
+WalhallaSql.Sql.SqlProjectionMaterializationMode
+WalhallaSql.Sql.SqlProjectionMaterializationMode.IndexedOnly = 2 -> WalhallaSql.Sql.SqlProjectionMaterializationMode
+WalhallaSql.Sql.SqlProjectionMaterializationMode.Persisted = 1 -> WalhallaSql.Sql.SqlProjectionMaterializationMode
+WalhallaSql.Sql.SqlProjectionMaterializationMode.Virtual = 0 -> WalhallaSql.Sql.SqlProjectionMaterializationMode
+WalhallaSql.Sql.SqlReleaseSavepointStatement
+WalhallaSql.Sql.SqlReleaseSavepointStatement.Name.get -> string!
+WalhallaSql.Sql.SqlReleaseSavepointStatement.Name.init -> void
+WalhallaSql.Sql.SqlReleaseSavepointStatement.SqlReleaseSavepointStatement(string! Name) -> void
+WalhallaSql.Sql.SqlRollbackStatement
+WalhallaSql.Sql.SqlRollbackToStatement
+WalhallaSql.Sql.SqlRollbackToStatement.Name.get -> string!
+WalhallaSql.Sql.SqlRollbackToStatement.Name.init -> void
+WalhallaSql.Sql.SqlRollbackToStatement.SqlRollbackToStatement(string! Name) -> void
+WalhallaSql.Sql.SqlSavepointStatement
+WalhallaSql.Sql.SqlSavepointStatement.Name.get -> string!
+WalhallaSql.Sql.SqlSavepointStatement.Name.init -> void
+WalhallaSql.Sql.SqlSavepointStatement.SqlSavepointStatement(string! Name) -> void
+WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Binary = 11 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Boolean = 7 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Date = 9 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.DateTime = 8 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Decimal = 5 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Double = 4 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Geometry = 14 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Guid = 13 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Int16 = 3 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Int32 = 1 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Int64 = 2 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Json = 12 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.String = 6 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Time = 10 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlScalarType.Unknown = 0 -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlSelectColumn
+WalhallaSql.Sql.SqlSelectColumn.Aggregate.get -> WalhallaSql.Sql.SqlAggregateCall?
+WalhallaSql.Sql.SqlSelectColumn.Aggregate.init -> void
+WalhallaSql.Sql.SqlSelectColumn.Alias.get -> string?
+WalhallaSql.Sql.SqlSelectColumn.Alias.init -> void
+WalhallaSql.Sql.SqlSelectColumn.Expression.get -> string!
+WalhallaSql.Sql.SqlSelectColumn.Expression.init -> void
+WalhallaSql.Sql.SqlSelectColumn.SqlSelectColumn(string! Expression, string? Alias, WalhallaSql.Sql.SqlAggregateCall? Aggregate = null, WalhallaSql.Sql.SqlWindowCall? WindowFunction = null) -> void
+WalhallaSql.Sql.SqlSelectColumn.WindowFunction.get -> WalhallaSql.Sql.SqlWindowCall?
+WalhallaSql.Sql.SqlSelectColumn.WindowFunction.init -> void
+WalhallaSql.Sql.SqlSelectStatement
+WalhallaSql.Sql.SqlSelectStatement.Columns.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlSelectColumn!>!
+WalhallaSql.Sql.SqlSelectStatement.Columns.init -> void
+WalhallaSql.Sql.SqlSelectStatement.DerivedTable.get -> WalhallaSql.Sql.SqlSelectStatement?
+WalhallaSql.Sql.SqlSelectStatement.DerivedTable.init -> void
+WalhallaSql.Sql.SqlSelectStatement.GroupByColumns.get -> System.Collections.Generic.IReadOnlyList<string!>?
+WalhallaSql.Sql.SqlSelectStatement.GroupByColumns.init -> void
+WalhallaSql.Sql.SqlSelectStatement.Having.get -> WalhallaSql.Sql.SqlWhereExpression?
+WalhallaSql.Sql.SqlSelectStatement.Having.init -> void
+WalhallaSql.Sql.SqlSelectStatement.IsDistinct.get -> bool
+WalhallaSql.Sql.SqlSelectStatement.IsDistinct.init -> void
+WalhallaSql.Sql.SqlSelectStatement.Joins.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlJoinClause!>?
+WalhallaSql.Sql.SqlSelectStatement.Joins.init -> void
+WalhallaSql.Sql.SqlSelectStatement.Limit.get -> int?
+WalhallaSql.Sql.SqlSelectStatement.Limit.init -> void
+WalhallaSql.Sql.SqlSelectStatement.Offset.get -> int?
+WalhallaSql.Sql.SqlSelectStatement.Offset.init -> void
+WalhallaSql.Sql.SqlSelectStatement.OrderBy.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlOrderByColumn!>?
+WalhallaSql.Sql.SqlSelectStatement.OrderBy.init -> void
+WalhallaSql.Sql.SqlSelectStatement.Parameters.get -> System.Collections.Generic.IReadOnlyList<string!>?
+WalhallaSql.Sql.SqlSelectStatement.Parameters.init -> void
+WalhallaSql.Sql.SqlSelectStatement.SqlSelectStatement(string! TableName, string? TableAlias, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlSelectColumn!>! Columns, WalhallaSql.Sql.SqlWhereExpression? Where, System.Collections.Generic.IReadOnlyList<string!>? Parameters = null, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlJoinClause!>? Joins = null, System.Collections.Generic.IReadOnlyList<string!>? GroupByColumns = null, WalhallaSql.Sql.SqlWhereExpression? Having = null, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlOrderByColumn!>? OrderBy = null, int? Limit = null, int? Offset = null, bool IsDistinct = false, WalhallaSql.Sql.SqlSelectStatement? DerivedTable = null) -> void
+WalhallaSql.Sql.SqlSelectStatement.TableAlias.get -> string?
+WalhallaSql.Sql.SqlSelectStatement.TableAlias.init -> void
+WalhallaSql.Sql.SqlSelectStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlSelectStatement.TableName.init -> void
+WalhallaSql.Sql.SqlSelectStatement.Where.get -> WalhallaSql.Sql.SqlWhereExpression?
+WalhallaSql.Sql.SqlSelectStatement.Where.init -> void
+WalhallaSql.Sql.SqlSetOperator
+WalhallaSql.Sql.SqlSetOperator.Except = 2 -> WalhallaSql.Sql.SqlSetOperator
+WalhallaSql.Sql.SqlSetOperator.Intersect = 3 -> WalhallaSql.Sql.SqlSetOperator
+WalhallaSql.Sql.SqlSetOperator.Union = 0 -> WalhallaSql.Sql.SqlSetOperator
+WalhallaSql.Sql.SqlSetOperator.UnionAll = 1 -> WalhallaSql.Sql.SqlSetOperator
+WalhallaSql.Sql.SqlStatement
+WalhallaSql.Sql.SqlStoredProcedureDefinition
+WalhallaSql.Sql.SqlStoredProcedureDefinition.Body.get -> string!
+WalhallaSql.Sql.SqlStoredProcedureDefinition.Body.init -> void
+WalhallaSql.Sql.SqlStoredProcedureDefinition.Description.get -> string?
+WalhallaSql.Sql.SqlStoredProcedureDefinition.Description.init -> void
+WalhallaSql.Sql.SqlStoredProcedureDefinition.Language.get -> string!
+WalhallaSql.Sql.SqlStoredProcedureDefinition.Language.init -> void
+WalhallaSql.Sql.SqlStoredProcedureDefinition.Name.get -> string!
+WalhallaSql.Sql.SqlStoredProcedureDefinition.Name.init -> void
+WalhallaSql.Sql.SqlStoredProcedureDefinition.Parameters.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlProcedureParameter!>!
+WalhallaSql.Sql.SqlStoredProcedureDefinition.Parameters.init -> void
+WalhallaSql.Sql.SqlStoredProcedureDefinition.SqlStoredProcedureDefinition(string! Name, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlProcedureParameter!>! Parameters, string! Body, string! Language = "sql", string? Description = null) -> void
+WalhallaSql.Sql.SqlIndexType
+WalhallaSql.Sql.SqlIndexType.BTree = 0 -> WalhallaSql.Sql.SqlIndexType
+WalhallaSql.Sql.SqlIndexType.Gin = 1 -> WalhallaSql.Sql.SqlIndexType
+WalhallaSql.Sql.SqlStringIndexNormalizationKind
+WalhallaSql.Sql.SqlStringIndexNormalizationKind.None = 1 -> WalhallaSql.Sql.SqlStringIndexNormalizationKind
+WalhallaSql.Sql.SqlStringIndexNormalizationKind.OrdinalIgnoreCaseUpperInvariant = 2 -> WalhallaSql.Sql.SqlStringIndexNormalizationKind
+WalhallaSql.Sql.SqlStringIndexNormalizationKind.Unspecified = 0 -> WalhallaSql.Sql.SqlStringIndexNormalizationKind
+WalhallaSql.Sql.SqlTableDefinition
+WalhallaSql.Sql.SqlTableDefinition.CollectionName.get -> string!
+WalhallaSql.Sql.SqlTableDefinition.CollectionName.init -> void
+WalhallaSql.Sql.SqlTableDefinition.Columns.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlColumnDefinition!>!
+WalhallaSql.Sql.SqlTableDefinition.Columns.init -> void
+WalhallaSql.Sql.SqlTableDefinition.ForeignKeys.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlForeignKeyDefinition!>?
+WalhallaSql.Sql.SqlTableDefinition.ForeignKeys.init -> void
+WalhallaSql.Sql.SqlTableDefinition.Indexes.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlIndexDefinition!>!
+WalhallaSql.Sql.SqlTableDefinition.Indexes.init -> void
+WalhallaSql.Sql.SqlTableDefinition.PrimaryKeyColumns.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlColumnDefinition!>!
+WalhallaSql.Sql.SqlTableDefinition.Projections.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlProjectionDefinition!>?
+WalhallaSql.Sql.SqlTableDefinition.Projections.init -> void
+WalhallaSql.Sql.SqlTableDefinition.CheckConstraints.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlCheckConstraint!>?
+WalhallaSql.Sql.SqlTableDefinition.CheckConstraints.init -> void
+WalhallaSql.Sql.SqlTableDefinition.SqlTableDefinition(string! CollectionName, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlColumnDefinition!>! Columns, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlIndexDefinition!>! Indexes, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlForeignKeyDefinition!>? ForeignKeys = null, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlProjectionDefinition!>? Projections = null, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlCheckConstraint!>? CheckConstraints = null) -> void
+WalhallaSql.Sql.SqlTableDefinition.TryGetRowIdAliasPk(out int columnIndex) -> bool
+WalhallaSql.Sql.SqlTriggerDefinition
+WalhallaSql.Sql.SqlTriggerDefinition.Body.get -> string!
+WalhallaSql.Sql.SqlTriggerDefinition.Body.init -> void
+WalhallaSql.Sql.SqlTriggerDefinition.Description.get -> string?
+WalhallaSql.Sql.SqlTriggerDefinition.Description.init -> void
+WalhallaSql.Sql.SqlTriggerDefinition.Event.get -> WalhallaSql.Sql.SqlTriggerEvent
+WalhallaSql.Sql.SqlTriggerDefinition.Event.init -> void
+WalhallaSql.Sql.SqlTriggerDefinition.Name.get -> string!
+WalhallaSql.Sql.SqlTriggerDefinition.Name.init -> void
+WalhallaSql.Sql.SqlTriggerDefinition.SqlTriggerDefinition(string! Name, string! TableName, WalhallaSql.Sql.SqlTriggerEvent Event, WalhallaSql.Sql.SqlTriggerTiming Timing = WalhallaSql.Sql.SqlTriggerTiming.After, string! Body = "", string? Description = null) -> void
+WalhallaSql.Sql.SqlTriggerDefinition.TableName.get -> string!
+WalhallaSql.Sql.SqlTriggerDefinition.TableName.init -> void
+WalhallaSql.Sql.SqlTriggerDefinition.Timing.get -> WalhallaSql.Sql.SqlTriggerTiming
+WalhallaSql.Sql.SqlTriggerDefinition.Timing.init -> void
+WalhallaSql.Sql.SqlTriggerEvent
+WalhallaSql.Sql.SqlTriggerEvent.Delete = 2 -> WalhallaSql.Sql.SqlTriggerEvent
+WalhallaSql.Sql.SqlTriggerEvent.Insert = 0 -> WalhallaSql.Sql.SqlTriggerEvent
+WalhallaSql.Sql.SqlTriggerEvent.Update = 1 -> WalhallaSql.Sql.SqlTriggerEvent
+WalhallaSql.Sql.SqlTriggerTiming
+WalhallaSql.Sql.SqlTriggerTiming.After = 1 -> WalhallaSql.Sql.SqlTriggerTiming
+WalhallaSql.Sql.SqlTriggerTiming.Before = 0 -> WalhallaSql.Sql.SqlTriggerTiming
+WalhallaSql.Sql.SqlTriggerTiming.InsteadOf = 2 -> WalhallaSql.Sql.SqlTriggerTiming
+WalhallaSql.Sql.SqlTruncateTableStatement
+WalhallaSql.Sql.SqlTruncateTableStatement.SqlTruncateTableStatement(string! TableName) -> void
+WalhallaSql.Sql.SqlTruncateTableStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlTruncateTableStatement.TableName.init -> void
+WalhallaSql.Sql.SqlUpdateStatement
+WalhallaSql.Sql.SqlUpdateStatement.Assignments.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+WalhallaSql.Sql.SqlUpdateStatement.Assignments.init -> void
+WalhallaSql.Sql.SqlUpdateStatement.Parameters.get -> System.Collections.Generic.IReadOnlyList<string!>?
+WalhallaSql.Sql.SqlUpdateStatement.Parameters.init -> void
+WalhallaSql.Sql.SqlUpdateStatement.SqlUpdateStatement(string! TableName, System.Collections.Generic.IReadOnlyDictionary<string!, string!>! Assignments, WalhallaSql.Sql.SqlWhereExpression? Where, System.Collections.Generic.IReadOnlyList<string!>? Parameters = null) -> void
+WalhallaSql.Sql.SqlUpdateStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlUpdateStatement.TableName.init -> void
+WalhallaSql.Sql.SqlUpdateStatement.Where.get -> WalhallaSql.Sql.SqlWhereExpression?
+WalhallaSql.Sql.SqlUpdateStatement.Where.init -> void
+WalhallaSql.Sql.SqlWhereAndExpression
+WalhallaSql.Sql.SqlWhereAndExpression.Children.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlWhereExpression!>!
+WalhallaSql.Sql.SqlWhereAndExpression.Children.init -> void
+WalhallaSql.Sql.SqlWhereAndExpression.SqlWhereAndExpression(System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlWhereExpression!>! Children) -> void
+WalhallaSql.Sql.SqlWhereBetweenExpression
+WalhallaSql.Sql.SqlWhereBetweenExpression.Lower.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereBetweenExpression.Lower.init -> void
+WalhallaSql.Sql.SqlWhereBetweenExpression.Negated.get -> bool
+WalhallaSql.Sql.SqlWhereBetweenExpression.Negated.init -> void
+WalhallaSql.Sql.SqlWhereBetweenExpression.SqlWhereBetweenExpression(WalhallaSql.Sql.SqlWhereValueExpression! Value, WalhallaSql.Sql.SqlWhereValueExpression! Lower, WalhallaSql.Sql.SqlWhereValueExpression! Upper, bool Negated) -> void
+WalhallaSql.Sql.SqlWhereBetweenExpression.Upper.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereBetweenExpression.Upper.init -> void
+WalhallaSql.Sql.SqlWhereBetweenExpression.Value.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereBetweenExpression.Value.init -> void
+WalhallaSql.Sql.SqlWhereBinaryOperator
+WalhallaSql.Sql.SqlWhereBinaryOperator.Add = 0 -> WalhallaSql.Sql.SqlWhereBinaryOperator
+WalhallaSql.Sql.SqlWhereBinaryOperator.Divide = 3 -> WalhallaSql.Sql.SqlWhereBinaryOperator
+WalhallaSql.Sql.SqlWhereBinaryOperator.Modulo = 4 -> WalhallaSql.Sql.SqlWhereBinaryOperator
+WalhallaSql.Sql.SqlWhereBinaryOperator.Multiply = 2 -> WalhallaSql.Sql.SqlWhereBinaryOperator
+WalhallaSql.Sql.SqlWhereBinaryOperator.Subtract = 1 -> WalhallaSql.Sql.SqlWhereBinaryOperator
+WalhallaSql.Sql.SqlWhereBinaryValueExpression
+WalhallaSql.Sql.SqlWhereBinaryValueExpression.Left.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereBinaryValueExpression.Left.init -> void
+WalhallaSql.Sql.SqlWhereBinaryValueExpression.Operator.get -> WalhallaSql.Sql.SqlWhereBinaryOperator
+WalhallaSql.Sql.SqlWhereBinaryValueExpression.Operator.init -> void
+WalhallaSql.Sql.SqlWhereBinaryValueExpression.Right.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereBinaryValueExpression.Right.init -> void
+WalhallaSql.Sql.SqlWhereBinaryValueExpression.SqlWhereBinaryValueExpression(WalhallaSql.Sql.SqlWhereValueExpression! Left, WalhallaSql.Sql.SqlWhereBinaryOperator Operator, WalhallaSql.Sql.SqlWhereValueExpression! Right) -> void
+WalhallaSql.Sql.SqlWhereCaseExpression
+WalhallaSql.Sql.SqlWhereCaseExpression.ExpressionText.get -> string!
+WalhallaSql.Sql.SqlWhereCaseExpression.ExpressionText.init -> void
+WalhallaSql.Sql.SqlWhereCaseExpression.SqlWhereCaseExpression(string! ExpressionText) -> void
+WalhallaSql.Sql.SqlWhereCastExpression
+WalhallaSql.Sql.SqlWhereCastExpression.Inner.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereCastExpression.Inner.init -> void
+WalhallaSql.Sql.SqlWhereCastExpression.SqlWhereCastExpression(WalhallaSql.Sql.SqlWhereValueExpression! Inner, WalhallaSql.Sql.SqlScalarType TargetType) -> void
+WalhallaSql.Sql.SqlWhereCastExpression.TargetType.get -> WalhallaSql.Sql.SqlScalarType
+WalhallaSql.Sql.SqlWhereCastExpression.TargetType.init -> void
+WalhallaSql.Sql.SqlWhereColumnExpression
+WalhallaSql.Sql.SqlWhereColumnExpression.FullName.get -> string!
+WalhallaSql.Sql.SqlWhereColumnExpression.FullName.init -> void
+WalhallaSql.Sql.SqlWhereColumnExpression.SimpleName.get -> string!
+WalhallaSql.Sql.SqlWhereColumnExpression.SimpleName.init -> void
+WalhallaSql.Sql.SqlWhereColumnExpression.Collation.get -> string?
+WalhallaSql.Sql.SqlWhereColumnExpression.Collation.init -> void
+WalhallaSql.Sql.SqlWhereColumnExpression.SqlWhereColumnExpression(string! FullName, string! SimpleName, string? Collation = null) -> void
+WalhallaSql.Sql.SqlWhereComparisonExpression
+WalhallaSql.Sql.SqlWhereComparisonExpression.Left.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereComparisonExpression.Left.init -> void
+WalhallaSql.Sql.SqlWhereComparisonExpression.Operator.get -> WalhallaSql.Sql.SqlWhereComparisonOperator
+WalhallaSql.Sql.SqlWhereComparisonExpression.Operator.init -> void
+WalhallaSql.Sql.SqlWhereComparisonExpression.Right.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereComparisonExpression.Right.init -> void
+WalhallaSql.Sql.SqlWhereComparisonExpression.SqlWhereComparisonExpression(WalhallaSql.Sql.SqlWhereValueExpression! Left, WalhallaSql.Sql.SqlWhereComparisonOperator Operator, WalhallaSql.Sql.SqlWhereValueExpression! Right) -> void
+WalhallaSql.Sql.SqlWhereComparisonOperator
+WalhallaSql.Sql.SqlWhereComparisonOperator.Equal = 0 -> WalhallaSql.Sql.SqlWhereComparisonOperator
+WalhallaSql.Sql.SqlWhereComparisonOperator.GreaterThan = 2 -> WalhallaSql.Sql.SqlWhereComparisonOperator
+WalhallaSql.Sql.SqlWhereComparisonOperator.GreaterThanOrEqual = 3 -> WalhallaSql.Sql.SqlWhereComparisonOperator
+WalhallaSql.Sql.SqlWhereComparisonOperator.LessThan = 4 -> WalhallaSql.Sql.SqlWhereComparisonOperator
+WalhallaSql.Sql.SqlWhereComparisonOperator.LessThanOrEqual = 5 -> WalhallaSql.Sql.SqlWhereComparisonOperator
+WalhallaSql.Sql.SqlWhereComparisonOperator.NotEqual = 1 -> WalhallaSql.Sql.SqlWhereComparisonOperator
+WalhallaSql.Sql.SqlWhereDistinctFromExpression
+WalhallaSql.Sql.SqlWhereDistinctFromExpression.Left.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereDistinctFromExpression.Left.init -> void
+WalhallaSql.Sql.SqlWhereDistinctFromExpression.Negated.get -> bool
+WalhallaSql.Sql.SqlWhereDistinctFromExpression.Negated.init -> void
+WalhallaSql.Sql.SqlWhereDistinctFromExpression.Right.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereDistinctFromExpression.Right.init -> void
+WalhallaSql.Sql.SqlWhereDistinctFromExpression.SqlWhereDistinctFromExpression(WalhallaSql.Sql.SqlWhereValueExpression! Left, WalhallaSql.Sql.SqlWhereValueExpression! Right, bool Negated) -> void
+WalhallaSql.Sql.SqlWhereExistsExpression
+WalhallaSql.Sql.SqlWhereExistsExpression.Negated.get -> bool
+WalhallaSql.Sql.SqlWhereExistsExpression.Negated.init -> void
+WalhallaSql.Sql.SqlWhereExistsExpression.SqlWhereExistsExpression(string! SubquerySql, bool Negated) -> void
+WalhallaSql.Sql.SqlWhereExistsExpression.SubquerySql.get -> string!
+WalhallaSql.Sql.SqlWhereExistsExpression.SubquerySql.init -> void
+WalhallaSql.Sql.SqlWhereExpression
+WalhallaSql.Sql.SqlWhereFunctionCallExpression
+WalhallaSql.Sql.SqlWhereFunctionCallExpression.Arguments.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlWhereValueExpression!>!
+WalhallaSql.Sql.SqlWhereFunctionCallExpression.Arguments.init -> void
+WalhallaSql.Sql.SqlWhereFunctionCallExpression.FunctionName.get -> string!
+WalhallaSql.Sql.SqlWhereFunctionCallExpression.FunctionName.init -> void
+WalhallaSql.Sql.SqlWhereFunctionCallExpression.SqlWhereFunctionCallExpression(string! FunctionName, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlWhereValueExpression!>! Arguments) -> void
+WalhallaSql.Sql.SqlWhereInListExpression
+WalhallaSql.Sql.SqlWhereInListExpression.Left.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereInListExpression.Left.init -> void
+WalhallaSql.Sql.SqlWhereInListExpression.Negated.get -> bool
+WalhallaSql.Sql.SqlWhereInListExpression.Negated.init -> void
+WalhallaSql.Sql.SqlWhereInListExpression.SqlWhereInListExpression(WalhallaSql.Sql.SqlWhereValueExpression! Left, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlWhereValueExpression!>! Values, bool Negated) -> void
+WalhallaSql.Sql.SqlWhereInListExpression.Values.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlWhereValueExpression!>!
+WalhallaSql.Sql.SqlWhereInListExpression.Values.init -> void
+WalhallaSql.Sql.SqlWhereInSubqueryExpression
+WalhallaSql.Sql.SqlWhereInSubqueryExpression.Left.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereInSubqueryExpression.Left.init -> void
+WalhallaSql.Sql.SqlWhereInSubqueryExpression.Negated.get -> bool
+WalhallaSql.Sql.SqlWhereInSubqueryExpression.Negated.init -> void
+WalhallaSql.Sql.SqlWhereInSubqueryExpression.SqlWhereInSubqueryExpression(WalhallaSql.Sql.SqlWhereValueExpression! Left, string! SubquerySql, bool Negated) -> void
+WalhallaSql.Sql.SqlWhereInSubqueryExpression.SubquerySql.get -> string!
+WalhallaSql.Sql.SqlWhereInSubqueryExpression.SubquerySql.init -> void
+WalhallaSql.Sql.SqlWhereJsonArrowExpression
+WalhallaSql.Sql.SqlWhereJsonArrowExpression.JsonPath.get -> string!
+WalhallaSql.Sql.SqlWhereJsonArrowExpression.JsonPath.init -> void
+WalhallaSql.Sql.SqlWhereJsonArrowExpression.Source.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereJsonArrowExpression.Source.init -> void
+WalhallaSql.Sql.SqlWhereJsonArrowExpression.PathKind.get -> WalhallaSql.Sql.SqlJsonPathKind
+WalhallaSql.Sql.SqlWhereJsonArrowExpression.PathKind.init -> void
+WalhallaSql.Sql.SqlWhereJsonArrowExpression.SqlWhereJsonArrowExpression(WalhallaSql.Sql.SqlWhereValueExpression! Source, string! JsonPath, bool Unquote, WalhallaSql.Sql.SqlJsonPathKind PathKind) -> void
+WalhallaSql.Sql.SqlWhereJsonArrowExpression.Unquote.get -> bool
+WalhallaSql.Sql.SqlWhereJsonArrowExpression.Unquote.init -> void
+WalhallaSql.Sql.SqlJsonContainmentOperator
+WalhallaSql.Sql.SqlJsonContainmentOperator.Contains = 0 -> WalhallaSql.Sql.SqlJsonContainmentOperator
+WalhallaSql.Sql.SqlJsonContainmentOperator.ContainedBy = 1 -> WalhallaSql.Sql.SqlJsonContainmentOperator
+WalhallaSql.Sql.SqlWhereJsonContainsExpression
+WalhallaSql.Sql.SqlWhereJsonContainsExpression.Left.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereJsonContainsExpression.Left.init -> void
+WalhallaSql.Sql.SqlWhereJsonContainsExpression.Right.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereJsonContainsExpression.Right.init -> void
+WalhallaSql.Sql.SqlWhereJsonContainsExpression.Operator.get -> WalhallaSql.Sql.SqlJsonContainmentOperator
+WalhallaSql.Sql.SqlWhereJsonContainsExpression.Operator.init -> void
+WalhallaSql.Sql.SqlWhereJsonContainsExpression.SqlWhereJsonContainsExpression(WalhallaSql.Sql.SqlWhereValueExpression! Left, WalhallaSql.Sql.SqlWhereValueExpression! Right, WalhallaSql.Sql.SqlJsonContainmentOperator Operator) -> void
+WalhallaSql.Sql.SqlJsonKeyExistsOperator
+WalhallaSql.Sql.SqlJsonKeyExistsOperator.HasKey = 0 -> WalhallaSql.Sql.SqlJsonKeyExistsOperator
+WalhallaSql.Sql.SqlJsonKeyExistsOperator.HasAnyKey = 1 -> WalhallaSql.Sql.SqlJsonKeyExistsOperator
+WalhallaSql.Sql.SqlJsonKeyExistsOperator.HasAllKeys = 2 -> WalhallaSql.Sql.SqlJsonKeyExistsOperator
+WalhallaSql.Sql.SqlWhereJsonKeyExistsExpression
+WalhallaSql.Sql.SqlWhereJsonKeyExistsExpression.Left.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereJsonKeyExistsExpression.Left.init -> void
+WalhallaSql.Sql.SqlWhereJsonKeyExistsExpression.Right.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereJsonKeyExistsExpression.Right.init -> void
+WalhallaSql.Sql.SqlWhereJsonKeyExistsExpression.Operator.get -> WalhallaSql.Sql.SqlJsonKeyExistsOperator
+WalhallaSql.Sql.SqlWhereJsonKeyExistsExpression.Operator.init -> void
+WalhallaSql.Sql.SqlWhereJsonKeyExistsExpression.SqlWhereJsonKeyExistsExpression(WalhallaSql.Sql.SqlWhereValueExpression! Left, WalhallaSql.Sql.SqlWhereValueExpression! Right, WalhallaSql.Sql.SqlJsonKeyExistsOperator Operator) -> void
+WalhallaSql.Sql.SqlWhereLikeExpression
+WalhallaSql.Sql.SqlWhereLikeExpression.Left.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereLikeExpression.Left.init -> void
+WalhallaSql.Sql.SqlWhereLikeExpression.Negated.get -> bool
+WalhallaSql.Sql.SqlWhereLikeExpression.Negated.init -> void
+WalhallaSql.Sql.SqlWhereLikeExpression.Pattern.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereLikeExpression.Pattern.init -> void
+WalhallaSql.Sql.SqlWhereLikeExpression.SqlWhereLikeExpression(WalhallaSql.Sql.SqlWhereValueExpression! Left, WalhallaSql.Sql.SqlWhereValueExpression! Pattern, bool Negated) -> void
+WalhallaSql.Sql.SqlWhereLiteralExpression
+WalhallaSql.Sql.SqlWhereLiteralExpression.SqlWhereLiteralExpression(object? Value) -> void
+WalhallaSql.Sql.SqlWhereLiteralExpression.Value.get -> object?
+WalhallaSql.Sql.SqlWhereLiteralExpression.Value.init -> void
+WalhallaSql.Sql.SqlWhereNotExpression
+WalhallaSql.Sql.SqlWhereNotExpression.Inner.get -> WalhallaSql.Sql.SqlWhereExpression!
+WalhallaSql.Sql.SqlWhereNotExpression.Inner.init -> void
+WalhallaSql.Sql.SqlWhereNotExpression.SqlWhereNotExpression(WalhallaSql.Sql.SqlWhereExpression! Inner) -> void
+WalhallaSql.Sql.SqlWhereNullCheckExpression
+WalhallaSql.Sql.SqlWhereNullCheckExpression.Negated.get -> bool
+WalhallaSql.Sql.SqlWhereNullCheckExpression.Negated.init -> void
+WalhallaSql.Sql.SqlWhereNullCheckExpression.SqlWhereNullCheckExpression(WalhallaSql.Sql.SqlWhereValueExpression! Value, bool Negated) -> void
+WalhallaSql.Sql.SqlWhereNullCheckExpression.Value.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereNullCheckExpression.Value.init -> void
+WalhallaSql.Sql.SqlWhereOrExpression
+WalhallaSql.Sql.SqlWhereOrExpression.Children.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlWhereExpression!>!
+WalhallaSql.Sql.SqlWhereOrExpression.Children.init -> void
+WalhallaSql.Sql.SqlWhereOrExpression.SqlWhereOrExpression(System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlWhereExpression!>! Children) -> void
+WalhallaSql.Sql.SqlWhereParameterExpression
+WalhallaSql.Sql.SqlWhereParameterExpression.Index.get -> int
+WalhallaSql.Sql.SqlWhereParameterExpression.Index.init -> void
+WalhallaSql.Sql.SqlWhereParameterExpression.Name.get -> string!
+WalhallaSql.Sql.SqlWhereParameterExpression.Name.init -> void
+WalhallaSql.Sql.SqlWhereParameterExpression.SqlWhereParameterExpression(string! Name, int Index) -> void
+WalhallaSql.Sql.SqlWhereQuantifiedComparisonExpression
+WalhallaSql.Sql.SqlWhereQuantifiedComparisonExpression.Left.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereQuantifiedComparisonExpression.Left.init -> void
+WalhallaSql.Sql.SqlWhereQuantifiedComparisonExpression.Operator.get -> WalhallaSql.Sql.SqlWhereComparisonOperator
+WalhallaSql.Sql.SqlWhereQuantifiedComparisonExpression.Operator.init -> void
+WalhallaSql.Sql.SqlWhereQuantifiedComparisonExpression.Quantifier.get -> WalhallaSql.Sql.SqlWhereQuantifier
+WalhallaSql.Sql.SqlWhereQuantifiedComparisonExpression.Quantifier.init -> void
+WalhallaSql.Sql.SqlWhereQuantifiedComparisonExpression.SqlWhereQuantifiedComparisonExpression(WalhallaSql.Sql.SqlWhereValueExpression! Left, WalhallaSql.Sql.SqlWhereComparisonOperator Operator, WalhallaSql.Sql.SqlWhereQuantifier Quantifier, string! SubquerySql) -> void
+WalhallaSql.Sql.SqlWhereQuantifiedComparisonExpression.SubquerySql.get -> string!
+WalhallaSql.Sql.SqlWhereQuantifiedComparisonExpression.SubquerySql.init -> void
+WalhallaSql.Sql.SqlWhereQuantifier
+WalhallaSql.Sql.SqlWhereQuantifier.All = 2 -> WalhallaSql.Sql.SqlWhereQuantifier
+WalhallaSql.Sql.SqlWhereQuantifier.Any = 0 -> WalhallaSql.Sql.SqlWhereQuantifier
+WalhallaSql.Sql.SqlWhereQuantifier.Some = 1 -> WalhallaSql.Sql.SqlWhereQuantifier
+WalhallaSql.Sql.SqlWhereScalarSubqueryValueExpression
+WalhallaSql.Sql.SqlWhereScalarSubqueryValueExpression.SqlWhereScalarSubqueryValueExpression(string! SubquerySql) -> void
+WalhallaSql.Sql.SqlWhereScalarSubqueryValueExpression.SubquerySql.get -> string!
+WalhallaSql.Sql.SqlWhereScalarSubqueryValueExpression.SubquerySql.init -> void
+WalhallaSql.Sql.SqlWhereTruthyExpression
+WalhallaSql.Sql.SqlWhereTruthyExpression.SqlWhereTruthyExpression(WalhallaSql.Sql.SqlWhereValueExpression! Value) -> void
+WalhallaSql.Sql.SqlWhereTruthyExpression.Value.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereTruthyExpression.Value.init -> void
+WalhallaSql.Sql.SqlWhereUnaryOperator
+WalhallaSql.Sql.SqlWhereUnaryOperator.BitwiseNot = 2 -> WalhallaSql.Sql.SqlWhereUnaryOperator
+WalhallaSql.Sql.SqlWhereUnaryOperator.Minus = 1 -> WalhallaSql.Sql.SqlWhereUnaryOperator
+WalhallaSql.Sql.SqlWhereUnaryOperator.Plus = 0 -> WalhallaSql.Sql.SqlWhereUnaryOperator
+WalhallaSql.Sql.SqlWhereUnaryValueExpression
+WalhallaSql.Sql.SqlWhereUnaryValueExpression.Operand.get -> WalhallaSql.Sql.SqlWhereValueExpression!
+WalhallaSql.Sql.SqlWhereUnaryValueExpression.Operand.init -> void
+WalhallaSql.Sql.SqlWhereUnaryValueExpression.Operator.get -> WalhallaSql.Sql.SqlWhereUnaryOperator
+WalhallaSql.Sql.SqlWhereUnaryValueExpression.Operator.init -> void
+WalhallaSql.Sql.SqlWhereUnaryValueExpression.SqlWhereUnaryValueExpression(WalhallaSql.Sql.SqlWhereUnaryOperator Operator, WalhallaSql.Sql.SqlWhereValueExpression! Operand) -> void
+WalhallaSql.Sql.SqlWhereValueExpression
+WalhallaSql.Sql.SqlWindowCall
+WalhallaSql.Sql.SqlWindowCall.AggregateArgument.get -> string?
+WalhallaSql.Sql.SqlWindowCall.AggregateArgument.init -> void
+WalhallaSql.Sql.SqlWindowCall.AggregateFunction.get -> WalhallaSql.Sql.SqlAggregateFunction?
+WalhallaSql.Sql.SqlWindowCall.AggregateFunction.init -> void
+WalhallaSql.Sql.SqlWindowCall.Frame.get -> WalhallaSql.Sql.SqlWindowFrame?
+WalhallaSql.Sql.SqlWindowCall.Frame.init -> void
+WalhallaSql.Sql.SqlWindowCall.Function.get -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowCall.Function.init -> void
+WalhallaSql.Sql.SqlWindowCall.OrderBy.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlOrderByColumn!>?
+WalhallaSql.Sql.SqlWindowCall.OrderBy.init -> void
+WalhallaSql.Sql.SqlWindowCall.PartitionBy.get -> System.Collections.Generic.IReadOnlyList<string!>?
+WalhallaSql.Sql.SqlWindowCall.PartitionBy.init -> void
+WalhallaSql.Sql.SqlWindowCall.NTileBuckets.get -> int?
+WalhallaSql.Sql.SqlWindowCall.NTileBuckets.init -> void
+WalhallaSql.Sql.SqlWindowCall.OffsetColumn.get -> string?
+WalhallaSql.Sql.SqlWindowCall.OffsetColumn.init -> void
+WalhallaSql.Sql.SqlWindowCall.OffsetAmount.get -> int?
+WalhallaSql.Sql.SqlWindowCall.OffsetAmount.init -> void
+WalhallaSql.Sql.SqlWindowCall.OffsetDefault.get -> string?
+WalhallaSql.Sql.SqlWindowCall.OffsetDefault.init -> void
+WalhallaSql.Sql.SqlWindowCall.IgnoreNulls.get -> bool
+WalhallaSql.Sql.SqlWindowCall.IgnoreNulls.init -> void
+WalhallaSql.Sql.SqlWindowCall.SqlWindowCall(WalhallaSql.Sql.SqlWindowFunctionType Function, System.Collections.Generic.IReadOnlyList<string!>? PartitionBy, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlOrderByColumn!>? OrderBy, WalhallaSql.Sql.SqlWindowFrame? Frame = null, int? NTileBuckets = null, WalhallaSql.Sql.SqlAggregateFunction? AggregateFunction = null, string? AggregateArgument = null, string? OffsetColumn = null, int? OffsetAmount = null, string? OffsetDefault = null, bool IgnoreNulls = false) -> void
+WalhallaSql.Sql.SqlWindowFrame
+WalhallaSql.Sql.SqlWindowFrame.End.get -> WalhallaSql.Sql.SqlWindowFrameBound!
+WalhallaSql.Sql.SqlWindowFrame.End.init -> void
+WalhallaSql.Sql.SqlWindowFrame.Mode.get -> WalhallaSql.Sql.SqlWindowFrameMode
+WalhallaSql.Sql.SqlWindowFrame.Mode.init -> void
+WalhallaSql.Sql.SqlWindowFrame.SqlWindowFrame(WalhallaSql.Sql.SqlWindowFrameMode Mode, WalhallaSql.Sql.SqlWindowFrameBound! Start, WalhallaSql.Sql.SqlWindowFrameBound! End) -> void
+WalhallaSql.Sql.SqlWindowFrame.Start.get -> WalhallaSql.Sql.SqlWindowFrameBound!
+WalhallaSql.Sql.SqlWindowFrame.Start.init -> void
+WalhallaSql.Sql.SqlWindowFrameBound
+WalhallaSql.Sql.SqlWindowFrameBound.BoundType.get -> WalhallaSql.Sql.SqlWindowFrameBoundType
+WalhallaSql.Sql.SqlWindowFrameBound.BoundType.init -> void
+WalhallaSql.Sql.SqlWindowFrameBound.Offset.get -> int?
+WalhallaSql.Sql.SqlWindowFrameBound.Offset.init -> void
+WalhallaSql.Sql.SqlWindowFrameBound.SqlWindowFrameBound(WalhallaSql.Sql.SqlWindowFrameBoundType BoundType, int? Offset = null) -> void
+WalhallaSql.Sql.SqlWindowFrameBoundType
+WalhallaSql.Sql.SqlWindowFrameBoundType.CurrentRow = 2 -> WalhallaSql.Sql.SqlWindowFrameBoundType
+WalhallaSql.Sql.SqlWindowFrameBoundType.Following = 3 -> WalhallaSql.Sql.SqlWindowFrameBoundType
+WalhallaSql.Sql.SqlWindowFrameBoundType.Preceding = 1 -> WalhallaSql.Sql.SqlWindowFrameBoundType
+WalhallaSql.Sql.SqlWindowFrameBoundType.UnboundedFollowing = 4 -> WalhallaSql.Sql.SqlWindowFrameBoundType
+WalhallaSql.Sql.SqlWindowFrameBoundType.UnboundedPreceding = 0 -> WalhallaSql.Sql.SqlWindowFrameBoundType
+WalhallaSql.Sql.SqlWindowFrameMode
+WalhallaSql.Sql.SqlWindowFrameMode.Groups = 2 -> WalhallaSql.Sql.SqlWindowFrameMode
+WalhallaSql.Sql.SqlWindowFrameMode.Range = 1 -> WalhallaSql.Sql.SqlWindowFrameMode
+WalhallaSql.Sql.SqlWindowFrameMode.Rows = 0 -> WalhallaSql.Sql.SqlWindowFrameMode
+WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowFunctionType.Aggregate = 6 -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowFunctionType.CumeDist = 5 -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowFunctionType.DenseRank = 2 -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowFunctionType.FirstValue = 9 -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowFunctionType.Lag = 7 -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowFunctionType.LastValue = 10 -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowFunctionType.Lead = 8 -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowFunctionType.NTile = 3 -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowFunctionType.NthValue = 11 -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowFunctionType.PercentRank = 4 -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowFunctionType.Rank = 1 -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWindowFunctionType.RowNumber = 0 -> WalhallaSql.Sql.SqlWindowFunctionType
+WalhallaSql.Sql.SqlWithStatement
+WalhallaSql.Sql.SqlWithStatement.Ctes.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlCteDefinition!>!
+WalhallaSql.Sql.SqlWithStatement.Ctes.init -> void
+WalhallaSql.Sql.SqlWithStatement.MainStatement.get -> WalhallaSql.Sql.SqlStatement!
+WalhallaSql.Sql.SqlWithStatement.MainStatement.init -> void
+WalhallaSql.Sql.SqlWithStatement.IsRecursive.get -> bool
+WalhallaSql.Sql.SqlWithStatement.IsRecursive.init -> void
+WalhallaSql.Sql.SqlWithStatement.SqlWithStatement(System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlCteDefinition!>! Ctes, WalhallaSql.Sql.SqlStatement! MainStatement, bool IsRecursive = false) -> void
+WalhallaSql.SqlNativeProcedureContext
+WalhallaSql.SqlNativeProcedureContext.Arguments.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlExecArgument!>!
+WalhallaSql.SqlNativeProcedureContext.Execute(string! sql) -> WalhallaSql.WalhallaResultSet!
+WalhallaSql.SqlNativeProcedureContext.Get<T>(int index) -> T?
+WalhallaSql.SqlNativeProcedureContext.Get<T>(string! name) -> T?
+WalhallaSql.SqlNativeProcedureContext.GetArgument(int index) -> WalhallaSql.Sql.SqlExecArgument?
+WalhallaSql.SqlNativeProcedureContext.GetArgument(string! name) -> WalhallaSql.Sql.SqlExecArgument?
+WalhallaSql.SqlNativeProcedureContext.Outputs.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
+WalhallaSql.SqlNativeProcedureContext.Query(string! sql) -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>!
+WalhallaSql.SqlNativeProcedureContext.SetOutput(string! name, object? value) -> void
+WalhallaSql.WalhallaEngine
+WalhallaSql.WalhallaEngine.BeginTransaction() -> WalhallaSql.WalhallaSqlTransaction!
+WalhallaSql.WalhallaEngine.Checkpoint() -> void
+WalhallaSql.WalhallaEngine.CreateTable(WalhallaSql.Sql.SqlTableDefinition! table) -> void
+WalhallaSql.WalhallaEngine.Dispose() -> void
+WalhallaSql.WalhallaEngine.DropTable(string! tableName) -> void
+WalhallaSql.WalhallaEngine.Execute(string! sql) -> WalhallaSql.WalhallaResultSet!
+WalhallaSql.WalhallaEngine.Execute(string! sql, WalhallaSql.WalhallaSqlTransaction? transaction) -> WalhallaSql.WalhallaResultSet!
+WalhallaSql.WalhallaEngine.ExecuteStreaming(string! sql) -> WalhallaSql.WalhallaStreamResult!
+WalhallaSql.WalhallaEngine.GetAllTables() -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlTableDefinition!>!
+WalhallaSql.WalhallaEngine.GetTable(string! tableName) -> WalhallaSql.Sql.SqlTableDefinition?
+WalhallaSql.WalhallaEngine.GetTableDefinition(string! name) -> WalhallaSql.Sql.SqlTableDefinition?
+WalhallaSql.WalhallaEngine.InsertBatch(string! tableName, System.Collections.Generic.IReadOnlyList<object?[]!>! rows) -> void
+WalhallaSql.WalhallaEngine.PlanCacheHits.get -> long
+WalhallaSql.WalhallaEngine.PlanCacheMisses.get -> long
+WalhallaSql.WalhallaEngine.AnalyzeTableCount.get -> long
+WalhallaSql.WalhallaEngine.AnalyzeDurationMs.get -> long
+WalhallaSql.WalhallaEngine.EstimatorHits.get -> long
+WalhallaSql.WalhallaEngine.EstimatorFallbacks.get -> long
+WalhallaSql.WalhallaEngine.Prepare(string! sql) -> WalhallaSql.WalhallaPreparedStatement!
+WalhallaSql.WalhallaEngine.WalhallaEngine(WalhallaSql.WalhallaOptions! options) -> void
+WalhallaSql.WalhallaException
+WalhallaSql.WalhallaException.WalhallaException(string! message) -> void
+WalhallaSql.WalhallaException.WalhallaException(string! message, System.Exception! inner) -> void
+WalhallaSql.WalhallaException.WalhallaException(string! message, string? sqlState) -> void
+WalhallaSql.WalhallaException.SqlState.get -> string?
+WalhallaSql.WalhallaOptions
+WalhallaSql.WalhallaOptions.AutoCheckpointWalThresholdBytes.get -> long
+WalhallaSql.WalhallaOptions.AutoCheckpointWalThresholdBytes.set -> void
+WalhallaSql.WalhallaOptions.CacheSizeBytes.get -> long
+WalhallaSql.WalhallaOptions.CacheSizeBytes.set -> void
+WalhallaSql.WalhallaOptions.CheckpointFileName.get -> string!
+WalhallaSql.WalhallaOptions.CheckpointFileName.set -> void
+WalhallaSql.WalhallaOptions.DeltaFileName.get -> string!
+WalhallaSql.WalhallaOptions.DeltaFileName.set -> void
+WalhallaSql.WalhallaOptions.GroupCommitCoalesceMs.get -> int
+WalhallaSql.WalhallaOptions.GroupCommitCoalesceMs.set -> void
+WalhallaSql.WalhallaOptions.HybridMemTableMaxBytes.get -> long
+WalhallaSql.WalhallaOptions.HybridMemTableMaxBytes.set -> void
+WalhallaSql.WalhallaOptions.MaxTransactionRetries.get -> int
+WalhallaSql.WalhallaOptions.MaxTransactionRetries.set -> void
+WalhallaSql.WalhallaOptions.MemTableMode.get -> WalhallaSql.Core.MemTableMode
+WalhallaSql.WalhallaOptions.MemTableMode.set -> void
+WalhallaSql.WalhallaOptions.OdsFileName.get -> string!
+WalhallaSql.WalhallaOptions.OdsFileName.set -> void
+WalhallaSql.WalhallaOptions.OdsPageSizeBytes.get -> int
+WalhallaSql.WalhallaOptions.OdsPageSizeBytes.set -> void
+WalhallaSql.WalhallaOptions.OdsUpdateMode.get -> WalhallaSql.Core.OdsUpdateMode
+WalhallaSql.WalhallaOptions.OdsUpdateMode.set -> void
+WalhallaSql.WalhallaOptions.PageCacheCapacity.get -> int
+WalhallaSql.WalhallaOptions.PageCacheCapacity.set -> void
+WalhallaSql.WalhallaOptions.PlanCacheCapacity.get -> int
+WalhallaSql.WalhallaOptions.PlanCacheCapacity.set -> void
+WalhallaSql.WalhallaOptions.RecursiveCteMaxIterations.get -> int
+WalhallaSql.WalhallaOptions.RecursiveCteMaxIterations.set -> void
+WalhallaSql.WalhallaOptions.RootPath.get -> string!
+WalhallaSql.WalhallaOptions.StorageMode.get -> WalhallaSql.Core.StorageMode
+WalhallaSql.WalhallaOptions.StorageMode.set -> void
+WalhallaSql.WalhallaOptions.TransactionMode.get -> WalhallaSql.Core.TransactionMode?
+WalhallaSql.WalhallaOptions.TransactionMode.set -> void
+WalhallaSql.WalhallaOptions.WalFileName.get -> string!
+WalhallaSql.WalhallaOptions.WalFileName.set -> void
+WalhallaSql.WalhallaOptions.WalhallaOptions(string! rootPath) -> void
+WalhallaSql.WalhallaOptions.WalSyncMode.get -> WalhallaSql.Core.WalSyncMode
+WalhallaSql.WalhallaOptions.WalSyncMode.set -> void
+WalhallaSql.WalhallaPreparedStatement
+WalhallaSql.WalhallaPreparedStatement.Bind(int index, object? value) -> void
+WalhallaSql.WalhallaPreparedStatement.Bind(string! name, object? value) -> void
+WalhallaSql.WalhallaPreparedStatement.ClearBindings() -> void
+WalhallaSql.WalhallaPreparedStatement.Execute() -> WalhallaSql.WalhallaResultSet!
+WalhallaSql.WalhallaResultSet
+WalhallaSql.WalhallaResultSet.AffectedRows.get -> int
+WalhallaSql.WalhallaResultSet.ColumnNames.get -> System.Collections.Generic.IReadOnlyList<string!>!
+WalhallaSql.WalhallaResultSet.OutputParameters.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
+WalhallaSql.WalhallaResultSet.OutputParameters.init -> void
+WalhallaSql.WalhallaResultSet.Rows.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.WalhallaRow>!
+WalhallaSql.WalhallaResultSet.WithOutputParameters(System.Collections.Generic.IReadOnlyDictionary<string!, object?>! outputs) -> WalhallaSql.WalhallaResultSet!
+WalhallaSql.WalhallaRow
+WalhallaSql.WalhallaRow.ContainsKey(string! key) -> bool
+WalhallaSql.WalhallaRow.Count.get -> int
+WalhallaSql.WalhallaRow.GetEnumerator() -> System.Collections.Generic.IEnumerator<System.Collections.Generic.KeyValuePair<string!, object?>>!
+WalhallaSql.WalhallaRow.GetValue(int ordinal) -> object?
+WalhallaSql.WalhallaRow.IsNull(int ordinal) -> bool
+WalhallaSql.WalhallaRow.Keys.get -> System.Collections.Generic.IEnumerable<string!>!
+WalhallaSql.WalhallaRow.this[string! key].get -> object?
+WalhallaSql.WalhallaRow.TryGetValue(string! key, out object? value) -> bool
+WalhallaSql.WalhallaRow.Values.get -> System.Collections.Generic.IEnumerable<object?>!
+WalhallaSql.WalhallaRow.WalhallaRow() -> void
+WalhallaSql.WalhallaSqlTransaction
+WalhallaSql.WalhallaSqlTransaction.Commit() -> void
+WalhallaSql.WalhallaSqlTransaction.Dispose() -> void
+WalhallaSql.WalhallaSqlTransaction.Release(string! name) -> void
+WalhallaSql.WalhallaSqlTransaction.Rollback() -> void
+WalhallaSql.WalhallaSqlTransaction.RollbackTo(string! name) -> void
+WalhallaSql.WalhallaSqlTransaction.Savepoint(string! name) -> void
+WalhallaSql.WalhallaStreamResult
+WalhallaSql.WalhallaStreamResult.ColumnNames.get -> System.Collections.Generic.IReadOnlyList<string!>!
+WalhallaSql.WalhallaStreamResult.ColumnTypes.get -> System.Collections.Generic.IReadOnlyList<System.Type!>!
+WalhallaSql.WalhallaStreamResult.Dispose() -> void
+WalhallaSql.WalhallaStreamResult.EnumerateRows() -> System.Collections.Generic.IEnumerable<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>!
+WalhallaSql.Statistics.ColumnStatistics
+WalhallaSql.Statistics.ColumnStatistics.AverageWidth.get -> int
+WalhallaSql.Statistics.ColumnStatistics.AverageWidth.init -> void
+WalhallaSql.Statistics.ColumnStatistics.DistinctCount.get -> double
+WalhallaSql.Statistics.ColumnStatistics.DistinctCount.init -> void
+WalhallaSql.Statistics.ColumnStatistics.Histogram.get -> object![]!
+WalhallaSql.Statistics.ColumnStatistics.Histogram.init -> void
+WalhallaSql.Statistics.ColumnStatistics.MostCommonValues.get -> (object! Value, double Frequency)[]!
+WalhallaSql.Statistics.ColumnStatistics.MostCommonValues.init -> void
+WalhallaSql.Statistics.ColumnStatistics.NullFraction.get -> double
+WalhallaSql.Statistics.ColumnStatistics.NullFraction.init -> void
+WalhallaSql.Statistics.TableStatistics
+WalhallaSql.Statistics.TableStatistics.AnalyzedAt.get -> System.DateTime
+WalhallaSql.Statistics.TableStatistics.AnalyzedAt.init -> void
+WalhallaSql.Statistics.TableStatistics.Columns.get -> System.Collections.Generic.IReadOnlyDictionary<string!, WalhallaSql.Statistics.ColumnStatistics!>!
+WalhallaSql.Statistics.TableStatistics.Columns.init -> void
+WalhallaSql.Statistics.TableStatistics.RowCount.get -> long
+WalhallaSql.Statistics.TableStatistics.RowCount.init -> void
+WalhallaSql.WalhallaEngine.GetStatistics(string! tableName) -> WalhallaSql.Statistics.TableStatistics?

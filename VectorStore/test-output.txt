@@ -1,0 +1,363 @@
+Der Buildvorgang wurde am 04.06.2026 20:17:47 gestartet.
+Testlauf für "E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Tests\bin\Debug\net10.0\Walhalla.VectorStore.Tests.dll" (.NETCoreApp,Version=v10.0)
+Insgesamt 1 Testdateien stimmten mit dem angegebenen Muster überein.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.8)
+[xUnit.net 00:00:00.08]   Discovering: Walhalla.VectorStore.Tests
+[xUnit.net 00:00:00.14]   Discovered:  Walhalla.VectorStore.Tests
+[xUnit.net 00:00:00.18]   Starting:    Walhalla.VectorStore.Tests
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.MatchDouble_Equality [8 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCacheTests.Put_DuplicateId_UpdatesVector [9 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.Vector_ToByteArray_RoundTrip [9 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.Count_TracksBits [9 ms]
+  Bestanden Walhalla.VectorStore.Tests.UnitTest1.Test1 [3 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Euclidean_VariousDimensions_Correct(dim: 128) [5 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.Dispose_DoesNotThrow [7 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Euclidean_VariousDimensions_Correct(dim: 8) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Euclidean_VariousDimensions_Correct(dim: 1536) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.IndexPayload_MatchLookup [16 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Euclidean_VariousDimensions_Correct(dim: 64) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Euclidean_VariousDimensions_Correct(dim: 16) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Euclidean_VariousDimensions_Correct(dim: 32) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Euclidean_VariousDimensions_Correct(dim: 4) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterParserTests.Parse_MissingKey_Throws [17 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.Should_OnlyRelevantWhenMustEmpty [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.Vector_FromByteArray_WrongSize_ThrowsArgumentException [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCacheTests.Eviction_ExceedsCapacity_RemovesOldest [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.Must_MatchString_True [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Cosine_OrthogonalVectors_ReturnsZero [1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.Should_IgnoredWhenMustPresent [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.NullPayload_NonEmptyFilter_ReturnsFalse [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.MarkDeleted_NonExistingNode_ReturnsFalse [1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.NullPayload_EmptyFilter_ReturnsTrue [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.DotProduct_VariousDimensions_Correct(dim: 64) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.DotProduct_VariousDimensions_Correct(dim: 8) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.DotProduct_VariousDimensions_Correct(dim: 16) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.DotProduct_VariousDimensions_Correct(dim: 32) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.DotProduct_VariousDimensions_Correct(dim: 128) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.DotProduct_VariousDimensions_Correct(dim: 1536) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.DotProduct_VariousDimensions_Correct(dim: 4) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.MustNot_BlocksMatch [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.CaseInsensitive_Search [19 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.Must_MatchString_False [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.Must_MatchInt_True [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.NormalizeL2_UnitVector_StaysUnit [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Cosine_VariousDimensions_Correct(dim: 64) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Cosine_VariousDimensions_Correct(dim: 128) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Cosine_VariousDimensions_Correct(dim: 16) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Cosine_VariousDimensions_Correct(dim: 8) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Cosine_VariousDimensions_Correct(dim: 1536) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Cosine_VariousDimensions_Correct(dim: 32) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Cosine_VariousDimensions_Correct(dim: 4) [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Euclidean_SameVector_ReturnsZero [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.Vector_Span_ReturnsCorrectData [3 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.Vector_Create_WithData_SetsDimension [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.SearchAny_NotQuery_ExcludesNegativeMatches [2 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Cosine_OppositeVector_ReturnsMinusOne [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCacheTests.TryGet_EmptyCache_ReturnsFalse [3 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Euclidean_KnownDistance [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCacheTests.Eviction_AccessUpdatesRecency [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.SearchAny_MultiTerm_OR [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.DotProduct_OrthogonalVectors_ReturnsZero [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.Punctuation_IsSplit [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Euclidean_DifferentDimensions_ThrowsArgumentException [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.RTreeTests.Insert_And_Search_SingleEntry [22 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.FullText_Phrase_Any_And_Not [2 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Cosine_NormalizedVectors_KnownValue [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.TermCount_TracksCorrectly [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.IndexDocument_And_Search_SingleTerm [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.MissingKey_ReturnsFalse [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.NormalizeL2_VectorBecomesUnitLength [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.NormalizeL2_ZeroVector_DoesNotThrow [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.EmptyQuery_ReturnsNull [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.RTreeTests.Delete_NonExistent_ReturnsFalse [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.DotProduct_KnownValue [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorDistanceTests.Cosine_SameVector_ReturnsOne [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.Vector_Create_WithDimension_InitializesToZero [2 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.Must_Range_Inclusive [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.Vector_Equals_DifferentData_ReturnsFalse [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.IndexPayload_RangeLookup [7 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.MarkDeleted_ExistingNode_Succeeds [5 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.Search_PhraseQuery_MatchesOrderedTokensOnly [1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.Must_Range_Exclusive [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.RTreeTests.Insert_And_Search_MultipleEntries [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.Search_TermNotFound_ReturnsNull [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterEvaluatorTests.TypeMismatch_ReturnsFalse [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.Evaluate_MustNot [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.Search_MultiTerm_AND [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.DocumentCount_TracksCorrectly [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.ReindexDocument_UpdatesTerms [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.RTreeTests.Delete_RemovesEntry [1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FullTextIndexTests.RemoveDocument_RemovesFromPostings [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCacheTests.ThreadSafety_ConcurrentPutsAndGets [5 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCacheTests.Remove_ExistingEntry_RemovesFromCache [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCacheTests.Remove_NonExistingEntry_DoesNotThrow [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCacheTests.CapacityZero_DoesNotStoreAnything [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCacheTests.PutAndTryGet_ReturnsTrueAndCorrectVector [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCacheTests.Eviction_PutUpdatesRecency [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.Deserialize_InvalidVersion_Throws [11 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.Serialize_Deserialize_EmptyBitmap [3 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.Set_Get_AcrossChunks [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.EmptyBitmap_Operations [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.Set_Get_SingleBit [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.ClearAll_EmptiesBitmap [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.And_Intersection [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.EnumerateSetBits_ReturnsAllSet [4 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.Or_Union [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.Serialize_Deserialize_SparseBitmap [3 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.Clear_RemovesBit [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.SimpleBitmapTests.AndNot_Difference [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.RTreeTests.BulkInsert_TriggersSplit [17 ms]
+  Bestanden Walhalla.VectorStore.Tests.RTreeTests.Insert_OverwriteExisting_Replaces [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.RTreeTests.OverlappingRectangles_AllFound [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.RTreeTests.Search_3D [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.RTreeTests.Search_NoIntersection_ReturnsEmpty [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.ClientTests.WalhallaClient_WithChannel_DoesNotDisposeExternalChannel [24 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterParserTests.Parse_FromDictionary [32 ms]
+  Bestanden Walhalla.VectorStore.Tests.ClientTests.WalhallaClient_CanCreateAndDispose [4 ms]
+  Bestanden Walhalla.VectorStore.Tests.ClientTests.FullTextQueryMode_AllValuesHaveStringRepresentation [1 ms]
+  Bestanden Walhalla.VectorStore.Tests.ClientTests.DistanceMetric_AllValuesHaveStringRepresentation [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterParserTests.Parse_Must_MatchDouble [3 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterParserTests.Parse_MatchAndRange_Throws [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterParserTests.Parse_Must_MatchBool [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterParserTests.Parse_Must_Range [3 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterParserTests.Parse_MustNot_And_Should [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterParserTests.Parse_Must_MatchString [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterParserTests.Parse_Must_MatchInt [1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterParserTests.Parse_EmptyFilter_Throws [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.FilterParserTests.Parse_FullText_ModeAndNot [5 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.VectorMetadata_ToJsonBytes_FromJsonBytes_RoundTrip [51 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.VectorMetadata_Serialization_RoundTrip [5 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.VectorMetadata_Empty_SerializesCorrectly [1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.Vector_Equals_SameData_ReturnsTrue [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.Vector_GetHashCode_SameData_SameHash [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.Vector_Create_WithNullData_ThrowsArgumentNullException [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorModelsTests.VectorSearchResult_Properties_SetCorrectly [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_Dispose_DoesNotThrow [95 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.Insert_Parallel_IsThreadSafe [73 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.CollectionNames_ListsAllCollections [125 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentRTreeTests.PersistentRTree_Reopen_RestoresEntries [125 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentFullTextIndexTests.IndexDocument_Reindex_RemovesOldPersistedTerms [128 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentRTreeTests.PersistentRTree_Delete_Reopen_RemovesEntry [16 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentRTreeTests.Serialize_Deserialize_RoundTripsEntries [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentFullTextIndexTests.SearchScored_Reopen_SupportsPhraseAndNotQueries [26 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.DeleteAsync_RemovesVector [164 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_CreateIterator_ReturnsCurrentStoreState [73 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.MultipleCollections_IsolatedData [39 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.BuildFromCollection_RebuildsIndex [140 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.IndexPayload_OverwriteExisting_RemovesOldMatchAndRangeValues [2 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.Evaluate_DoubleMatch_ReturnsNull [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchExact_WithFullText_PreFilter [175 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.Evaluate_GeoRadius_ReturnsNull [2 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionFilterTests.SearchHnsw_WithFilter [177 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.IndexPayload_FullText_MultipleTerms [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentFullTextIndexTests.SearchAnyScored_Reopen_ReturnsUnionRanked [19 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.Evaluate_Should [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.IndexPayload_FullText_PhraseAnyAndNotLookup [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.RemovePayload_ClearsFullTextAndGeo [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.RemovePayload_RemovesFromIndex [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.Evaluate_MustAndMustNot [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.IndexPayload_FullTextLookup [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PayloadIndexTests.EvaluateForSearch_GeoRadius_ReturnsBoundingBoxCandidates [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.IvfFlatIndexTests.Collection_DeleteAsync_RemovesFromIvf [191 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentFullTextIndexTests.IndexDocument_Reopen_SearchFindsPersistedPostings [28 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_CreateIterator_ReturnsCorrectData [36 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.Reopen_WithOutdatedPayloadIndexVersion_MarksManifestColdAndFallsBack [205 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.Count_IncreasesWithPuts [45 ms]
+  Bestanden Walhalla.VectorStore.Tests.IvfFlatIndexTests.Remove_DeletesFromClusters [31 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.CreateSnapshot_CapturesState [52 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_CreateIterator_NonExisting_ThrowsArgumentException [17 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentFullTextIndexTests.SearchScored_Reopen_RanksByTermFrequency [23 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchHnsw_NoPayloadIndex_FallsBackToPostFilter [62 ms]
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Api
+  Bestanden Walhalla.VectorStore.Tests.IvfFlatIndexTests.Clear_RemovesAllData [16 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionFilterTests.SearchExact_WithFilter_Match [66 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentFullTextIndexTests.RemoveDocument_Reopen_RemovesPersistedPostings [26 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.GetOrCreateCollection_DifferentNames_DifferentInstances [33 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.ExistsAsync_Existing_ReturnsTrue [46 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_MultipleSnapshots_SeeSameData [52 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.Dispose_CanBeCalledMultipleTimes [18 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.Dispose_DisposesAllCollections [28 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionFilterTests.SearchExact_WithFilter_Range [57 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.DeleteAsync_NonExisting_DoesNotThrow [28 ms]
+  Bestanden Walhalla.VectorStore.Tests.IvfFlatIndexTests.Collection_PutBatchAsync_UpdatesIvf [74 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.GetOrCreateCollection_DifferentMetrics_ReturnsExisting [29 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_Iterator_ReturnsAllData [47 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.CollectionNames_EmptyManager_ReturnsEmpty [21 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.BuildPayloadIndexAsync_PersistentCollection_ClearsStaleFullTextAndGeoState [132 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionFilterTests.SearchHnsw_WithoutFilter_ReturnsAll [46 ms]
+  Bestanden Walhalla.VectorStore.Tests.SnapshotTests.Snapshot_CollectionNames_ListsAllCollections [22 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.PutBatchAsync_UpsertExisting_UpdatesVector [40 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.ConcurrentAccess_Safe [44 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.PutAsync_UpdatesExistingVector [32 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionFilterTests.SearchExact_WithoutFilter_ReturnsAll [38 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.Dispose_CanBeCalledMultipleTimes [18 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.GetOrCreateCollection_ExistingCollection_ReturnsSameInstance [14 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.SearchExact_ReturnsTopK [40 ms]
+info: Grpc.AspNetCore.Server.ServerCallHandler[7]
+      Error status code 'Unauthenticated' with detail 'Invalid or missing API key' raised.
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.SearchHybridAsync_ReranksTextCandidatesByVectorDistance [86 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.GetOrCreateCollection_NewCollection_ReturnsCollection [17 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.GetCollection_Existing_ReturnsCollection [19 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.Count_DecreasesWithDeletes [32 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.GetCollection_NonExisting_ReturnsNull [12 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.SearchExact_EmptyCollection_ReturnsEmpty [15 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionManagerTests.GetOrCreateCollection_DifferentDimensions_ReturnsExisting [15 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.SearchTextAsync_Reopen_SupportsPhraseAnyAndNot [59 ms]
+info: Microsoft.Hosting.Lifetime[0]
+      Application is shutting down...
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Api
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.Operations_AfterDispose_ThrowObjectDisposedException [14 ms]
+  Bestanden Walhalla.VectorStore.Tests.TransportIntegrationTests.Grpc_RejectsMissingApiKey [521 ms]
+  Bestanden Walhalla.VectorStore.Tests.IvfFlatIndexTests.Collection_SearchIvfAsync_AfterRebuild_ReturnsResults [236 ms]
+  Bestanden Walhalla.VectorStore.Tests.IvfFlatIndexTests.SearchKnn_EmptyIndex_ReturnsEmpty [10 ms]
+  Bestanden Walhalla.VectorStore.Tests.IvfFlatIndexTests.Search_WithFilter_RespectsFilter [13 ms]
+  Bestanden Walhalla.VectorStore.Tests.IvfFlatIndexTests.Insert_AddsToCorrectCluster [10 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchHnsw_PreFilterVsPostFilter_SameResults [351 ms]
+Small128D Recall@10: 50,0 %
+  HNSW ID=96 Dist=0,6519
+  HNSW ID=13 Dist=0,6625
+  HNSW ID=16 Dist=0,6663
+  HNSW ID=14 Dist=0,6673
+  HNSW ID=6 Dist=0,6680
+  Exact ID=42
+  Exact ID=95
+  Exact ID=59
+  Exact ID=96
+  Exact ID=97
+  Bestanden Walhalla.VectorStore.Tests.IvfFlatIndexTests.Build_WithRandomVectors_CreatesClusters [14 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.DeleteAfterReopen_RemovesPersistentFullTextAndGeo [113 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.PutBatchAsync_StoresVectorsAndEnablesSearch [110 ms]
+  Bestanden Walhalla.VectorStore.Tests.IvfFlatIndexTests.SearchKnn_ReturnsCorrectTopK [14 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.SearchKnn_Small128D_ReasonableRecall(m: 16, efConstruction: 200, efSearch: 64, minRecall: 0,5) [524 ms]
+  Bestanden Walhalla.VectorStore.Tests.IvfFlatIndexTests.Build_AutoClusters_UsesSqrt [9 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.PutAsync_StoresVector [31 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.BuildPayloadIndexAsync_RebuildsFromExistingData [47 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.EnumerateIdsAsync_EmptyCollection_ReturnsEmpty [19 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchHnsw_WithPayloadIndex_PreFilter [33 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.SearchHnsw_WithoutIndex_ThrowsInvalidOperationException [21 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.PutAsync_WrongDimension_ThrowsArgumentException [14 ms]
+info: Microsoft.Hosting.Lifetime[0]
+      Application is shutting down...
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Api
+info: Microsoft.Hosting.Lifetime[0]
+      Application is shutting down...
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Api
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchExact_WithGeoRadius_PostFilter [32 ms]
+  Bestanden Walhalla.VectorStore.Tests.TransportIntegrationTests.Grpc_HybridSearch_ReranksByVectorDistance [186 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.EnumerateIdsAsync_ReturnsAllIds [33 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchExact_WithPayloadIndex_PreFilter [32 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.SearchExact_CosineMetric_NormalizesAndReturnsCorrectOrder [22 ms]
+  Bestanden Walhalla.VectorStore.Tests.TransportIntegrationTests.Rest_RejectsMissingApiKey [57 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.RebuildIndexAsync_BuildsIndex [44 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.GetAsync_NonExisting_ReturnsNull [10 ms]
+info: Microsoft.Hosting.Lifetime[0]
+      Application is shutting down...
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Api
+info: Grpc.AspNetCore.Server.ServerCallHandler[7]
+      Error status code 'InvalidArgument' with detail 'Invalid metadata JSON: Expected depth to be zero at the end of the JSON payload. There is an open JSON object or array that should be closed. Path: $ | LineNumber: 0 | BytePositionInLine: 1.' raised.
+info: Microsoft.Hosting.Lifetime[0]
+      Application is shutting down...
+Small128D Recall@10: 70,0 %
+  HNSW ID=42 Dist=0,0000
+  HNSW ID=59 Dist=0,6437
+  HNSW ID=96 Dist=0,6519
+  HNSW ID=13 Dist=0,6625
+  HNSW ID=16 Dist=0,6663
+  Exact ID=42
+  Exact ID=95
+  Exact ID=59
+  Exact ID=96
+  Exact ID=97
+  Bestanden Walhalla.VectorStore.Tests.IvfFlatIndexTests.Collection_SearchIvfAsync_WithNprobe_AdjustsRecall [233 ms]
+  Bestanden Walhalla.VectorStore.Tests.TransportIntegrationTests.Rest_TextSearch_UsesModeAndNotQuery [104 ms]
+  Bestanden Walhalla.VectorStore.Tests.TransportIntegrationTests.Grpc_Upsert_RejectsInvalidMetadataJson [52 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.SearchHnsw_WithIndex_ReturnsResults [127 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.PutAsync_WithMetadata_StoresMetadata [16 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.Constructor_SetsProperties [10 ms]
+  Bestanden Walhalla.VectorStore.Tests.VectorCollectionTests.ExistsAsync_NonExisting_ReturnsFalse [12 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.SearchKnn_Small128D_ReasonableRecall(m: 32, efConstruction: 400, efSearch: 128, minRecall: 0,69999999999999996) [1 s]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.SearchKnn_ResultsAreSortedByDistance [316 ms]
+NodeCount: 1000
+EntryLayer: 2
+Layer 0: 1000 nodes, avg neighbors: 32,0, zero: 0
+Layer 1: 76 nodes, avg neighbors: 16,0, zero: 0
+Layer 2: 6 nodes, avg neighbors: 5,0, zero: 0
+HNSW returned 10 results
+Recall@10: 100,0 %
+HNSW results: 500(0,000), 701(0,593), 815(0,599), 995(0,603), 611(0,606), 358(0,616), 294(0,619), 720(0,620), 22(0,620), 709(0,621)
+Exact results: 500(0,000), 701(0,593), 815(0,599), 995(0,603), 611(0,606), 358(0,616), 294(0,619), 720(0,620), 22(0,620), 709(0,621)
+EntryPointIndex: 76, MaxLayer: 2
+EntryPoint ID: 77, Distance to query: 0,633
+Layer 2 Nodes and their distances to query:
+  ID 77: 0,633
+  ID 177: 0,725
+  ID 296: 0,705
+  ID 341: 0,660
+  ID 388: 0,714
+  ID 986: 0,663
+ID 77 Layer 1 neighbors: 589(0,663), 138(0,695), 57(0,665), 705(0,699), 435(0,647), 74(0,676), 711(0,724), 543(0,722), 614(0,669), 267(0,677), 80(0,689), 38(0,710), 977(0,653), 62(0,705), 86(0,768), 18(0,694)
+ID 77 Layer 0 neighbors (first 10): 37(0,623), 729(0,668), 156(0,643), 508(0,668), 783(0,664), 174(0,660), 137(0,639), 741(0,669), 100(0,707), 12(0,686) ...
+ID 500 (index 499) exists in graph: 500, distance to query: 0,000
+ID 500 Layer 0 neighbors (first 10): 701(0,593), 815(0,599), 995(0,603), 611(0,606), 294(0,619), 22(0,620), 861(0,621), 819(0,622), 37(0,623), 172(0,623) ...
+ID 501 (index 500) exists in graph: 501, distance to query: 0,676
+Reachable from ID 77: 1000 / 1000
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.GraphStructure_AfterInsert_HasConnectedNeighbors [23 s]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.MarkDeleted_NodeExcludedFromSearch [1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PerformanceTests.VectorCollection_Throughput [28 s]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.SearchKnn_HigherEf_ReturnsBetterResults [8 s]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.Options_ExposedCorrectly [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.VectorLoader_QueryIsIdenticalToVector500 [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.SearchKnn_SingleNode_ReturnsThatNode [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.Insert_MultipleNodes_IncreasesCount [291 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.SearchKnn_KLargerThanCount_ReturnsAll [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.SearchKnn_Tiny2D_ReturnsCorrectNeighbors [2 ms]
+  Bestanden Walhalla.VectorStore.Tests.PerformanceTests.SimdDistance_Throughput [6 s]
+EntryLayer after batch insert: 2
+Layers: max=3, nonZero=632, distribution: L0=9368, L1=593, L2=33, L3=6
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.Insert_BatchPreparedNodes_EntryLayerGreaterThanZero [2 s]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.SearchKnn_EmptyIndex_ReturnsEmpty [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.PrepareLayers_ProducesNonZeroLayers [7 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.SearchKnn_MultipleNodes_ReturnsKResults [281 ms]
+  Bestanden Walhalla.VectorStore.Tests.HnswIndexTests.Insert_FirstNode_SetsEntryPoint [< 1 ms]
+  Bestanden Walhalla.VectorStore.Tests.PerformanceTests.HnswIndex_InsertAndSearch [2 m 52 s]
+Der aktive Testlauf wurde abgebrochen. Grund: Der Testhostprozess ist abgestürzt.
+
+Testlauf abgebrochen.
+Gesamtzahl Tests: unbekannt
+     Bestanden: 248
+ Gesamtzeit: 14,8414 Minuten
+     1>Projekt "E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Tests\Walhalla.VectorStore.Tests.csproj" auf Knoten "1", VSTest Ziel(e).
+     1>_VSTestConsole:
+         MSB4181: Die Aufgabe "VSTestTask" hat FALSE zurückgegeben, jedoch keinen Fehler protokolliert.
+     1>Die Erstellung des Projekts "E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Tests\Walhalla.VectorStore.Tests.csproj" ist abgeschlossen, VSTest Ziel(e) -- FEHLER.
+
+Fehler beim Buildvorgang.
+    0 Warnung(en)
+    0 Fehler
+
+Verstrichene Zeit 00:14:51.05

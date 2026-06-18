@@ -1,0 +1,7 @@
+<!-- Zentrale Build-Eigenschaften fuer die gesamte Solution -->
+<Project>
+  <PropertyGroup>
+    <!-- Alle NuGet-Pakete landen zentral im Solution-Root unter /packages -->
+    <PackageOutputPath>$(MSBuildThisFileDirectory)packages</PackageOutputPath>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,266 @@
+#nullable enable
+const WalhallaSql.AdoNet.WalhallaSqlDbConnection.DefaultDatabaseName = "App" -> string!
+const WalhallaSql.AdoNet.WalhallaSqlProviderRegistration.InvariantName = "WalhallaSql.AdoNet" -> string!
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.Cancel() -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.CommandText.get -> string!
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.CommandText.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.CommandTimeout.get -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.CommandTimeout.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.CommandType.get -> System.Data.CommandType
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.CommandType.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.DesignTimeVisible.get -> bool
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.DesignTimeVisible.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.ExecuteNonQuery() -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.ExecuteNonQueryAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.ExecuteScalar() -> object?
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.ExecuteScalarAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<object?>!
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.Prepare() -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.UpdatedRowSource.get -> System.Data.UpdateRowSource
+override WalhallaSql.AdoNet.WalhallaSqlDbCommand.UpdatedRowSource.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbConnection.ChangeDatabase(string! databaseName) -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbConnection.Close() -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbConnection.ConnectionString.get -> string!
+override WalhallaSql.AdoNet.WalhallaSqlDbConnection.ConnectionString.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbConnection.Database.get -> string!
+override WalhallaSql.AdoNet.WalhallaSqlDbConnection.DataSource.get -> string!
+override WalhallaSql.AdoNet.WalhallaSqlDbConnection.Open() -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbConnection.OpenAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+override WalhallaSql.AdoNet.WalhallaSqlDbConnection.ServerVersion.get -> string!
+override WalhallaSql.AdoNet.WalhallaSqlDbConnection.State.get -> System.Data.ConnectionState
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.Close() -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.Depth.get -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.FieldCount.get -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetBoolean(int ordinal) -> bool
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetByte(int ordinal) -> byte
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length) -> long
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetChar(int ordinal) -> char
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length) -> long
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetDataTypeName(int ordinal) -> string!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetDateTime(int ordinal) -> System.DateTime
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetDecimal(int ordinal) -> decimal
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetDouble(int ordinal) -> double
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetEnumerator() -> System.Collections.IEnumerator!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetFieldType(int ordinal) -> System.Type!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetFieldValue<T>(int ordinal) -> T
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetFieldValueAsync<T>(int ordinal, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<T>!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetFloat(int ordinal) -> float
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetGuid(int ordinal) -> System.Guid
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetInt16(int ordinal) -> short
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetInt32(int ordinal) -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetInt64(int ordinal) -> long
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetName(int ordinal) -> string!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetOrdinal(string! name) -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetSchemaTable() -> System.Data.DataTable!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetStream(int ordinal) -> System.IO.Stream!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetString(int ordinal) -> string!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetTextReader(int ordinal) -> System.IO.TextReader!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetValue(int ordinal) -> object!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.GetValues(object![]! values) -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.HasRows.get -> bool
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.IsClosed.get -> bool
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.IsDBNull(int ordinal) -> bool
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.IsDBNullAsync(int ordinal, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.NextResult() -> bool
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.NextResultAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.Read() -> bool
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.ReadAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.RecordsAffected.get -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.this[int ordinal].get -> object!
+override WalhallaSql.AdoNet.WalhallaSqlDbDataReader.this[string! name].get -> object!
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.DbType.get -> System.Data.DbType
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.DbType.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.Direction.get -> System.Data.ParameterDirection
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.Direction.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.IsNullable.get -> bool
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.IsNullable.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.ParameterName.get -> string!
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.ParameterName.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.ResetDbType() -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.Size.get -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.Size.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.SourceColumn.get -> string!
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.SourceColumn.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.SourceColumnNullMapping.get -> bool
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.SourceColumnNullMapping.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.Value.get -> object?
+override WalhallaSql.AdoNet.WalhallaSqlDbParameter.Value.set -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.Add(object! value) -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.AddRange(System.Array! values) -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.Clear() -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.Contains(object! value) -> bool
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.Contains(string! value) -> bool
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.CopyTo(System.Array! array, int index) -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.Count.get -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.GetEnumerator() -> System.Collections.IEnumerator!
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.IndexOf(object! value) -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.IndexOf(string! parameterName) -> int
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.Insert(int index, object! value) -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.Remove(object! value) -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.RemoveAt(int index) -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.RemoveAt(string! parameterName) -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.SyncRoot.get -> object!
+override WalhallaSql.AdoNet.WalhallaSqlDbProviderFactory.CanCreateDataSourceEnumerator.get -> bool
+override WalhallaSql.AdoNet.WalhallaSqlDbProviderFactory.CreateCommand() -> System.Data.Common.DbCommand!
+override WalhallaSql.AdoNet.WalhallaSqlDbProviderFactory.CreateConnection() -> System.Data.Common.DbConnection!
+override WalhallaSql.AdoNet.WalhallaSqlDbProviderFactory.CreateConnectionStringBuilder() -> System.Data.Common.DbConnectionStringBuilder!
+override WalhallaSql.AdoNet.WalhallaSqlDbProviderFactory.CreateParameter() -> System.Data.Common.DbParameter!
+override WalhallaSql.AdoNet.WalhallaSqlDbTransaction.Commit() -> void
+override WalhallaSql.AdoNet.WalhallaSqlDbTransaction.IsolationLevel.get -> System.Data.IsolationLevel
+override WalhallaSql.AdoNet.WalhallaSqlDbTransaction.Rollback() -> void
+static readonly WalhallaSql.AdoNet.WalhallaSqlDbProviderFactory.Instance -> WalhallaSql.AdoNet.WalhallaSqlDbProviderFactory!
+static WalhallaSql.AdoNet.SqlClient.SqlClientSessionFactory.Create(WalhallaSql.WalhallaEngine? engine, string! connectionString) -> WalhallaSql.AdoNet.SqlClient.ISqlClientSession!
+static WalhallaSql.AdoNet.SqlClient.SqlLiteralFormatter.RewriteParametersAsLiterals(WalhallaSql.AdoNet.SqlClient.SqlClientCommand! command) -> string!
+static WalhallaSql.AdoNet.SqlClient.SqlLiteralFormatter.ToLiteral(object? value) -> string!
+static WalhallaSql.AdoNet.SqlExecutionResult.FromRows(System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>! rows) -> WalhallaSql.AdoNet.SqlExecutionResult!
+static WalhallaSql.AdoNet.WalhallaSqlConnectionRegistry.Register(string! dataSourceName, System.Func<WalhallaSql.WalhallaEngine!>! engineFactory) -> void
+static WalhallaSql.AdoNet.WalhallaSqlConnectionRegistry.TryResolve(string! dataSourceName, out WalhallaSql.WalhallaEngine? engine) -> bool
+static WalhallaSql.AdoNet.WalhallaSqlDbCommand.DumpProfilerStats() -> void
+static WalhallaSql.AdoNet.WalhallaSqlDbCommand.ResetProfilerStats() -> void
+static WalhallaSql.AdoNet.WalhallaSqlDbCommand._profBuildCmd -> long
+static WalhallaSql.AdoNet.WalhallaSqlDbCommand._profExecSql -> long
+static WalhallaSql.AdoNet.WalhallaSqlPgWireWebSocketTunnel.StartAsync(string! remoteUri, string! database, string! localHost = "127.0.0.1", string? username = null, string? password = null, string? extraConnectionStringSegments = null, int localPort = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<WalhallaSql.AdoNet.WalhallaSqlPgWireWebSocketTunnel!>!
+static WalhallaSql.AdoNet.WalhallaSqlProviderRegistration.GetFactory() -> System.Data.Common.DbProviderFactory!
+static WalhallaSql.AdoNet.WalhallaSqlProviderRegistration.Register() -> void
+WalhallaSql.AdoNet.PgWireWebSocketProxy
+WalhallaSql.AdoNet.PgWireWebSocketProxy.BoundPort.get -> int
+WalhallaSql.AdoNet.PgWireWebSocketProxy.DisposeAsync() -> System.Threading.Tasks.ValueTask
+WalhallaSql.AdoNet.PgWireWebSocketProxy.PgWireWebSocketProxy(string! remoteUri) -> void
+WalhallaSql.AdoNet.PgWireWebSocketProxy.StartAsync(int localPort = 0, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+WalhallaSql.AdoNet.SqlCandidateFilterTelemetry
+WalhallaSql.AdoNet.SqlCandidateFilterTelemetry.Alias.get -> string!
+WalhallaSql.AdoNet.SqlCandidateFilterTelemetry.Alias.init -> void
+WalhallaSql.AdoNet.SqlCandidateFilterTelemetry.CandidateCount.get -> int
+WalhallaSql.AdoNet.SqlCandidateFilterTelemetry.CandidateCount.init -> void
+WalhallaSql.AdoNet.SqlCandidateFilterTelemetry.ConsideredCount.get -> int
+WalhallaSql.AdoNet.SqlCandidateFilterTelemetry.ConsideredCount.init -> void
+WalhallaSql.AdoNet.SqlCandidateFilterTelemetry.RejectedCount.get -> int
+WalhallaSql.AdoNet.SqlCandidateFilterTelemetry.RejectedCount.init -> void
+WalhallaSql.AdoNet.SqlCandidateFilterTelemetry.ScannedCount.get -> int
+WalhallaSql.AdoNet.SqlCandidateFilterTelemetry.ScannedCount.init -> void
+WalhallaSql.AdoNet.SqlCandidateFilterTelemetry.SqlCandidateFilterTelemetry(string! Alias, int CandidateCount, int ConsideredCount, int RejectedCount, int ScannedCount) -> void
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.BeginTransportTransaction(System.Data.IsolationLevel isolationLevel) -> void
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.CommitTransportTransaction() -> void
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.CreateSavepoint(string! savepointName) -> void
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.EnrollTransaction(WalhallaSql.WalhallaSqlTransaction? transaction) -> void
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.Execute(WalhallaSql.AdoNet.SqlClient.SqlClientCommand! command) -> WalhallaSql.AdoNet.SqlExecutionResult!
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.ExecuteBatch(System.Collections.Generic.IReadOnlyList<WalhallaSql.AdoNet.SqlClient.SqlClientCommand!>! commands) -> WalhallaSql.AdoNet.SqlExecutionResult![]!
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.ExecuteStream(WalhallaSql.AdoNet.SqlClient.SqlClientCommand! command) -> WalhallaSql.AdoNet.SqlClient.SqlClientStreamResult!
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.ReleaseSavepoint(string! savepointName) -> void
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.RollbackToSavepoint(string! savepointName) -> void
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.RollbackTransportTransaction() -> void
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.SupportsSavepoints.get -> bool
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.SupportsStructuredParameters.get -> bool
+WalhallaSql.AdoNet.SqlClient.ISqlClientSession.SupportsTransportTransactions.get -> bool
+WalhallaSql.AdoNet.SqlClient.SqlClientCommand
+WalhallaSql.AdoNet.SqlClient.SqlClientCommand.HasExternalTransaction.get -> bool
+WalhallaSql.AdoNet.SqlClient.SqlClientCommand.HasExternalTransaction.init -> void
+WalhallaSql.AdoNet.SqlClient.SqlClientCommand.Parameters.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.AdoNet.SqlClient.SqlClientParameter!>!
+WalhallaSql.AdoNet.SqlClient.SqlClientCommand.Parameters.init -> void
+WalhallaSql.AdoNet.SqlClient.SqlClientCommand.PreferTransportPrepare.get -> bool
+WalhallaSql.AdoNet.SqlClient.SqlClientCommand.PreferTransportPrepare.init -> void
+WalhallaSql.AdoNet.SqlClient.SqlClientCommand.Sql.get -> string!
+WalhallaSql.AdoNet.SqlClient.SqlClientCommand.Sql.init -> void
+WalhallaSql.AdoNet.SqlClient.SqlClientCommand.SqlClientCommand(string! Sql, bool HasExternalTransaction = false, System.Collections.Generic.IReadOnlyList<WalhallaSql.AdoNet.SqlClient.SqlClientParameter!>? Parameters = null, bool PreferTransportPrepare = false) -> void
+WalhallaSql.AdoNet.SqlClient.SqlClientParameter
+WalhallaSql.AdoNet.SqlClient.SqlClientParameter.Name.get -> string!
+WalhallaSql.AdoNet.SqlClient.SqlClientParameter.Name.init -> void
+WalhallaSql.AdoNet.SqlClient.SqlClientParameter.SqlClientParameter(string! Name, object? Value) -> void
+WalhallaSql.AdoNet.SqlClient.SqlClientParameter.Value.get -> object?
+WalhallaSql.AdoNet.SqlClient.SqlClientParameter.Value.init -> void
+WalhallaSql.AdoNet.SqlClient.SqlClientSessionFactory
+WalhallaSql.AdoNet.SqlClient.SqlClientStreamResult
+WalhallaSql.AdoNet.SqlClient.SqlClientStreamResult.AffectedRows.get -> int
+WalhallaSql.AdoNet.SqlClient.SqlClientStreamResult.AffectedRows.init -> void
+WalhallaSql.AdoNet.SqlClient.SqlClientStreamResult.Optimization.get -> WalhallaSql.AdoNet.SqlOptimizationInfo?
+WalhallaSql.AdoNet.SqlClient.SqlClientStreamResult.Optimization.init -> void
+WalhallaSql.AdoNet.SqlClient.SqlClientStreamResult.Rows.get -> System.Collections.Generic.IEnumerable<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>!
+WalhallaSql.AdoNet.SqlClient.SqlClientStreamResult.Rows.init -> void
+WalhallaSql.AdoNet.SqlClient.SqlClientStreamResult.SqlClientStreamResult(int AffectedRows, System.Collections.Generic.IEnumerable<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>! Rows, WalhallaSql.AdoNet.SqlOptimizationInfo? Optimization = null) -> void
+WalhallaSql.AdoNet.SqlClient.SqlClientTransport
+WalhallaSql.AdoNet.SqlClient.SqlClientTransport.InProcess = 0 -> WalhallaSql.AdoNet.SqlClient.SqlClientTransport
+WalhallaSql.AdoNet.SqlClient.SqlClientTransport.PgWire = 1 -> WalhallaSql.AdoNet.SqlClient.SqlClientTransport
+WalhallaSql.AdoNet.SqlClient.SqlLiteralFormatter
+WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession
+WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.BeginTransportTransaction(System.Data.IsolationLevel isolationLevel) -> void
+WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.CommitTransportTransaction() -> void
+WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.EnrollTransaction(WalhallaSql.WalhallaSqlTransaction? transaction) -> void
+WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.Execute(WalhallaSql.AdoNet.SqlClient.SqlClientCommand! command) -> WalhallaSql.AdoNet.SqlExecutionResult!
+WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.ExecuteBatch(System.Collections.Generic.IReadOnlyList<WalhallaSql.AdoNet.SqlClient.SqlClientCommand!>! commands) -> WalhallaSql.AdoNet.SqlExecutionResult![]!
+WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.ExecuteStream(WalhallaSql.AdoNet.SqlClient.SqlClientCommand! command) -> WalhallaSql.AdoNet.SqlClient.SqlClientStreamResult!
+WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.RollbackTransportTransaction() -> void
+WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.SupportsSavepoints.get -> bool
+WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.SupportsTransportTransactions.get -> bool
+WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.WalhallaSqlClientSession(WalhallaSql.WalhallaEngine! engine) -> void
+WalhallaSql.AdoNet.SqlExecutionResult
+WalhallaSql.AdoNet.SqlExecutionResult.AffectedRows.get -> int
+WalhallaSql.AdoNet.SqlExecutionResult.AffectedRows.init -> void
+WalhallaSql.AdoNet.SqlExecutionResult.Optimization.get -> WalhallaSql.AdoNet.SqlOptimizationInfo?
+WalhallaSql.AdoNet.SqlExecutionResult.Optimization.init -> void
+WalhallaSql.AdoNet.SqlExecutionResult.Rows.get -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>?
+WalhallaSql.AdoNet.SqlExecutionResult.Rows.init -> void
+WalhallaSql.AdoNet.SqlExecutionResult.SqlExecutionResult(int AffectedRows, System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>? Rows = null, WalhallaSql.AdoNet.SqlOptimizationInfo? Optimization = null) -> void
+WalhallaSql.AdoNet.SqlOptimizationInfo
+WalhallaSql.AdoNet.SqlOptimizationInfo.CandidateFilters.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.AdoNet.SqlCandidateFilterTelemetry!>?
+WalhallaSql.AdoNet.SqlOptimizationInfo.CandidateFilters.init -> void
+WalhallaSql.AdoNet.SqlOptimizationInfo.EstimatedCost.get -> double
+WalhallaSql.AdoNet.SqlOptimizationInfo.EstimatedCost.init -> void
+WalhallaSql.AdoNet.SqlOptimizationInfo.LogicalOperator.get -> string!
+WalhallaSql.AdoNet.SqlOptimizationInfo.LogicalOperator.init -> void
+WalhallaSql.AdoNet.SqlOptimizationInfo.PhysicalStrategy.get -> string!
+WalhallaSql.AdoNet.SqlOptimizationInfo.PhysicalStrategy.init -> void
+WalhallaSql.AdoNet.SqlOptimizationInfo.SqlOptimizationInfo(string! LogicalOperator, string! PhysicalStrategy, double EstimatedCost, System.Collections.Generic.IReadOnlyList<WalhallaSql.AdoNet.SqlCandidateFilterTelemetry!>? CandidateFilters = null) -> void
+WalhallaSql.AdoNet.WalhallaSqlBulkCopy
+WalhallaSql.AdoNet.WalhallaSqlBulkCopy.BatchSize.get -> int
+WalhallaSql.AdoNet.WalhallaSqlBulkCopy.BatchSize.set -> void
+WalhallaSql.AdoNet.WalhallaSqlBulkCopy.DestinationTableName.get -> string!
+WalhallaSql.AdoNet.WalhallaSqlBulkCopy.DestinationTableName.set -> void
+WalhallaSql.AdoNet.WalhallaSqlBulkCopy.Dispose() -> void
+WalhallaSql.AdoNet.WalhallaSqlBulkCopy.WalhallaSqlBulkCopy(WalhallaSql.AdoNet.WalhallaSqlDbConnection! connection) -> void
+WalhallaSql.AdoNet.WalhallaSqlBulkCopy.WriteToServer(System.Collections.Generic.IEnumerable<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>! rows) -> int
+WalhallaSql.AdoNet.WalhallaSqlBulkCopy.WriteToServer(System.Data.Common.DbDataReader! reader) -> int
+WalhallaSql.AdoNet.WalhallaSqlBulkCopy.WriteToServer(System.Data.DataTable! table) -> int
+WalhallaSql.AdoNet.WalhallaSqlConnectionRegistry
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.CreatedAt.get -> System.DateTime?
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.CreatedAt.init -> void
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.DatabaseName.get -> string!
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.DatabaseName.init -> void
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.IsDirectory.get -> bool
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.IsDirectory.init -> void
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.Location.get -> string!
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.Location.init -> void
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.Provider.get -> string!
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.Provider.init -> void
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.Size.get -> long
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.Size.init -> void
+WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo.WalhallaSqlDatabaseInfo(string! Provider, string! DatabaseName, string! Location, bool IsDirectory, long Size, System.DateTime? CreatedAt) -> void
+WalhallaSql.AdoNet.WalhallaSqlDbCommand
+WalhallaSql.AdoNet.WalhallaSqlDbConnection
+WalhallaSql.AdoNet.WalhallaSqlDbConnection.ExecuteBatch(System.Collections.Generic.IEnumerable<string!>! sqlStatements) -> WalhallaSql.AdoNet.SqlExecutionResult![]!
+WalhallaSql.AdoNet.WalhallaSqlDbConnection.ExecuteBatch(System.Collections.Generic.IEnumerable<WalhallaSql.AdoNet.SqlClient.SqlClientCommand!>! commands) -> WalhallaSql.AdoNet.SqlExecutionResult![]!
+WalhallaSql.AdoNet.WalhallaSqlDbConnection.GetStorageInfo() -> WalhallaSql.AdoNet.WalhallaSqlDatabaseInfo!
+WalhallaSql.AdoNet.WalhallaSqlDbConnection.WalhallaSqlDbConnection() -> void
+WalhallaSql.AdoNet.WalhallaSqlDbConnection.WalhallaSqlDbConnection(string! connectionString) -> void
+WalhallaSql.AdoNet.WalhallaSqlDbConnection.WalhallaSqlDbConnection(WalhallaSql.WalhallaEngine! engine, string! connectionString = "") -> void
+WalhallaSql.AdoNet.WalhallaSqlDbDataReader
+WalhallaSql.AdoNet.WalhallaSqlDbDataReader.WalhallaSqlDbDataReader(System.Collections.Generic.IEnumerable<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>? rows, System.Collections.Generic.IReadOnlyList<string!>? projectedColumns = null, bool materializeEagerly = false) -> void
+WalhallaSql.AdoNet.WalhallaSqlDbDataReader.WalhallaSqlDbDataReader(System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>? rows, System.Collections.Generic.IReadOnlyList<string!>? projectedColumns = null) -> void
+WalhallaSql.AdoNet.WalhallaSqlDbParameter
+WalhallaSql.AdoNet.WalhallaSqlDbParameter.WalhallaSqlDbParameter() -> void
+WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection
+WalhallaSql.AdoNet.WalhallaSqlDbParameterCollection.WalhallaSqlDbParameterCollection() -> void
+WalhallaSql.AdoNet.WalhallaSqlDbProviderFactory
+WalhallaSql.AdoNet.WalhallaSqlDbProviderFactory.WalhallaSqlDbProviderFactory() -> void
+WalhallaSql.AdoNet.WalhallaSqlDbTransaction
+WalhallaSql.AdoNet.WalhallaSqlPgWireWebSocketTunnel
+WalhallaSql.AdoNet.WalhallaSqlPgWireWebSocketTunnel.BoundPort.get -> int
+WalhallaSql.AdoNet.WalhallaSqlPgWireWebSocketTunnel.ConnectionString.get -> string!
+WalhallaSql.AdoNet.WalhallaSqlPgWireWebSocketTunnel.CreateConnection() -> WalhallaSql.AdoNet.WalhallaSqlDbConnection!
+WalhallaSql.AdoNet.WalhallaSqlPgWireWebSocketTunnel.CreateOpenConnection() -> WalhallaSql.AdoNet.WalhallaSqlDbConnection!
+WalhallaSql.AdoNet.WalhallaSqlPgWireWebSocketTunnel.CreateOpenConnectionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<WalhallaSql.AdoNet.WalhallaSqlDbConnection!>!
+WalhallaSql.AdoNet.WalhallaSqlPgWireWebSocketTunnel.DisposeAsync() -> System.Threading.Tasks.ValueTask
+WalhallaSql.AdoNet.WalhallaSqlPgWireWebSocketTunnel.RemoteUri.get -> string!
+WalhallaSql.AdoNet.WalhallaSqlPgWireWebSocketTunnel.StartAsync(int localPort = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+WalhallaSql.AdoNet.WalhallaSqlPgWireWebSocketTunnel.WalhallaSqlPgWireWebSocketTunnel(string! remoteUri, string! database, string! localHost = "127.0.0.1", string? username = null, string? password = null, string? extraConnectionStringSegments = null) -> void
+WalhallaSql.AdoNet.WalhallaSqlProviderRegistration

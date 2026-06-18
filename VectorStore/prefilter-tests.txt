@@ -1,0 +1,35 @@
+Der Buildvorgang wurde am 04.06.2026 21:11:31 gestartet.
+Testlauf für "E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Tests\bin\Debug\net10.0\Walhalla.VectorStore.Tests.dll" (.NETCoreApp,Version=v10.0)
+Insgesamt 1 Testdateien stimmten mit dem angegebenen Muster überein.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.8)
+[xUnit.net 00:00:00.08]   Discovering: Walhalla.VectorStore.Tests
+[xUnit.net 00:00:00.14]   Discovered:  Walhalla.VectorStore.Tests
+[xUnit.net 00:00:00.17]   Starting:    Walhalla.VectorStore.Tests
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchExact_WithFullText_PreFilter [146 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.Reopen_WithOutdatedPayloadIndexVersion_MarksManifestColdAndFallsBack [172 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchHnsw_NoPayloadIndex_FallsBackToPostFilter [42 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.BuildPayloadIndexAsync_PersistentCollection_ClearsStaleFullTextAndGeoState [74 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.SearchHybridAsync_ReranksTextCandidatesByVectorDistance [52 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchHnsw_PreFilterVsPostFilter_SameResults [135 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.SearchTextAsync_Reopen_SupportsPhraseAnyAndNot [41 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.BuildPayloadIndexAsync_RebuildsFromExistingData [27 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchHnsw_WithPayloadIndex_PreFilter [29 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchExact_WithGeoRadius_PostFilter [25 ms]
+  Bestanden Walhalla.VectorStore.Tests.PersistentPayloadIndexIntegrationTests.DeleteAfterReopen_RemovesPersistentFullTextAndGeo [76 ms]
+  Bestanden Walhalla.VectorStore.Tests.PreFilterIntegrationTests.SearchExact_WithPayloadIndex_PreFilter [28 ms]
+Der aktive Testlauf wurde abgebrochen. Grund: Der Testhostprozess ist abgestürzt.
+
+Testlauf abgebrochen.
+Gesamtzahl Tests: unbekannt
+     Bestanden: 12
+ Gesamtzeit: 10,4310 Minuten
+     1>Projekt "E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Tests\Walhalla.VectorStore.Tests.csproj" auf Knoten "1", VSTest Ziel(e).
+     1>_VSTestConsole:
+         MSB4181: Die Aufgabe "VSTestTask" hat FALSE zurückgegeben, jedoch keinen Fehler protokolliert.
+     1>Die Erstellung des Projekts "E:\Develop\WalhallaProject\VectorStore\Walhalla.VectorStore.Tests\Walhalla.VectorStore.Tests.csproj" ist abgeschlossen, VSTest Ziel(e) -- FEHLER.
+
+Fehler beim Buildvorgang.
+    0 Warnung(en)
+    0 Fehler
+
+Verstrichene Zeit 00:10:26.41

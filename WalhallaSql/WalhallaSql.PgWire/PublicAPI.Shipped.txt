@@ -1,0 +1,37 @@
+﻿#nullable enable
+static WalhallaSql.PgWire.PgWireServer.CreateWithUnixSocket(WalhallaSql.PgWire.IPgWireBackendConnection! backend, string! socketDirectory) -> WalhallaSql.PgWire.PgWireServer!
+static WalhallaSql.PgWire.PgWireServer.CreateWithWebSocket(WalhallaSql.PgWire.IPgWireBackendConnection! backend, string! host = "0.0.0.0", int port = 8080, string! path = "/pgwire") -> WalhallaSql.PgWire.PgWireServer!
+static WalhallaSql.PgWire.PgWireTrace.Backend(char messageType, int messageLength, int payloadLength) -> void
+static WalhallaSql.PgWire.PgWireTrace.Enabled.get -> bool
+static WalhallaSql.PgWire.PgWireTrace.Enabled.set -> void
+static WalhallaSql.PgWire.PgWireTrace.Frontend(char messageType, int messageLength, int payloadLength) -> void
+static WalhallaSql.PgWire.PgWireTrace.RawOutbound(char marker, int bytes) -> void
+static WalhallaSql.PgWire.PgWireTrace.Sql(string! phase, string! sql) -> void
+static WalhallaSql.PgWire.PgWireTrace.StartupPacket(int requestCode, int packetLength) -> void
+static WalhallaSql.PgWire.PgWireTrace.TraceFile.get -> string?
+static WalhallaSql.PgWire.PgWireTrace.TraceFile.set -> void
+static WalhallaSql.PgWire.PgWireTrace.Virtual(string! bucket, string! normalizedSql, int rows) -> void
+WalhallaSql.PgWire.PgPayloadReader
+WalhallaSql.PgWire.PgPayloadReader.PgPayloadReader(byte[]! payload) -> void
+WalhallaSql.PgWire.PgPayloadReader.ReadByte() -> byte
+WalhallaSql.PgWire.PgPayloadReader.ReadBytes(int count) -> byte[]!
+WalhallaSql.PgWire.PgPayloadReader.ReadCString() -> string!
+WalhallaSql.PgWire.PgPayloadReader.ReadInt16() -> short
+WalhallaSql.PgWire.PgPayloadReader.ReadInt32() -> int
+WalhallaSql.PgWire.PgWireServer
+WalhallaSql.PgWire.PgWireServer.BoundPort.get -> int
+WalhallaSql.PgWire.PgWireServer.DisposeAsync() -> System.Threading.Tasks.ValueTask
+WalhallaSql.PgWire.PgWireServer.PgWireServer(WalhallaSql.PgWire.IPgWireBackendConnection! backend, string! host = "127.0.0.1", int port = 5432) -> void
+WalhallaSql.PgWire.PgWireServer.StartAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+WalhallaSql.PgWire.PgWireServer.Stop() -> void
+WalhallaSql.PgWire.PgWireServer.UnixSocketPath.get -> string?
+WalhallaSql.PgWire.PgWireTrace
+WalhallaSql.PgWire.WalhallaSqlPgWireBackend
+WalhallaSql.PgWire.WalhallaSqlPgWireBackend.BeginTransaction() -> WalhallaSql.PgWire.IPgWireBackendTransaction!
+WalhallaSql.PgWire.WalhallaSqlPgWireBackend.CreateCommand() -> WalhallaSql.PgWire.IPgWireBackendCommand!
+WalhallaSql.PgWire.WalhallaSqlPgWireBackend.DatabaseName.get -> string!
+WalhallaSql.PgWire.WalhallaSqlPgWireBackend.DiscoverTables() -> System.Collections.Generic.IReadOnlyList<WalhallaSql.PgWire.PgVirtualTableDefinition!>!
+WalhallaSql.PgWire.WalhallaSqlPgWireBackend.Dispose() -> void
+WalhallaSql.PgWire.WalhallaSqlPgWireBackend.TryDescribeQuery(string! sql) -> System.Collections.Generic.IReadOnlyList<(string! Name, System.Type! ClrType)>?
+WalhallaSql.PgWire.WalhallaSqlPgWireBackend.GetPgStatsRows() -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.Dictionary<string!, object?>!>!
+WalhallaSql.PgWire.WalhallaSqlPgWireBackend.WalhallaSqlPgWireBackend(WalhallaSql.WalhallaEngine! engine) -> void

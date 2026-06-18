@@ -1,0 +1,16 @@
+#nullable enable
+WalhallaSql.PgWire.WalhallaSqlPgWireBackend.TryGetStoredHash(string! username, out string! storedHash) -> bool
+WalhallaSql.PgWire.Auth.ScramSha256Server
+WalhallaSql.PgWire.Auth.ScramSha256Server.ScramSha256Server(string! storedHash) -> void
+WalhallaSql.PgWire.Auth.ScramSha256Server.Begin(string! clientFirstMessage) -> string!
+WalhallaSql.PgWire.Auth.ScramSha256Server.Continue(string! clientFinalMessage) -> string!
+WalhallaSql.PgWire.Auth.ScramSha256Server.IsCompleted.get -> bool
+WalhallaSql.PgWire.PgWireServer.PgWireServer(WalhallaSql.PgWire.IPgWireBackendConnection! backend, WalhallaSql.PgWire.Tls.PgWireTlsOptions! tlsOptions, string! host = "127.0.0.1", int port = 5432) -> void
+WalhallaSql.PgWire.Tls.PgWireTlsOptions
+WalhallaSql.PgWire.Tls.PgWireTlsOptions.PgWireTlsOptions() -> void
+WalhallaSql.PgWire.Tls.PgWireTlsOptions.Certificate.get -> System.Security.Cryptography.X509Certificates.X509Certificate2?
+WalhallaSql.PgWire.Tls.PgWireTlsOptions.Certificate.set -> void
+WalhallaSql.PgWire.Tls.PgWireTlsOptions.MinProtocolVersion.get -> System.Security.Authentication.SslProtocols
+WalhallaSql.PgWire.Tls.PgWireTlsOptions.MinProtocolVersion.set -> void
+static WalhallaSql.PgWire.Tls.PgWireTlsOptions.LoadFromPem(string! certPath, string! keyPath) -> System.Security.Cryptography.X509Certificates.X509Certificate2!
+static WalhallaSql.PgWire.Tls.PgWireTlsOptions.LoadFromStore(string! thumbprint, System.Security.Cryptography.X509Certificates.StoreName storeName = System.Security.Cryptography.X509Certificates.StoreName.My, System.Security.Cryptography.X509Certificates.StoreLocation storeLocation = System.Security.Cryptography.X509Certificates.StoreLocation.LocalMachine) -> System.Security.Cryptography.X509Certificates.X509Certificate2?

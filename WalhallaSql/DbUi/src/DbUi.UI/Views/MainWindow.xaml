@@ -1,0 +1,447 @@
+<Window x:Class="DbUi.UI.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:avalonDock="clr-namespace:AvalonDock;assembly=AvalonDock"
+        xmlns:avalonDockLayout="clr-namespace:AvalonDock.Layout;assembly=AvalonDock"
+        xmlns:avalonDockControls="clr-namespace:AvalonDock.Controls;assembly=AvalonDock"
+        xmlns:vm="clr-namespace:DbUi.UI.ViewModels"
+        xmlns:oe="clr-namespace:DbUi.UI.ViewModels.ObjectExplorer"
+        xmlns:conv="clr-namespace:DbUi.UI.Converters"
+        xmlns:controls="clr-namespace:DbUi.UI.Controls"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        Title="{Binding WindowTitle}"
+        Width="1280" Height="800"
+        WindowStyle="None"
+        WindowStartupLocation="CenterScreen">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="30"
+                      GlassFrameThickness="1"
+                      ResizeBorderThickness="5"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <conv:BoolToTextConverter x:Key="ExecutingStatusConverter"
+                                  TrueText="Executing…" FalseText="" />
+
+        <!-- Implicit DataTemplate: von AvalonDock's ContentPresenter via DataType gefunden,
+             aber NICHT auf den OE-DockPanel angewandt (falscher DataType) -->
+        <DataTemplate DataType="{x:Type vm:QueryTabViewModel}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="60" />
+                    <RowDefinition Height="5" />
+                    <RowDefinition Height="220" MinHeight="60" />
+                </Grid.RowDefinitions>
+
+                <controls:BindableTextEditor
+                    Grid.Row="0"
+                    BindableText="{Binding QueryText, UpdateSourceTrigger=PropertyChanged}"
+                    FontFamily="Cascadia Code, Consolas, Courier New"
+                    FontSize="13"
+                    Background="#1E1E1E"
+                    Foreground="#DCDCDC"
+                    BorderThickness="0"
+                    Padding="8"
+                    ShowLineNumbers="True"
+                    LineNumbersForeground="#858585"
+                    WordWrap="False" />
+
+                <GridSplitter Grid.Row="1"
+                              Height="5"
+                              HorizontalAlignment="Stretch"
+                              Background="#3F3F46"
+                              ResizeBehavior="PreviousAndNext" />
+
+                <TabControl Grid.Row="2"
+                            SelectedIndex="{Binding SelectedResultTabIndex}">
+                    <TabItem Header="Results">
+                        <DockPanel>
+                            <ToolBar DockPanel.Dock="Top" Height="26">
+                                <Button Command="{Binding ExportToCsvCommand}"
+                                        ToolTip="Export to CSV" Padding="5,1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <iconPacks:PackIconMaterial Kind="FileDelimited"
+                                            Width="13" Height="13" VerticalAlignment="Center"
+                                            Margin="0,0,4,0" />
+                                        <TextBlock Text="CSV" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding ExportToJsonCommand}"
+                                        ToolTip="Export to JSON" Padding="5,1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <iconPacks:PackIconMaterial Kind="CodeJson"
+                                            Width="13" Height="13" VerticalAlignment="Center"
+                                            Margin="0,0,4,0" />
+                                        <TextBlock Text="JSON" />
+                                    </StackPanel>
+                                </Button>
+                            </ToolBar>
+                            <DataGrid ItemsSource="{Binding ResultTable}"
+                                      AutoGenerateColumns="True"
+                                      IsReadOnly="True"
+                                      CanUserAddRows="False"
+                                      CanUserDeleteRows="False"
+                                      SelectionMode="Extended"
+                                      SelectionUnit="Cell"
+                                      VirtualizingPanel.IsVirtualizing="True"
+                                      VirtualizingPanel.VirtualizationMode="Recycling"
+                                      ClipboardCopyMode="IncludeHeader" />
+                        </DockPanel>
+                    </TabItem>
+                    <TabItem Header="Messages">
+                        <TextBox Text="{Binding MessagesText, Mode=OneWay}"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 FontFamily="Cascadia Code, Consolas, Courier New"
+                                 FontSize="12"
+                                 Background="#1E1E1E"
+                                 Foreground="#DCDCDC"
+                                 BorderThickness="0"
+                                 Padding="8"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
+        </DataTemplate>
+        <!-- Title bar button styles -->
+        <Style x:Key="TitleBarButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="#DCDCDC" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Width"  Value="44" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#3F3F46" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#505050" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="CloseTitleBarButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="#DCDCDC" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Width"  Value="44" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#E81123" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#F1707A" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Window.InputBindings>
+        <KeyBinding Key="F5"   Command="{Binding ExecuteQueryCommand}" />
+        <KeyBinding Key="N"    Modifiers="Ctrl" Command="{Binding NewQueryTabCommand}" />
+    </Window.InputBindings>
+
+    <DockPanel>
+
+        <!-- Custom title bar -->
+        <Grid DockPanel.Dock="Top" Height="30"
+              Background="{StaticResource BgPanelBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Text="{Binding WindowTitle}"
+                       VerticalAlignment="Center"
+                       Margin="10,0,0,0"
+                       FontSize="12"
+                       Foreground="#DCDCDC" />
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button Style="{StaticResource TitleBarButtonStyle}"
+                        Click="MinimizeButton_Click"
+                        ToolTip="Minimieren">
+                    <iconPacks:PackIconMaterial Kind="WindowMinimize"
+                        Width="12" Height="12" />
+                </Button>
+                <Button x:Name="MaxRestoreButton"
+                        Style="{StaticResource TitleBarButtonStyle}"
+                        Click="MaxRestoreButton_Click"
+                        ToolTip="Maximieren">
+                    <iconPacks:PackIconMaterial Kind="WindowMaximize"
+                        Width="12" Height="12" />
+                </Button>
+                <Button Style="{StaticResource CloseTitleBarButtonStyle}"
+                        Click="CloseButton_Click"
+                        ToolTip="Schließen">
+                    <iconPacks:PackIconMaterial Kind="WindowClose"
+                        Width="12" Height="12" />
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Menu -->
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Connect…"    Command="{Binding ConnectCommand}" />
+                <MenuItem Header="_Disconnect"  Command="{Binding DisconnectCommand}" />
+                <Separator />
+                <MenuItem Header="E_xit"        Click="MenuExit_Click" />
+            </MenuItem>
+            <MenuItem Header="_Query">
+                <MenuItem Header="_New Query  Ctrl+N" Command="{Binding NewQueryTabCommand}" />
+                <Separator />
+                <MenuItem Header="_Execute  F5" Command="{Binding ExecuteQueryCommand}" />
+                <MenuItem Header="_Cancel"      Command="{Binding CancelQueryCommand}" />
+            </MenuItem>
+            <MenuItem Header="_Tools">
+                <MenuItem Header="_Migration…" Command="{Binding ShowMigrationWindowCommand}" />
+            </MenuItem>
+        </Menu>
+
+        <!-- Toolbar -->
+        <ToolBarTray DockPanel.Dock="Top">
+            <ToolBar>
+                <Button Command="{Binding ConnectCommand}"    ToolTip="Connect"
+                        Padding="6,2" Content="Connect" />
+                <Button Command="{Binding DisconnectCommand}" ToolTip="Disconnect"
+                        Padding="6,2" Content="Disconnect" />
+                <Separator />
+                <ComboBox Width="160"
+                          ItemsSource="{Binding AvailableDatabases}"
+                          SelectedItem="{Binding SelectedDatabase}"
+                          IsEnabled="{Binding IsConnected}"
+                          ToolTip="Active database" />
+                <Separator />
+                <Button Command="{Binding NewQueryTabCommand}" ToolTip="New Query  Ctrl+N"
+                        Padding="6,2" Content="+ Query" />
+                <Separator />
+                <Button Command="{Binding ExecuteQueryCommand}" ToolTip="Execute  F5"
+                        Padding="6,2" Content="▶ Execute" />
+                <Button Command="{Binding CancelQueryCommand}" ToolTip="Cancel"
+                        Padding="6,2" Content="■ Cancel" />
+            </ToolBar>
+        </ToolBarTray>
+
+        <!-- Status bar -->
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock Text="{Binding ConnectionName, FallbackValue='Not connected'}" />
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock Text="{Binding ActiveTab.IsExecuting,
+                                          Converter={StaticResource ExecutingStatusConverter},
+                                          FallbackValue=''}" />
+            </StatusBarItem>
+        </StatusBar>
+
+        <!-- MDI docking layout -->
+        <avalonDock:DockingManager x:Name="DockManager"
+                                   AllowMixedOrientation="True"
+                                   DocumentsSource="{Binding QueryTabs}"
+                                   ActiveContent="{Binding ActiveTab, Mode=TwoWay}">
+
+            <!-- Style nur für Document-Items (nicht für den OE-Anchorable) -->
+            <avalonDock:DockingManager.LayoutItemContainerStyleSelector>
+                <controls:LayoutDocumentStyleSelector>
+                    <controls:LayoutDocumentStyleSelector.DocumentStyle>
+                        <Style TargetType="{x:Type avalonDockControls:LayoutDocumentItem}">
+                            <Setter Property="Title"        Value="{Binding Model.Title}" />
+                            <Setter Property="CloseCommand" Value="{Binding Model.CloseCommand}" />
+                            <Setter Property="CanClose"     Value="True" />
+                            <Setter Property="CanFloat"     Value="True" />
+                        </Style>
+                    </controls:LayoutDocumentStyleSelector.DocumentStyle>
+                </controls:LayoutDocumentStyleSelector>
+            </avalonDock:DockingManager.LayoutItemContainerStyleSelector>
+
+            <avalonDockLayout:LayoutRoot>
+                <avalonDockLayout:LayoutPanel Orientation="Horizontal">
+
+                    <!-- Object Explorer (left panel) -->
+                    <avalonDockLayout:LayoutAnchorablePane DockWidth="260">
+                        <avalonDockLayout:LayoutAnchorable Title="Object Explorer"
+                                                            CanClose="False" CanHide="False"
+                                                            CanFloat="True">
+                            <DockPanel>
+                                <ToolBar DockPanel.Dock="Top" Height="24">
+                                    <Button Command="{Binding ObjectExplorer.RefreshCommand}"
+                                            ToolTip="Refresh" Padding="4,1" Content="↻" />
+                                </ToolBar>
+
+                                <TreeView ItemsSource="{Binding ObjectExplorer.RootNodes}"
+                                          Background="#2D2D30"
+                                          Foreground="#DCDCDC"
+                                          BorderThickness="0"
+                                          VirtualizingPanel.IsVirtualizing="True"
+                                          VirtualizingPanel.VirtualizationMode="Recycling">
+                                    <TreeView.Resources>
+
+                                        <HierarchicalDataTemplate DataType="{x:Type oe:ServerNode}"
+                                                                  ItemsSource="{Binding Children}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="Server"
+                                                    Width="14" Height="14" VerticalAlignment="Center"
+                                                    Foreground="#007ACC" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                            </StackPanel>
+                                        </HierarchicalDataTemplate>
+
+                                        <HierarchicalDataTemplate DataType="{x:Type oe:DatabaseNode}"
+                                                                  ItemsSource="{Binding Children}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="Database"
+                                                    Width="14" Height="14" VerticalAlignment="Center"
+                                                    Foreground="#4EC9B0" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}" />
+                                            </StackPanel>
+                                        </HierarchicalDataTemplate>
+
+                                        <HierarchicalDataTemplate DataType="{x:Type oe:FolderNode}"
+                                                                  ItemsSource="{Binding Children}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="Folder"
+                                                    Width="14" Height="14" VerticalAlignment="Center"
+                                                    Foreground="#DCCA7A" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}" Foreground="#9B9B9B" />
+                                            </StackPanel>
+                                        </HierarchicalDataTemplate>
+
+                                        <HierarchicalDataTemplate DataType="{x:Type oe:TableNode}"
+                                                                  ItemsSource="{Binding Children}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="Table"
+                                                    Width="14" Height="14" VerticalAlignment="Center"
+                                                    Foreground="#569CD6" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}">
+                                                    <TextBlock.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="SELECT TOP 1000 *"
+                                                                      Command="{Binding ScriptSelectTopCommand}" />
+                                                            <MenuItem Header="SELECT *"
+                                                                      Command="{Binding ScriptSelectAllCommand}" />
+                                                            <MenuItem Header="SELECT COUNT(*)"
+                                                                      Command="{Binding ScriptCountCommand}" />
+                                                        </ContextMenu>
+                                                    </TextBlock.ContextMenu>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </HierarchicalDataTemplate>
+
+                                        <HierarchicalDataTemplate DataType="{x:Type oe:ViewNode}"
+                                                                  ItemsSource="{Binding Children}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="Eye"
+                                                    Width="14" Height="14" VerticalAlignment="Center"
+                                                    Foreground="#C586C0" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}">
+                                                    <TextBlock.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="SELECT TOP 1000 *"
+                                                                      Command="{Binding ScriptSelectTopCommand}" />
+                                                        </ContextMenu>
+                                                    </TextBlock.ContextMenu>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </HierarchicalDataTemplate>
+
+                                        <DataTemplate DataType="{x:Type oe:ProcedureNode}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="CodeBraces"
+                                                    Width="14" Height="14" VerticalAlignment="Center"
+                                                    Foreground="#DCDCAA" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+
+                                        <DataTemplate DataType="{x:Type oe:ColumnNode}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="TableColumn"
+                                                    Width="12" Height="12" VerticalAlignment="Center"
+                                                    Foreground="#9CDCFE" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Foreground="#9CDCFE" FontSize="11" />
+                                            </StackPanel>
+                                        </DataTemplate>
+
+                                        <DataTemplate DataType="{x:Type oe:LoadingNode}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="Sync"
+                                                    Width="12" Height="12" VerticalAlignment="Center"
+                                                    Foreground="#9B9B9B" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Foreground="#9B9B9B" FontStyle="Italic" />
+                                            </StackPanel>
+                                        </DataTemplate>
+
+                                        <DataTemplate DataType="{x:Type oe:EmptyNode}">
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       Foreground="#9B9B9B" FontStyle="Italic" />
+                                        </DataTemplate>
+
+                                        <DataTemplate DataType="{x:Type oe:ErrorNode}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="AlertCircle"
+                                                    Width="13" Height="13" VerticalAlignment="Center"
+                                                    Foreground="{StaticResource ErrorBrush}" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Foreground="{StaticResource ErrorBrush}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+
+                                    </TreeView.Resources>
+
+                                    <TreeView.ItemContainerStyle>
+                                        <Style TargetType="TreeViewItem">
+                                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
+                                            <Setter Property="Foreground"  Value="#DCDCDC" />
+                                            <Setter Property="Background"  Value="Transparent" />
+                                            <Setter Property="MinHeight"   Value="22" />
+                                            <Setter Property="Padding"     Value="4,3" />
+                                            <Style.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter Property="Background" Value="#094771" />
+                                                </Trigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#3F3F46" />
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TreeView.ItemContainerStyle>
+                                </TreeView>
+                            </DockPanel>
+                        </avalonDockLayout:LayoutAnchorable>
+                    </avalonDockLayout:LayoutAnchorablePane>
+
+                    <!-- Document pane — filled by DocumentsSource -->
+                    <avalonDockLayout:LayoutDocumentPane />
+
+                </avalonDockLayout:LayoutPanel>
+            </avalonDockLayout:LayoutRoot>
+
+        </avalonDock:DockingManager>
+
+    </DockPanel>
+</Window>

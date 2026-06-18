@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Walhalla.Indexes</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>Walhalla.Indexes</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Holger</Authors>
+    <Description>Index primitives for Walhalla: FullTextIndex, RTree, PersistentRTree, PersistentFullTextIndex, and SimpleBitmap. Standalone or composable with Walhalla.Storage.</Description>
+    <PackageTags>index;fulltext;rtree;spatial;bitmap;embedded;walhalla</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/HolgerTheHuck/Walhalla</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/HolgerTheHuck/Walhalla</PackageProjectUrl>
+    <Copyright>Copyright (c) 2026 Holger</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573;CS1574;CS1570;CS1587;CS1734;CS0419</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Walhalla.Storage\Walhalla.Storage.csproj" />
+  </ItemGroup>
+
+</Project>

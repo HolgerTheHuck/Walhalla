@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>WalhallaSql.Benchmarks</RootNamespace>
+    <AssemblyName>WalhallaSql.Benchmarks</AssemblyName>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)..\walhalla.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.2" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <PackageReference Include="Npgsql" Version="8.0.3" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="PgWireMixedLoadBenchmark.cs" />
+    <Compile Remove="SimpleQueryStandalone.cs" />
+    <ProjectReference Include="..\WalhallaSql\WalhallaSql.csproj" />
+  </ItemGroup>
+
+</Project>

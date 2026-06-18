@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>WalhallaSql.Tests</RootNamespace>
+    <AssemblyName>WalhallaSql.Tests</AssemblyName>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)..\walhalla.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\VectorStore\Walhalla.Storage\Walhalla.Storage.csproj" />
+    <ProjectReference Include="..\WalhallaSql\WalhallaSql.csproj" />
+    <ProjectReference Include="..\WalhallaSql.PgWire\WalhallaSql.PgWire.csproj" />
+    <ProjectReference Include="..\WalhallaSql.PgWire.Abstractions\WalhallaSql.PgWire.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

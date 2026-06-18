@@ -1,0 +1,60 @@
+#nullable enable
+WalhallaSql.WalhallaConstraintException
+WalhallaSql.WalhallaConstraintException.WalhallaConstraintException(string! message) -> void
+WalhallaSql.WalhallaConstraintException.WalhallaConstraintException(string! message, string! sqlState) -> void
+WalhallaSql.WalhallaConstraintException.WalhallaConstraintException(string! message, System.Exception! inner) -> void
+WalhallaSql.WalhallaSerializationConflictException
+WalhallaSql.WalhallaSerializationConflictException.WalhallaSerializationConflictException(string! message) -> void
+WalhallaSql.WalhallaSerializationConflictException.WalhallaSerializationConflictException(string! message, System.Exception! inner) -> void
+WalhallaSql.WalhallaSyntaxException
+WalhallaSql.WalhallaSyntaxException.WalhallaSyntaxException(string! message) -> void
+WalhallaSql.WalhallaSyntaxException.WalhallaSyntaxException(string! message, System.Exception! inner) -> void
+static WalhallaSql.WalhallaEngine.OpenAsync(string! rootPath, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<WalhallaSql.WalhallaEngine!>!
+static WalhallaSql.WalhallaEngine.OpenAsync(WalhallaSql.WalhallaOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<WalhallaSql.WalhallaEngine!>!
+WalhallaSql.WalhallaEngine.AuthIdCatalog.get -> WalhallaSql.Catalog.AuthIdCatalog!
+WalhallaSql.Catalog.AuthIdCatalog
+WalhallaSql.Catalog.AuthIdCatalog.AuthIdCatalog(string? rootPath) -> void
+WalhallaSql.Catalog.AuthIdCatalog.Count.get -> int
+WalhallaSql.Catalog.AuthIdCatalog.CreateRole(string! rolname, string! plainPassword, int iterations = 4096) -> void
+WalhallaSql.Catalog.AuthIdCatalog.DropRole(string! rolname) -> bool
+WalhallaSql.Catalog.AuthIdCatalog.GetRoleNames() -> System.Collections.Generic.IReadOnlyList<string!>!
+static WalhallaSql.Catalog.AuthIdCatalog.ScramHashPassword(string! plainPassword, int iterations = 4096) -> string!
+WalhallaSql.Catalog.AuthIdCatalog.TryGetRole(string! rolname, out WalhallaSql.Catalog.AuthIdEntry! entry) -> bool
+static WalhallaSql.Catalog.AuthIdCatalog.TryParseScramHash(string! hashString, out int iterations, out byte[]! salt, out byte[]! storedKey, out byte[]! serverKey) -> bool
+static WalhallaSql.Catalog.AuthIdCatalog.VerifyClientProof(string! hashString, string! clientFirstBare, string! serverFirst, string! clientFinalWithoutProof, System.ReadOnlySpan<byte> clientProof) -> bool
+static WalhallaSql.Catalog.AuthIdCatalog.ComputeServerSignature(string! hashString, string! clientFirstBare, string! serverFirst, string! clientFinalWithoutProof) -> byte[]!
+WalhallaSql.Catalog.AuthIdEntry
+WalhallaSql.Catalog.AuthIdEntry.AuthIdEntry(string! rolname, string! rolpassword) -> void
+WalhallaSql.Catalog.AuthIdEntry.Rolname.get -> string!
+WalhallaSql.Catalog.AuthIdEntry.Rolpassword.get -> string!
+WalhallaSql.Sql.SqlCopyDirection
+WalhallaSql.Sql.SqlCopyDirection.FromStdin = 0 -> WalhallaSql.Sql.SqlCopyDirection
+WalhallaSql.Sql.SqlCopyDirection.ToStdout = 1 -> WalhallaSql.Sql.SqlCopyDirection
+WalhallaSql.Sql.SqlCopyFormat
+WalhallaSql.Sql.SqlCopyFormat.Text = 0 -> WalhallaSql.Sql.SqlCopyFormat
+WalhallaSql.Sql.SqlCopyFormat.Csv = 1 -> WalhallaSql.Sql.SqlCopyFormat
+WalhallaSql.Sql.SqlCopyFormat.Binary = 2 -> WalhallaSql.Sql.SqlCopyFormat
+WalhallaSql.Sql.SqlCopyOptions
+WalhallaSql.Sql.SqlCopyOptions.SqlCopyOptions(WalhallaSql.Sql.SqlCopyFormat format = WalhallaSql.Sql.SqlCopyFormat.Text, string? delimiter = null, string? nullMarker = null, bool header = false, string? quote = null, string? escape = null) -> void
+WalhallaSql.Sql.SqlCopyOptions.Format.get -> WalhallaSql.Sql.SqlCopyFormat
+WalhallaSql.Sql.SqlCopyOptions.Format.init -> void
+WalhallaSql.Sql.SqlCopyOptions.Delimiter.get -> string?
+WalhallaSql.Sql.SqlCopyOptions.Delimiter.init -> void
+WalhallaSql.Sql.SqlCopyOptions.NullMarker.get -> string?
+WalhallaSql.Sql.SqlCopyOptions.NullMarker.init -> void
+WalhallaSql.Sql.SqlCopyOptions.Header.get -> bool
+WalhallaSql.Sql.SqlCopyOptions.Header.init -> void
+WalhallaSql.Sql.SqlCopyOptions.Quote.get -> string?
+WalhallaSql.Sql.SqlCopyOptions.Quote.init -> void
+WalhallaSql.Sql.SqlCopyOptions.Escape.get -> string?
+WalhallaSql.Sql.SqlCopyOptions.Escape.init -> void
+WalhallaSql.Sql.SqlCopyStatement
+WalhallaSql.Sql.SqlCopyStatement.SqlCopyStatement(string! tableName, WalhallaSql.Sql.SqlCopyDirection direction, WalhallaSql.Sql.SqlCopyOptions! options, System.Collections.Generic.IReadOnlyList<string>? columnNames = null) -> void
+WalhallaSql.Sql.SqlCopyStatement.TableName.get -> string!
+WalhallaSql.Sql.SqlCopyStatement.TableName.init -> void
+WalhallaSql.Sql.SqlCopyStatement.Direction.get -> WalhallaSql.Sql.SqlCopyDirection
+WalhallaSql.Sql.SqlCopyStatement.Direction.init -> void
+WalhallaSql.Sql.SqlCopyStatement.Options.get -> WalhallaSql.Sql.SqlCopyOptions!
+WalhallaSql.Sql.SqlCopyStatement.Options.init -> void
+WalhallaSql.Sql.SqlCopyStatement.ColumnNames.get -> System.Collections.Generic.IReadOnlyList<string>?
+WalhallaSql.Sql.SqlCopyStatement.ColumnNames.init -> void

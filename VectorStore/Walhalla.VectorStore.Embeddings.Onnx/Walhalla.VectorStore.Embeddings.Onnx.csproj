@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>true</IsPackable>
+    <PackageId>Walhalla.VectorStore.Embeddings.Onnx</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Holger</Authors>
+    <Description>Local ONNX embedding generator and tokenizer for Walhalla.VectorStore. Runs models locally via Microsoft.ML.OnnxRuntime — no cloud required.</Description>
+    <PackageTags>embedding;onnx;tokenizer;local;vector;walhalla</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/HolgerTheHuck/Walhalla</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/HolgerTheHuck/Walhalla</PackageProjectUrl>
+    <Copyright>Copyright (c) 2026 Holger</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573;CS1574;CS1570;CS1587;CS1734;CS0419</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    Lokale Implementierung: nativer ONNX-Runtime + Tokenizer.
+    Standard ist die CPU-Variante. Für DirectML (GPU auf Windows) stattdessen
+    'Microsoft.ML.OnnxRuntime.DirectML' referenzieren; der Generator steckt den
+    DML-Provider dann per Reflection an.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Walhalla.VectorStore.Embeddings\Walhalla.VectorStore.Embeddings.csproj" />
+  </ItemGroup>
+
+</Project>

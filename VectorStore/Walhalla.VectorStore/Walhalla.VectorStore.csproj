@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>true</IsPackable>
+    <PackageId>Walhalla.VectorStore</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Holger</Authors>
+    <Description>Embedded vector store for .NET — file-based, zero-config, standalone. SIMD-accelerated distances, HNSW and IVFFlat ANN indexes, metadata filtering, snapshots, and full-text search. Built on Walhalla.Storage.</Description>
+    <PackageTags>vector;vectorstore;embedding;ann;hnsw;ivf;simd;embedded;sqlite-for-vectors;walhalla</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/HolgerTheHuck/Walhalla</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/HolgerTheHuck/Walhalla</PackageProjectUrl>
+    <Copyright>Copyright (c) 2026 Holger</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573;CS1574;CS1570;CS1587;CS1734;CS0419</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Walhalla.Indexes\Walhalla.Indexes.csproj" />
+  </ItemGroup>
+
+</Project>

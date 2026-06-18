@@ -1,0 +1,10 @@
+#nullable enable
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.AcquireDatabaseLock() -> Microsoft.EntityFrameworkCore.Migrations.IMigrationsDatabaseLock!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.AcquireDatabaseLockAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.EntityFrameworkCore.Migrations.IMigrationsDatabaseLock!>!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.Create() -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.CreateAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.CreateIfNotExists() -> void
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.CreateIfNotExistsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+WalhallaSql.EfCore.Migrations.WalhallaSqlHistoryRepository.LockReleaseBehavior.get -> Microsoft.EntityFrameworkCore.Migrations.LockReleaseBehavior
+WalhallaSql.EfCore.Migrations.WalhallaSqlMigrator.HasPendingModelChanges() -> bool
+static WalhallaSql.EfCore.Migrations.WalhallaSqlMigrationScriptBuilder.MapTypeSql(WalhallaSql.Sql.SqlScalarType type) -> string!
