@@ -68,6 +68,42 @@ public class MvccBackendTests : IDisposable
         Assert.True(files.Count > 0, "Es sollten mindestens ODS- oder WAL-Dateien erstellt werden.");
     }
 
+    [Fact]
+    public void Reopen_MvccBPlusTree_With_Smaller_Configured_PageSize_Uses_Persisted_PageSize()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"walhalla_mvcc_pagesize_test_{Guid.NewGuid()}");
+        try
+        {
+            using (var store = new EmbeddedVectorStore(new StorageEngineOptions
+            {
+                RootPath = path,
+                Backend = StorageBackend.MvccBPlusTree,
+                PageSize = 65536
+            }))
+            {
+                var collection = store.GetOrCreateCollection("docs", 3, DistanceMetric.Euclidean);
+                collection.PutAsync(1, new Vector(new float[] { 1.0f, 2.0f, 3.0f })).GetAwaiter().GetResult();
+            }
+
+            using (var store2 = new EmbeddedVectorStore(new StorageEngineOptions
+            {
+                RootPath = path,
+                Backend = StorageBackend.MvccBPlusTree,
+                PageSize = 4096
+            }))
+            {
+                var collection = store2.GetOrCreateCollection("docs", 3, DistanceMetric.Euclidean);
+                var entry = collection.GetAsync(1).GetAwaiter().GetResult();
+                Assert.NotNull(entry);
+                Assert.True(new Vector(new float[] { 1.0f, 2.0f, 3.0f }).Span.SequenceEqual(entry.Vector.Span));
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(path, recursive: true); } catch { /* locked by testhost */ }
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // 2. Collection-CRUD
     // ═══════════════════════════════════════════════════════════════════════

@@ -11,9 +11,9 @@ namespace Walhalla.Storage.Ods.Pages;
 /// Records the B+Tree root page and the last page ID that was allocated,
 /// allowing the pager to resume correct allocation after a reopen.
 /// </summary>
-internal readonly record struct OdsRootMetadata(int RootPageId, int LastAllocatedPageId)
+internal readonly record struct OdsRootMetadata(int RootPageId, int LastAllocatedPageId, ulong MaxSequence = 0)
 {
-    public const int SizeInBytes = sizeof(int) + sizeof(int);
+    public const int SizeInBytes = sizeof(int) + sizeof(int) + sizeof(ulong);
 
     public static OdsRootMetadata Read(ReadOnlySpan<byte> buffer)
     {
@@ -22,7 +22,8 @@ internal readonly record struct OdsRootMetadata(int RootPageId, int LastAllocate
 
         var rootPageId = BinaryPrimitives.ReadInt32LittleEndian(buffer);
         var lastAllocatedPageId = BinaryPrimitives.ReadInt32LittleEndian(buffer[sizeof(int)..]);
-        return new OdsRootMetadata(rootPageId, lastAllocatedPageId);
+        var maxSequence = BinaryPrimitives.ReadUInt64LittleEndian(buffer[(sizeof(int) + sizeof(int))..]);
+        return new OdsRootMetadata(rootPageId, lastAllocatedPageId, maxSequence);
     }
 
     public void Write(Span<byte> buffer)
@@ -32,5 +33,6 @@ internal readonly record struct OdsRootMetadata(int RootPageId, int LastAllocate
 
         BinaryPrimitives.WriteInt32LittleEndian(buffer, RootPageId);
         BinaryPrimitives.WriteInt32LittleEndian(buffer[sizeof(int)..], LastAllocatedPageId);
+        BinaryPrimitives.WriteUInt64LittleEndian(buffer[(sizeof(int) + sizeof(int))..], MaxSequence);
     }
 }

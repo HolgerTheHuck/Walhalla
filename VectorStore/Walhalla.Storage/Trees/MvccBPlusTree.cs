@@ -321,9 +321,12 @@ public sealed class MvccBPlusTree : IDisposable
     {
         var startLeafId = FindStartLeaf(fromInclusive);
         var currentPageId = startLeafId;
+        var visited = new HashSet<int>();
 
         while (currentPageId >= 0)
         {
+            if (!visited.Add(currentPageId))
+                throw new InvalidDataException($"MVCC B+Tree leaf chain contains a cycle at page {currentPageId}. The ODS file is corrupt.");
             using var page = _pager.ReadPage(currentPageId);
             var buffer = page.Buffer;
             var bodyStart = OdsPageHeader.SizeInBytes;
@@ -776,6 +779,16 @@ public sealed class MvccBPlusTree : IDisposable
 
     public void Checkpoint()
     {
+        // Persistiere die aktuelle Commit-Sequenz in den ODS-Metadaten, damit ein
+        // späteres Öffnen ohne WAL-Records den TransactionManager synchronisieren kann,
+        // ohne alle Leaf-Pages scannen zu müssen.
+        var currentSeq = _txManager.CurrentSequence;
+        var metadata = _pager.ReadRootMetadata();
+        if (currentSeq > metadata.MaxSequence)
+        {
+            _pager.WriteRootMetadata(metadata with { MaxSequence = currentSeq });
+        }
+
         _pager.Flush();
     }
 

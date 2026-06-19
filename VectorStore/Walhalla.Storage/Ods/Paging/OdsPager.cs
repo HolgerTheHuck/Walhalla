@@ -77,14 +77,33 @@ internal sealed class OdsPager : IDisposable
                                  FileShare.Read, bufferSize: 4096, FileOptions.Asynchronous);
 
         if (_stream.Length == 0)
+        {
             Initialize();
+        }
+        else
+        {
+            // Vor dem festen Zugriff die tatsächliche Page-Size ermitteln, falls die Datei
+            // mit einer anderen Page-Size (z.B. 65536) erstellt wurde als der Default (4096).
+            var persistedPageSize = TryProbePersistedPageSize();
+            if (persistedPageSize.HasValue && persistedPageSize.Value != PageSize)
+            {
+                PageSize = persistedPageSize.Value;
+            }
+            else if (_stream.Length < PageSize)
+            {
+                throw new InvalidDataException(
+                    $"ODS file '{path}' exists but is only {_stream.Length} bytes, " +
+                    $"which is smaller than the configured page size ({PageSize}). " +
+                    "The file is corrupt or was written by an incompatible engine version.");
+            }
+        }
 
         // Sync read for the single one-time metadata access at construction time.
         using var metaPage = ReadPageSync(MetadataPageId);
         _rootMetadata = OdsRootMetadata.Read(metaPage.Body);
     }
 
-    public int PageSize { get; }
+    public int PageSize { get; private set; }
     public string FilePath { get; } = string.Empty;
 
     // --- Root metadata --------------------------------------------------------
@@ -465,6 +484,61 @@ internal sealed class OdsPager : IDisposable
         initialMetadata.Write(metaWritePage.Body);
         WritePageSync(metaWritePage);
         _rootMetadata = initialMetadata;
+    }
+
+    // Kandidaten, die der WalhallaSql-Migration bekannt sind (Default 4096, Bulk 65536).
+    private static readonly int[] ProbePageSizes = { 4096, 8192, 16384, 32768, 65536 };
+
+    /// <summary>
+    /// Ermittelt die tatsächlich persistierte Page-Size anhand der FNV-Checksumme auf Seite 0.
+    /// Da das V2-ODS-Format keine eigene Page-Size-Angabe im Metadaten-Header hat, probieren wir
+    /// die bekannten Größen durch und prüfen, bei welcher die letzten 4 Bytes die Checksumme
+    /// des vorangehenden Inhalts bilden. Rückgabe <c>null</c>, wenn keine Größe passt.
+    /// </summary>
+    private int? TryProbePersistedPageSize()
+    {
+        if (_legacyV1Mode)
+            return null;
+
+        var maxProbe = ProbePageSizes[ProbePageSizes.Length - 1];
+        var bytesToRead = (int)Math.Min(_stream.Length, maxProbe);
+        if (bytesToRead < ProbePageSizes[0])
+            return null;
+
+        var buffer = ArrayPool<byte>.Shared.Rent(maxProbe);
+        try
+        {
+            var totalRead = 0;
+            while (totalRead < bytesToRead)
+            {
+                var chunk = RandomAccess.Read(_stream.SafeFileHandle,
+                    buffer.AsSpan(totalRead, bytesToRead - totalRead),
+                    totalRead);
+                if (chunk == 0)
+                    break;
+                totalRead += chunk;
+            }
+
+            foreach (var candidate in ProbePageSizes)
+            {
+                if (candidate > totalRead)
+                    continue;
+
+                var stored = BinaryPrimitives.ReadUInt32LittleEndian(
+                    buffer.AsSpan(candidate - OdsPage.ChecksumSizeInBytes, OdsPage.ChecksumSizeInBytes));
+                var computed = ComputeFnv1aChecksum(
+                    buffer.AsSpan(0, candidate - OdsPage.ChecksumSizeInBytes));
+
+                if (stored == computed)
+                    return candidate;
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return null;
     }
 
     private void ValidatePageId(int pageId)

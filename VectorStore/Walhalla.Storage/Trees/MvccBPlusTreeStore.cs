@@ -24,6 +24,7 @@ public sealed class MvccBPlusTreeStore : IKeyValueStore
 {
     private readonly MvccBPlusTree _tree;
     private readonly TransactionManager _txManager;
+    private readonly OdsPager? _pager;
     private readonly WalLog? _walLog;
     private readonly string? _walPath;
     private bool _disposed;
@@ -31,6 +32,7 @@ public sealed class MvccBPlusTreeStore : IKeyValueStore
     internal MvccBPlusTreeStore(OdsPager pager, IKeyComparator? keyComparator = null, int order = 128,
         string? walPath = null, WalSyncMode walSyncMode = WalSyncMode.Fsync, int overflowThreshold = 256)
     {
+        _pager = pager;
         _txManager = new TransactionManager(ByteArrayObjectComparer.Instance);
         _tree = new MvccBPlusTree(pager, _txManager, keyComparator, order, overflowThreshold: overflowThreshold);
         _walPath = walPath;
@@ -76,8 +78,19 @@ public sealed class MvccBPlusTreeStore : IKeyValueStore
         var committed = _walLog.ReadCommittedTransactions();
         if (committed.Count == 0)
         {
-            // Keine WAL-Records → trotzdem TxManager mit ODS-Inhalt synchronisieren
-            var maxSeq = _tree.GetMaxSequence();
+            // Keine WAL-Records → TxManager mit der in den ODS-Metadaten persistierten
+            // MaxSequence synchronisieren. Ist diese 0 (altes Format oder frische Datei),
+            // fällt der Scan über alle Leaf-Pages zurück.
+            ulong maxSeq = 0;
+            if (_pager != null)
+            {
+                var metadata = _pager.ReadRootMetadata();
+                maxSeq = metadata.MaxSequence;
+            }
+
+            if (maxSeq == 0)
+                maxSeq = _tree.GetMaxSequence();
+
             if (maxSeq > 0)
                 _txManager.AdvanceTo(maxSeq);
             return;
@@ -95,6 +108,15 @@ public sealed class MvccBPlusTreeStore : IKeyValueStore
                 else if (op.Type == WalRecordType.Delete)
                     _tree.Delete(commitSeq, op.Key);
             }
+        }
+
+        // Synchronisiere auf das Maximum der WAL-Commit-Sequenz und der in den
+        // ODS-Metadaten persistierten Sequenz, falls vorhanden.
+        if (_pager != null)
+        {
+            var metadata = _pager.ReadRootMetadata();
+            if (metadata.MaxSequence > maxCommitSeq)
+                maxCommitSeq = metadata.MaxSequence;
         }
 
         _txManager.AdvanceTo(maxCommitSeq);
@@ -243,6 +265,12 @@ public sealed class MvccBPlusTreeStore : IKeyValueStore
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _tree.Checkpoint();
+
+        // Nachdem der Baum alle Pages geflushed und die aktuelle Sequenz in den
+        // ODS-Metadaten persistiert hat, können die committed WAL-Records verworfen
+        // werden. Sonst wächst die WAL ungebunden und ein späteres Öffnen muss
+        // alle Operationen einzeln replayen.
+        _walLog?.Truncate();
     }
 
     public Task CheckpointAsync(CancellationToken ct = default)
