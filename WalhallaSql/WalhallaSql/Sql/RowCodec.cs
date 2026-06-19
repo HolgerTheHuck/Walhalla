@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Globalization;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
 using WalhallaSql.Storage;
@@ -110,7 +111,15 @@ internal static class RowCodec
 
         var values = new object?[colCount];
         int pos = 0;
+        if (bytes.Length == 0)
+            throw new InvalidDataException($"Row buffer for table '{table.CollectionName}' is empty.");
+
         int bitmapSize = bytes[pos++];
+        if (bitmapSize < 1 || pos + bitmapSize > bytes.Length)
+            throw new InvalidDataException(
+                $"Row buffer for table '{table.CollectionName}' is too short for null bitmap. " +
+                $"Length={bytes.Length}, bitmapSize={bitmapSize}.");
+
         int bitmapOffset = pos;
         pos += bitmapSize;
 
@@ -123,7 +132,17 @@ internal static class RowCodec
             }
             else
             {
-                values[i] = DecodeValue(bytes, ref pos, columns[i].Type);
+                try
+                {
+                    values[i] = DecodeValue(bytes, ref pos, columns[i].Type);
+                }
+                catch (Exception ex) when (ex is ArgumentOutOfRangeException or IndexOutOfRangeException)
+                {
+                    throw new InvalidDataException(
+                        $"Row decode underrun in table '{table.CollectionName}', column {i} " +
+                        $"'{columns[i].Name}' ({columns[i].Type}). Buffer length={bytes.Length}, " +
+                        $"current pos={pos}.", ex);
+                }
             }
         }
 
@@ -140,14 +159,39 @@ internal static class RowCodec
         int colCount = columns.Count;
 
         int pos = 0;
+        if (bytes.Length == 0)
+            throw new InvalidDataException($"Row buffer for table '{table.CollectionName}' is empty.");
+
         int bitmapSize = bytes[pos++];
+        if (bitmapSize < 1 || pos + bitmapSize > bytes.Length)
+            throw new InvalidDataException(
+                $"Row buffer for table '{table.CollectionName}' is too short for null bitmap. " +
+                $"Length={bytes.Length}, bitmapSize={bitmapSize}.");
+
         int bitmapOffset = pos;
         pos += bitmapSize;
 
         for (int i = 0; i < colCount; i++)
         {
             bool isNull = (bytes[bitmapOffset + i / 8] & (1 << (i % 8))) != 0;
-            buffer[i] = isNull ? null : DecodeValue(bytes, ref pos, columns[i].Type);
+            if (isNull)
+            {
+                buffer[i] = null;
+            }
+            else
+            {
+                try
+                {
+                    buffer[i] = DecodeValue(bytes, ref pos, columns[i].Type);
+                }
+                catch (Exception ex) when (ex is ArgumentOutOfRangeException or IndexOutOfRangeException)
+                {
+                    throw new InvalidDataException(
+                        $"Row decode underrun in table '{table.CollectionName}', column {i} " +
+                        $"'{columns[i].Name}' ({columns[i].Type}). Buffer length={bytes.Length}, " +
+                        $"current pos={pos}.", ex);
+                }
+            }
         }
     }
 

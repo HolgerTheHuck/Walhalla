@@ -36,6 +36,22 @@ public sealed class WalhallaResultSet
     public static WalhallaResultSet Affected(int count) =>
         new(System.Array.Empty<WalhallaRow>(), System.Array.Empty<string>(), count);
 
+    public static WalhallaResultSet Single(string[] columnNames, WalhallaRow row) =>
+        new(new SingleRowList(row), columnNames);
+
+    private readonly struct SingleRowList : IReadOnlyList<WalhallaRow>
+    {
+        private readonly WalhallaRow _row;
+        public SingleRowList(WalhallaRow row) => _row = row;
+        public WalhallaRow this[int index] => index == 0 ? _row : throw new System.ArgumentOutOfRangeException(nameof(index));
+        public int Count => 1;
+        public IEnumerator<WalhallaRow> GetEnumerator()
+        {
+            yield return _row;
+        }
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
     /// <summary>
     /// Build a result set from a sequence of dictionary-shaped rows
     /// (e.g. those returned by <see cref="SqlNativeProcedureContext.Query"/>).

@@ -47,8 +47,11 @@ public sealed class WalhallaPreparedStatement
 
     public void Bind(string name, object? value)
     {
-        if (!_paramOrdinals.TryGetValue(name, out var index))
+        if (!_paramOrdinals.TryGetValue(name, out var index)
+            && !(name.Length > 0 && name[0] != '@' && _paramOrdinals.TryGetValue("@" + name, out index)))
+        {
             throw new ArgumentException($"Parameter '{name}' not found.", nameof(name));
+        }
         _boundParams[index] = value;
     }
 
@@ -59,27 +62,30 @@ public sealed class WalhallaPreparedStatement
 
     public WalhallaResultSet Execute()
     {
-        // PK point-lookup fast path: WHERE PK = @param
-        if (_plan.PkLookupParameterIndex.HasValue && _plan.PkLookupColumnIndex.HasValue)
+        bool isAggregate = _plan.SelectColumns?.Any(c => c.Aggregate != null || c.WindowFunction != null) == true;
+
+        // PK point-lookup fast path: WHERE PK = @param oder literal (nicht für Aggregate).
+        if (!isAggregate && _plan.PkLookupColumnIndex.HasValue)
         {
-            var pkValue = _boundParams[_plan.PkLookupParameterIndex.Value];
+            object? pkValue = _plan.PkLookupParameterIndex.HasValue
+                ? _boundParams[_plan.PkLookupParameterIndex.Value]
+                : _plan.PkLookupConstant;
             if (pkValue == null)
-                return new WalhallaResultSet(Array.Empty<WalhallaRow>(), _plan.OutputColumnNames);
+                return WalhallaResultSet.Empty(_plan.OutputColumnNames);
 
             var rowId = Convert.ToInt64(pkValue);
             var encoded = _store.GetRow(_plan.TableId, rowId);
             if (encoded == null)
-                return new WalhallaResultSet(Array.Empty<WalhallaRow>(), _plan.OutputColumnNames);
+                return WalhallaResultSet.Empty(_plan.OutputColumnNames);
 
             var row = RowCodec.DecodeToArray(encoded, _plan.TableDefinition);
             var projected = ProjectRow(row, _plan);
-            var pkSchema = new ColumnSchema(_plan.OutputColumnNames);
-            var pkRow = new WalhallaRow(pkSchema, projected);
-            return new WalhallaResultSet(new[] { pkRow }, _plan.OutputColumnNames);
+            var pkRow = new WalhallaRow(_plan.OutputSchema, projected);
+            return WalhallaResultSet.Single(_plan.OutputColumnNames, pkRow);
         }
 
         // PK range scan path: WHERE PK BETWEEN @min AND @max, PK > @val, etc.
-        if (_plan.PkRange != null)
+        if (!isAggregate && _plan.PkRange != null)
         {
             var range = _plan.PkRange;
             long minRowId = range.MinParameterIndex >= 0
@@ -106,7 +112,7 @@ public sealed class WalhallaPreparedStatement
 
             if (canStream)
             {
-                var schema = new ColumnSchema(_plan.OutputColumnNames);
+                var schema = _plan.OutputSchema;
                 var rows = new List<WalhallaRow>();
 
                 RowDecoder decoder = _plan.IsFullProjection
@@ -197,13 +203,17 @@ public sealed class WalhallaPreparedStatement
             predicate = row => where(row, bound);
         }
 
-        // When ORDER BY is present, decode full rows so ApplyPostProcessing can find ORDER BY columns.
-        var needsFullRows = _plan.OrderByColumns is { Count: > 0 } && !_plan.IsFullProjection;
-        var scanDecoder = needsFullRows
-            ? encoded => RowCodec.DecodeToPooledArray(encoded, _plan.TableDefinition)
-            : _decoder;
+        // Decode full rows when ORDER BY or a WHERE predicate references columns that are not
+        // part of the projected output. Teilprojektion liefert nur die projizierten Spalten,
+        // daher kann der kodierte Where-Check nur auf vollen Zeilen ausgeführt werden.
+        var needsFullRows = !_plan.IsFullProjection
+            && (_plan.OrderByColumns is { Count: > 0 } || _plan.WhereDelegate != null);
 
         var usesPooledRows = needsFullRows || _decoderUsesPool;
+
+        RowDecoder scanDecoder = needsFullRows || _decoderUsesPool
+            ? encoded => RowCodec.DecodeToPooledArray(encoded, _plan.TableDefinition)
+            : _decoder;
 
         _store.ScanWithPredicateFirst(_plan.TableId, _plan.TableDefinition,
             _plan.PredicateColumnIndices ?? Array.Empty<int>(),
@@ -240,8 +250,7 @@ public sealed class WalhallaPreparedStatement
         if (_plan.Limit.HasValue)
             projected = projected.Take(_plan.Limit.Value).ToList();
 
-        var schema = new ColumnSchema(plan.OutputColumnNames);
-        var rows = projected.ConvertAll(r => new WalhallaRow(schema, r));
+        var rows = projected.ConvertAll(r => new WalhallaRow(plan.OutputSchema, r));
 
         // Return rented arrays to pool when projection made copies.
         if (usesPooledRows && !ReferenceEquals(projected, fullRows))
@@ -257,25 +266,45 @@ public sealed class WalhallaPreparedStatement
     {
         var joinPlan = _plan.Join!;
 
-        // Read base table rows.
+        // Read base table rows, pushing the base-table WHERE predicate into the scan
+        // so rows that do not match are never fully decoded or stored.
         var baseRows = new List<object?[]>();
         RowDecoder baseDecoder = encoded => RowCodec.DecodeToArray(encoded, joinPlan.BaseTableDef);
-        _store.ScanWithPredicate(joinPlan.BaseTableId, baseDecoder, null, baseRows, int.MaxValue);
-
-        // Apply base-table WHERE if present.
         var where = _plan.WhereDelegate;
-        if (where != null)
-            baseRows.RemoveAll(r => !where(r, _boundParams));
+        if (where != null && _plan.PredicateColumnIndices is { Length: > 0 })
+        {
+            _store.ScanWithPredicateFirst(
+                joinPlan.BaseTableId, joinPlan.BaseTableDef,
+                _plan.PredicateColumnIndices, baseDecoder,
+                r => where(r, _boundParams), baseRows, int.MaxValue);
+        }
+        else
+        {
+            _store.ScanWithPredicate(
+                joinPlan.BaseTableId, baseDecoder,
+                where != null ? r => where(r, _boundParams) : null,
+                baseRows, int.MaxValue);
+        }
 
         var accumulated = baseRows;
 
         foreach (var step in joinPlan.Steps)
         {
-            var rightRows = new List<object?[]>();
             RowDecoder rightDecoder = encoded => RowCodec.DecodeToArray(encoded, step.TableDef);
-            _store.ScanWithPredicate(step.TableId, rightDecoder, null, rightRows, int.MaxValue);
 
-            accumulated = JoinStepExecutor.ExecuteStep(accumulated, rightRows, step, _boundParams);
+            // Index-Join-Pfade brauchen keinen vollständigen Scan der rechten Tabelle.
+            List<object?[]> rightRows;
+            if (IndexNestedLoopJoin.TryGetIndex(_store, step, out _, out _, out _))
+            {
+                rightRows = new List<object?[]>();
+            }
+            else
+            {
+                rightRows = new List<object?[]>();
+                _store.ScanWithPredicate(step.TableId, rightDecoder, null, rightRows, int.MaxValue);
+            }
+
+            accumulated = JoinStepExecutor.ExecuteStep(accumulated, rightRows, step, _store, rightDecoder, _boundParams);
         }
 
         // Apply ORDER BY on combined rows.
@@ -310,8 +339,7 @@ public sealed class WalhallaPreparedStatement
         if (_plan.Limit.HasValue)
             projectedRows = projectedRows.Take(_plan.Limit.Value).ToList();
 
-        var schema = new ColumnSchema(_plan.OutputColumnNames);
-        var resultRows = projectedRows.ConvertAll(r => new WalhallaRow(schema, r));
+        var resultRows = projectedRows.ConvertAll(r => new WalhallaRow(_plan.OutputSchema, r));
         return new WalhallaResultSet(resultRows, _plan.OutputColumnNames);
     }
 
@@ -370,6 +398,27 @@ public sealed class WalhallaPreparedStatement
 
     private WalhallaResultSet ExecuteAggregate()
     {
+        // Schneller Pfad: COUNT(*) über die gesamte Tabelle ohne Filter/Gruppierung
+        // benötigt keine Zeilendekodierung.
+        if (_plan.WhereDelegate == null
+            && (_plan.GroupByColumns == null || _plan.GroupByColumns.Count == 0)
+            && _plan.Having == null
+            && _plan.Join == null
+            && !_plan.IsDistinct
+            && _plan.Limit == null
+            && _plan.Offset == null
+            && _plan.OutputColumnNames.Length == 1
+            && _plan.SelectColumns != null
+            && _plan.SelectColumns.Count == 1
+            && _plan.SelectColumns[0].Aggregate is { Function: SqlAggregateFunction.Count, Argument: null })
+        {
+            var count = _store.CountRows(_plan.TableId);
+            var fastResult = new object?[_plan.OutputColumnNames.Length];
+            fastResult[0] = count;
+            return WalhallaResultSet.Single(_plan.OutputColumnNames,
+                new WalhallaRow(_plan.OutputSchema, fastResult));
+        }
+
         // Scan all rows with WHERE filter.
         var rows = new List<object?[]>();
         RowDecoder decoder = encoded => RowCodec.DecodeToArray(encoded, _plan.TableDefinition);
@@ -395,8 +444,7 @@ public sealed class WalhallaPreparedStatement
         aggregated = AggregateExecutor.ApplyHaving(aggregated, _plan.Having, _plan.OutputColumnNames);
 
         // Build result set.
-        var schema = new ColumnSchema(_plan.OutputColumnNames);
-        var resultRows = aggregated.ConvertAll(r => new WalhallaRow(schema, r));
+        var resultRows = aggregated.ConvertAll(r => new WalhallaRow(_plan.OutputSchema, r));
         return new WalhallaResultSet(resultRows, _plan.OutputColumnNames);
     }
 

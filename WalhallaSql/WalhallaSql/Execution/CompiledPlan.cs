@@ -31,6 +31,8 @@ internal sealed record CompiledPlan(
 {
     public ColumnCollationContext CollationContext { get; } = ColumnCollationContext.Build(TableDefinition);
 
+    public ColumnSchema OutputSchema { get; } = new ColumnSchema(OutputColumnNames);
+
     public bool IsFullProjection { get; } = ProjectionIndices.Length == TableDefinition.Columns.Count
         && ProjectionIndices.SequenceEqual(Enumerable.Range(0, ProjectionIndices.Length));
 

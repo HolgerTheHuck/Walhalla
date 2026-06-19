@@ -59,7 +59,7 @@ internal sealed class TableStore : IDisposable
     private long _orphanRowsProcessed;
     private long _orphanBlobsReclaimed;
     private long _orphanBytesReclaimed;
-    private bool IsInMemory => _options.StorageMode == StorageMode.InMemory;
+    internal bool IsInMemory => _options.StorageMode == StorageMode.InMemory;
     private bool IsMvccBPlusTree => _options.StorageMode == StorageMode.MvccBPlusTree;
     private bool UsesDirectStore => _walLog == null; // InMemory, MvccBPlusTree: no MemTable/WAL
     private bool UsesBlobSidecar => _options.EnableBlobSidecar && _options.StorageMode != StorageMode.InMemory;
@@ -1327,7 +1327,7 @@ internal sealed class TableStore : IDisposable
         }
     }
 
-    public int CountRows(int tableId)
+    public long CountRows(int tableId)
     {
         var prefix = BuildTablePrefix((uint)tableId);
         var toExclusive = BuildTablePrefix((uint)(tableId + 1));
@@ -1336,7 +1336,7 @@ internal sealed class TableStore : IDisposable
         {
             if (UsesDirectStore)
             {
-                var count = 0;
+                long count = 0;
                 foreach (var _ in _dataStore.EnumerateRange(prefix, toExclusive))
                     count++;
                 return count;
@@ -1350,7 +1350,7 @@ internal sealed class TableStore : IDisposable
                     seenKeys.Add(key);
             }
 
-            var diskCount = seenKeys.Count;
+            long diskCount = seenKeys.Count;
             foreach (var _ in _dataStore.EnumerateRange(prefix, toExclusive))
                 diskCount++;
 
@@ -2050,7 +2050,7 @@ internal sealed class TableStore : IDisposable
                 _memSortedKeysDirty = false;
             }
 
-            // Engine-spezifisches Checkpoint (MvccBPlusTree truncates interne WAL hier)
+            // Engine-spezifisches Checkpoint (MvccBPlusTreeStore truncates interne WAL hier)
             _dataStore.Checkpoint();
 
             // Drain pending group commits, then truncate WAL and flush ODS.

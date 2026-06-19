@@ -126,6 +126,7 @@ public sealed class WalhallaEngine : IDisposable
     }
 
     private readonly Dictionary<string, int> _schemaVersions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ColumnSchema> _fastPathColumnSchemas = new(StringComparer.OrdinalIgnoreCase);
 
     private int GetSchemaVersion(string tableName)
     {
@@ -896,9 +897,9 @@ public sealed class WalhallaEngine : IDisposable
         // falls back to the raw CountRows when there are no stats or no WHERE clause.
         int EstimateFilteredRows(int tableId, SqlWhereExpression? where)
         {
-            int rawCount = _store.CountRows(tableId);
+            long rawCount = _store.CountRows(tableId);
             if (where == null || !_statisticsCatalog.TryGet(tableId, out var tblStats))
-                return rawCount;
+                return (int)Math.Min(int.MaxValue, rawCount);
             Func<string, ColumnStatistics?> colLookup = n => tblStats.Columns.GetValueOrDefault(n);
             return (int)Math.Max(1L, SelectivityEstimator.EstimateRows(rawCount, where, colLookup));
         }
@@ -914,7 +915,7 @@ public sealed class WalhallaEngine : IDisposable
 
             foreach (var step in jp.Steps)
             {
-                int rightCount = _store.CountRows(step.TableId);
+                int rightCount = (int)Math.Min(int.MaxValue, _store.CountRows(step.TableId));
 
                 // Plan-time proxy for sort-merge eligibility: both join columns are primary keys, so
                 // the base/right scans yield rows in key order. (Left side checked against the base
@@ -1155,7 +1156,7 @@ public sealed class WalhallaEngine : IDisposable
                 ? _store.GetRow(plan.TableId, pkValue, storageTx)
                 : _store.GetRow(plan.TableId, pkValue);
             if (encoded == null)
-                return new WalhallaResultSet(Array.Empty<WalhallaRow>(), plan.OutputColumnNames);
+                return WalhallaResultSet.Empty(plan.OutputColumnNames);
 
             // B.2: Decode only projected columns � skip full row decode + ProjectRow
             object?[] pkProjected;
@@ -1172,9 +1173,8 @@ public sealed class WalhallaEngine : IDisposable
             {
                 pkProjected = DecodeColumnsWithBlobs(plan.TableId, encoded.AsSpan(), plan.TableDefinition, plan.ProjectionIndices);
             }
-            var pkSchema = new ColumnSchema(plan.OutputColumnNames);
-            var pkRow = new WalhallaRow(pkSchema, pkProjected);
-            return new WalhallaResultSet(new[] { pkRow }, plan.OutputColumnNames);
+            var pkRow = new WalhallaRow(plan.OutputSchema, pkProjected);
+            return WalhallaResultSet.Single(plan.OutputColumnNames, pkRow);
         }
 
         // PK range scan path: WHERE PK BETWEEN literal AND literal (direct Execute).
@@ -1399,8 +1399,7 @@ public sealed class WalhallaEngine : IDisposable
             projected = projected.Take(select.Limit.Value).ToList();
         }
 
-        var schema = new ColumnSchema(plan.OutputColumnNames);
-        var rows = projected.ConvertAll(r => new WalhallaRow(schema, r));
+        var rows = projected.ConvertAll(r => new WalhallaRow(plan.OutputSchema, r));
 
         // Return rented arrays to pool after projection.
         foreach (var row in fullRows)
@@ -1413,28 +1412,48 @@ public sealed class WalhallaEngine : IDisposable
     {
         var joinPlan = plan.Join!;
 
-        // Read base table rows.
+        // Read base table rows, pushing the base-table WHERE predicate into the scan
+        // so rows that do not match are never fully decoded or stored.
         var baseRows = new List<object?[]>();
         RowDecoder baseDecoder = encoded => DecodeRowWithBlobs(joinPlan.BaseTableId, encoded, joinPlan.BaseTableDef);
-        _store.ScanWithPredicate(joinPlan.BaseTableId, baseDecoder, null, baseRows, int.MaxValue);
-
-        // Apply base-table WHERE if present.
         var where = plan.WhereDelegate;
         var emptyParams = Array.Empty<object?>();
-        if (where != null)
-            baseRows.RemoveAll(r => !where(r, emptyParams));
+        if (where != null && plan.PredicateColumnIndices is { Length: > 0 })
+        {
+            _store.ScanWithPredicateFirst(
+                joinPlan.BaseTableId, joinPlan.BaseTableDef,
+                plan.PredicateColumnIndices, baseDecoder,
+                r => where(r, emptyParams), baseRows, int.MaxValue);
+        }
+        else
+        {
+            _store.ScanWithPredicate(
+                joinPlan.BaseTableId, baseDecoder,
+                where != null ? r => where(r, emptyParams) : null,
+                baseRows, int.MaxValue);
+        }
 
         // Accumulate results through joins.
         var accumulated = baseRows;
 
         foreach (var step in joinPlan.Steps)
         {
-            // Read right (join) table rows.
-            var rightRows = new List<object?[]>();
             RowDecoder rightDecoder = encoded => DecodeRowWithBlobs(step.TableId, encoded, step.TableDef);
-            _store.ScanWithPredicate(step.TableId, rightDecoder, null, rightRows, int.MaxValue);
 
-            accumulated = JoinStepExecutor.ExecuteStep(accumulated, rightRows, step, emptyParams);
+            // Wenn ein Index-Join-Pfad greift, müssen wir die rechte Tabelle nicht
+            // vollständig scannen und materialisieren.
+            List<object?[]> rightRows;
+            if (IndexNestedLoopJoin.TryGetIndex(_store, step, out _, out _, out _))
+            {
+                rightRows = new List<object?[]>();
+            }
+            else
+            {
+                rightRows = new List<object?[]>();
+                _store.ScanWithPredicate(step.TableId, rightDecoder, null, rightRows, int.MaxValue);
+            }
+
+            accumulated = JoinStepExecutor.ExecuteStep(accumulated, rightRows, step, _store, rightDecoder, emptyParams);
         }
 
         // Apply ORDER BY on combined rows (match output column names to projection indices).
@@ -1480,8 +1499,7 @@ public sealed class WalhallaEngine : IDisposable
         if (select.Limit.HasValue)
             projectedRows = projectedRows.Take(select.Limit.Value).ToList();
 
-        var schema = new ColumnSchema(plan.OutputColumnNames);
-        var rows = projectedRows.ConvertAll(r => new WalhallaRow(schema, r));
+        var rows = projectedRows.ConvertAll(r => new WalhallaRow(plan.OutputSchema, r));
         return new WalhallaResultSet(rows, plan.OutputColumnNames);
     }
 
@@ -1545,6 +1563,29 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteAggregateSelect(CompiledPlan plan, SqlSelectStatement select)
     {
+        // Schneller Pfad: COUNT(*) über die gesamte Tabelle benötigt keine
+        // Zeilendekodierung. Dies umgeht auch Decode-Fehler, die bei großen
+        // Migrationen durch korrupte/zwischengespeicherte Zeilen entstehen können,
+        // solange die reine Kardinalität ermittelt werden soll.
+        if (select.Where == null
+            && (select.GroupByColumns == null || select.GroupByColumns.Count == 0)
+            && select.Having == null
+            && (select.Joins == null || select.Joins.Count == 0)
+            && select.DerivedTable == null
+            && !select.IsDistinct
+            && select.Limit == null
+            && select.Offset == null
+            && plan.OutputColumnNames.Length == 1
+            && select.Columns.Count == 1
+            && select.Columns[0].Aggregate is { Function: SqlAggregateFunction.Count, Argument: null })
+        {
+            var count = _store.CountRows(plan.TableId);
+            var fastResult = new object?[plan.OutputColumnNames.Length];
+            fastResult[0] = count;
+            return WalhallaResultSet.Single(plan.OutputColumnNames,
+                new WalhallaRow(plan.OutputSchema, fastResult));
+        }
+
         // Scan all rows with WHERE filter.
         var rows = new List<object?[]>();
         RowDecoder decoder = encoded => DecodeRowWithBlobs(plan.TableId, encoded, plan.TableDefinition);
@@ -1568,8 +1609,7 @@ public sealed class WalhallaEngine : IDisposable
         aggregated = AggregateExecutor.ApplyHaving(aggregated, select.Having, plan.OutputColumnNames);
 
         // Build result set.
-        var schema = new ColumnSchema(plan.OutputColumnNames);
-        var resultRows = aggregated.ConvertAll(r => new WalhallaRow(schema, r));
+        var resultRows = aggregated.ConvertAll(r => new WalhallaRow(plan.OutputSchema, r));
         return new WalhallaResultSet(resultRows, plan.OutputColumnNames);
     }
 
@@ -1640,6 +1680,11 @@ public sealed class WalhallaEngine : IDisposable
         if (fromIdx < 0) return null;
         var colsSpan = span.Slice(0, fromIdx).Trim();
         span = span.Slice(fromIdx + 6); // skip " FROM "
+
+        // Der Fast-Path ist nur für einfache Spaltenlisten oder * gedacht;
+        // Aggregate wie COUNT(*) sollen den normalen Planer/Parser nutzen.
+        if (colsSpan.IndexOfAny('(', ')') >= 0)
+            return null;
 
         // Find " WHERE " � reject any extra clauses before WHERE
         var whereIdx = IndexOfKeyword(span, " WHERE ");
@@ -1751,9 +1796,23 @@ public sealed class WalhallaEngine : IDisposable
         }
 
         buildResult:
-        var schema = new ColumnSchema(outputNames);
+        var schema = GetOrCreateFastPathSchema(tableDef, outputNames);
         var row = new WalhallaRow(schema, projected);
-        return new WalhallaResultSet(new[] { row }, outputNames);
+        return WalhallaResultSet.Single(outputNames, row);
+    }
+
+    private ColumnSchema GetOrCreateFastPathSchema(SqlTableDefinition tableDef, string[] outputNames)
+    {
+        var key = outputNames.Length == tableDef.Columns.Count
+            ? tableDef.CollectionName
+            : $"{tableDef.CollectionName}:{string.Join(",", outputNames)}";
+
+        if (_fastPathColumnSchemas.TryGetValue(key, out var schema))
+            return schema;
+
+        schema = new ColumnSchema(outputNames);
+        _fastPathColumnSchemas[key] = schema;
+        return schema;
     }
 
     // -- Fast-path string helpers ----------------------------------------------
