@@ -12,6 +12,16 @@ public interface ISqlClientSession
 
     SqlClientStreamResult ExecuteStream(SqlClientCommand command);
 
+    /// <summary>
+    /// Führt ein vorbereitetes Statement aus, dessen Plan bereits im Engine-Plan-Cache
+    /// liegt. Die Parameter werden vor der Ausführung an das Statement gebunden.
+    /// Nur für SELECT-Statements; andere Statement-Typen müssen über <see cref="Execute"/> laufen.
+    /// </summary>
+    SqlExecutionResult ExecutePrepared(
+        WalhallaPreparedStatement statement,
+        WalhallaSqlTransaction? transaction,
+        IReadOnlyList<SqlClientParameter> parameters);
+
     SqlExecutionResult[] ExecuteBatch(IReadOnlyList<SqlClientCommand> commands)
     {
         if (commands == null)
@@ -58,4 +68,9 @@ public interface ISqlClientSession
     /// transaction enrolment semantics.
     /// </summary>
     void EnrollTransaction(WalhallaSql.WalhallaSqlTransaction? transaction) { }
+
+    /// <summary>
+    /// Setzt den Sitzungszustand zurück, damit die Session aus einem Pool wiederverwendet werden kann.
+    /// </summary>
+    void Reset();
 }

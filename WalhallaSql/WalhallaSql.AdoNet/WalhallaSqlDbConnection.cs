@@ -3,8 +3,10 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -32,6 +34,12 @@ public sealed class WalhallaSqlDbConnection : DbConnection
     private string _databaseName;
     private readonly bool _hasExplicitEngine;
     private bool _engineFromRegistry;
+
+    // Best-effort Session-Pool für InProcess-Verbindungen. Pro Connection-String
+    // (bzw. Engine-Identität) wird eine begrenzte Menge an ISqlClientSession-Instanzen
+    // vorgehalten, damit Open()/Close() nicht jedes Mal eine neue Session erstellen muss.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentQueue<ISqlClientSession>> _sessionPool = new(StringComparer.Ordinal);
+    private const int MaxPooledSessionsPerKey = 8;
 
     public WalhallaSqlDbConnection()
         : this(string.Empty)
@@ -174,10 +182,32 @@ public sealed class WalhallaSqlDbConnection : DbConnection
 
     public override void Close()
     {
-        if (_sqlClientSession is IDisposable disposable)
-            disposable.Dispose();
-
+        var session = _sqlClientSession;
         _sqlClientSession = null;
+
+        if (session != null)
+        {
+            // Für InProcess-Sessions mit geteilter Engine versuchen wir, die Session
+            // in den Pool zurückzugeben, statt sie zu disposen.
+            if (CanPoolSession(session))
+            {
+                try
+                {
+                    session.Reset();
+                    ReturnSession(session);
+                }
+                catch
+                {
+                    // Bei jedem Problem (aktive Transaktion, Reset fehlgeschlagen) disposen.
+                    if (session is IDisposable disposable)
+                        disposable.Dispose();
+                }
+            }
+            else if (session is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
 
         if (_embeddedEngineLease != null)
         {
@@ -206,6 +236,74 @@ public sealed class WalhallaSqlDbConnection : DbConnection
         _engineFromRegistry = false;
 
         _state = ConnectionState.Closed;
+    }
+
+    private bool CanPoolSession(ISqlClientSession session)
+    {
+        // Der Pool darf nur Sessions für Engines aufbewahren, deren Lebensdauer
+        // unabhängig von dieser Connection ist. Refcounted Leases (EmbeddedPath,
+        // Shared InMemory) werden beim Schließen der letzten Connection disposed;
+        // eine gepoolte Session würde dann auf eine disposed/falsche Engine zeigen.
+        if (!_engineFromRegistry && !_hasExplicitEngine)
+            return false;
+
+        return _engine != null
+            && session is WalhallaSqlClientSession
+            && SqlClientSessionFactory.GetConfiguredTransport(_connectionString) == SqlClientTransport.InProcess;
+    }
+
+    private string GetSessionPoolKey()
+    {
+        var transport = SqlClientSessionFactory.GetConfiguredTransport(_connectionString).ToString();
+        var dataSource = DataSource;
+        var database = Database;
+        var engineId = _engine == null
+            ? "null"
+            : RuntimeHelpers.GetHashCode(_engine).ToString(CultureInfo.InvariantCulture);
+        return $"{transport}:{dataSource}:{database}:{engineId}";
+    }
+
+    private ISqlClientSession? TryAcquireSession()
+    {
+        if (_engine == null)
+            return null;
+
+        var key = GetSessionPoolKey();
+        if (!_sessionPool.TryGetValue(key, out var queue))
+            return null;
+
+        while (queue.TryDequeue(out var session))
+        {
+            try
+            {
+                session.Reset();
+                return session;
+            }
+            catch
+            {
+                if (session is IDisposable disposable)
+                    disposable.Dispose();
+            }
+        }
+
+        return null;
+    }
+
+    private void ReturnSession(ISqlClientSession session)
+    {
+        var key = GetSessionPoolKey();
+        var queue = _sessionPool.GetOrAdd(key, static _ => new System.Collections.Concurrent.ConcurrentQueue<ISqlClientSession>());
+
+        // Begrenzte Poolgröße: alte Einträge verwerfen, wenn das Limit erreicht ist.
+        var spun = 0;
+        while (queue.Count >= MaxPooledSessionsPerKey && spun < MaxPooledSessionsPerKey)
+        {
+            if (queue.TryDequeue(out var surplus) && surplus is IDisposable surplusDisposable)
+                surplusDisposable.Dispose();
+            spun++;
+        }
+
+        queue.Enqueue(session);
     }
 
     protected override void Dispose(bool disposing)
@@ -333,7 +431,8 @@ public sealed class WalhallaSqlDbConnection : DbConnection
             }
         }
 
-        _sqlClientSession ??= SqlClientSessionFactory.Create(_engine, _connectionString);
+        if (_sqlClientSession == null)
+            _sqlClientSession = TryAcquireSession() ?? SqlClientSessionFactory.Create(_engine, _connectionString);
 
         _state = ConnectionState.Open;
     }

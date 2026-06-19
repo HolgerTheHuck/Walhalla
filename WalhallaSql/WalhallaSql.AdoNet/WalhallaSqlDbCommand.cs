@@ -51,6 +51,7 @@ public sealed class WalhallaSqlDbCommand : DbCommand
     private WalhallaSqlDbConnection? _connection;
     private string _commandText = string.Empty;
     private PreparedCommandTemplate? _preparedTemplate;
+    private WalhallaPreparedStatement? _preparedStatement;
     private volatile bool _prepareAttempted;
     private volatile bool _cancelPending;
     private CancellationTokenSource _intrinsicCts = new();
@@ -79,6 +80,7 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         {
             _commandText = value ?? string.Empty;
             _preparedTemplate = null;
+            _preparedStatement = null;
             _prepareAttempted = false;
         }
     }
@@ -444,6 +446,20 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         var command = BuildSqlClientCommand(useStructuredParameters: executionConnection.SqlClientSession.SupportsStructuredParameters);
         var sql = command.Sql;
         TraceCommandText(sql);
+        if (TryExecutePreparedStatement(executionConnection, command, out var preparedResult))
+        {
+            var projectedColumns = TryExtractProjectedColumns(sql);
+            var preparedReader = new WalhallaSqlDbDataReader(preparedResult.Rows, projectedColumns, materializeEagerly: false);
+
+            if (behavior.HasFlag(CommandBehavior.CloseConnection) && _connection != null)
+            {
+                var conn = _connection;
+                preparedReader.SetCloseConnectionCallback(() => conn.Close());
+            }
+
+            return preparedReader;
+        }
+
         if (TryExecuteBooleanScalarQuery(executionConnection, sql, DbTransaction != null, out var booleanScalarResult))
             return new WalhallaSqlDbDataReader(booleanScalarResult.Rows);
 
@@ -806,6 +822,67 @@ public sealed class WalhallaSqlDbCommand : DbCommand
             || trimmed.StartsWith("MERGE", StringComparison.OrdinalIgnoreCase);
     }
 
+    private bool IsSelectStatement(string sql)
+    {
+        var trimmed = sql.AsSpan().TrimStart();
+        return trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Versucht, das Statement über den Engine-Prepared-Statement-Pfad auszuführen.
+    /// Das vermeidet das Einbetten von Parametern als Literale und nutzt den
+    /// Engine-Plan-Cache für wiederholte Abfragen.
+    /// </summary>
+    private bool TryExecutePreparedStatement(
+        WalhallaSqlDbConnection executionConnection,
+        SqlClientCommand command,
+        [NotNullWhen(true)] out SqlExecutionResult? result)
+    {
+        result = null;
+
+        // Prepared statements werden nur ohne externe Transaktion unterstützt,
+        // weil WalhallaPreparedStatement die Merge-Logik für uncommitted Writes
+        // nicht selbst übernimmt. Innerhalb von Transaktionen bleibt der alte Pfad.
+        if (command.HasExternalTransaction)
+            return false;
+
+        if (!executionConnection.HasLocalEngine)
+            return false;
+
+        if (_preparedTemplate is not { UsesStructuredParameters: true } template)
+            return false;
+
+        if (!IsSelectStatement(template.Sql))
+            return false;
+
+        if (_preparedStatement == null)
+        {
+            try
+            {
+                _preparedStatement = executionConnection.EngineHandle.Prepare(template.Sql);
+            }
+            catch
+            {
+                // Prepare ist best-effort; bei Views/JOINs/CTEs kann es fehlschlagen.
+                return false;
+            }
+        }
+
+        try
+        {
+            result = executionConnection.SqlClientSession.ExecutePrepared(
+                _preparedStatement,
+                null,
+                command.Parameters);
+            return true;
+        }
+        catch
+        {
+            _preparedStatement = null;
+            return false;
+        }
+    }
+
     private SqlExecutionResult ExecuteInternal()
     {
         if (_connection == null)
@@ -839,6 +916,20 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         long e4 = GC.GetAllocatedBytesForCurrentThread();
         var sql = command.Sql;
         TraceCommandText(sql);
+
+        if (TryExecutePreparedStatement(executionConnection, command, out var preparedResult))
+        {
+            long e5Prepared = GC.GetAllocatedBytesForCurrentThread();
+            TraceSqlDiagnostic($"AffectedRows={preparedResult.AffectedRows} (prepared)");
+            Interlocked.Add(ref _profValidateSync, e1 - e0);
+            Interlocked.Add(ref _profResolveConn, e2 - e1);
+            Interlocked.Add(ref _profPrepare, e3 - e2);
+            Interlocked.Add(ref _profBuildCmd, e4 - e3);
+            Interlocked.Add(ref _profExecSql, e5Prepared - e4);
+            Interlocked.Increment(ref _profCount);
+            return preparedResult;
+        }
+
         if (TryExecuteBooleanScalarQuery(executionConnection, sql, hasExternalTransaction, out var booleanScalarResult))
             return booleanScalarResult;
 

@@ -15,6 +15,8 @@ public sealed class WalhallaSqlClientSession : ISqlClientSession
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
     }
 
+    public bool SupportsStructuredParameters => true;
+
     public bool SupportsTransportTransactions => true;
 
     public bool SupportsSavepoints => false;
@@ -50,6 +52,12 @@ public sealed class WalhallaSqlClientSession : ISqlClientSession
     public void EnrollTransaction(WalhallaSqlTransaction? transaction)
     {
         _enrolledTransaction = transaction;
+    }
+
+    public void Reset()
+    {
+        if (_enrolledTransaction != null)
+            throw new InvalidOperationException("Cannot reset a SQL client session with an active transaction.");
     }
 
     public SqlExecutionResult Execute(SqlClientCommand command)
@@ -161,6 +169,30 @@ public sealed class WalhallaSqlClientSession : ISqlClientSession
         var sql = SqlLiteralFormatter.RewriteParametersAsLiterals(command);
         var result = _engine.Execute(sql, transaction);
         return ConvertResult(result);
+    }
+
+    public SqlExecutionResult ExecutePrepared(
+        WalhallaPreparedStatement statement,
+        WalhallaSqlTransaction? transaction,
+        IReadOnlyList<SqlClientParameter> parameters)
+    {
+        ArgumentNullException.ThrowIfNull(statement);
+
+        if (transaction != null)
+            throw new WalhallaException("Prepared statement execution is not supported inside an external transaction.");
+
+        statement.ClearBindings();
+        for (int i = 0; i < parameters.Count; i++)
+        {
+            var parameter = parameters[i];
+            if (parameter.Name != null)
+                statement.Bind(parameter.Name, parameter.Value);
+            else
+                statement.Bind(i, parameter.Value);
+        }
+
+        var resultSet = statement.Execute();
+        return ConvertResult(resultSet);
     }
 
     private static SqlExecutionResult ConvertResult(WalhallaResultSet resultSet)
