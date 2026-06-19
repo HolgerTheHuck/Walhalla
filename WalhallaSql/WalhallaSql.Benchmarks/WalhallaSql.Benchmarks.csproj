@@ -20,9 +20,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="PgWireMixedLoadBenchmark.cs" />
-    <Compile Remove="SimpleQueryStandalone.cs" />
     <ProjectReference Include="..\WalhallaSql\WalhallaSql.csproj" />
+    <ProjectReference Include="..\WalhallaSql.AdoNet\WalhallaSql.AdoNet.csproj" />
+    <ProjectReference Include="..\WalhallaSql.PgWire\WalhallaSql.PgWire.csproj" />
   </ItemGroup>
 
 </Project>

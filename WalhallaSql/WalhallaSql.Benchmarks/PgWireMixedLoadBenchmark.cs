@@ -65,7 +65,13 @@ internal static class MixedLoadRunner
                 var cid = rng.Next(customerCount);
                 using var conn = connFactory();
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = $"SELECT Id, Name FROM Customers WHERE Id = {cid}";
+                // Parametrisierte Abfrage, damit Npgsql den Extended-Query-Pfad
+                // nutzt und der PgWire-Prepared-Statement-Cache greift.
+                cmd.CommandText = "SELECT Id, Name FROM Customers WHERE Id = @id";
+                var p = cmd.CreateParameter();
+                p.ParameterName = "@id";
+                p.Value = cid;
+                cmd.Parameters.Add(p);
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read()) { }
                 Interlocked.Increment(ref result.ReadsDone);
@@ -120,8 +126,7 @@ public class WalhallaSqlPgWireBenchmark : IDisposable
     public void Setup()
     {
         _engine = WalhallaEngine.InMemory();
-        var backendFactory = new Func<IPgWireBackendConnection>(() => new WalhallaSqlPgWireBackend(_engine));
-        _server = new PgWireServer(backendFactory, "127.0.0.1", 0);
+        _server = new PgWireServer(new WalhallaSqlPgWireBackend(_engine), "127.0.0.1", 0);
         _server.StartAsync().GetAwaiter().GetResult();
 
         _connString = $"Host=127.0.0.1;Port={_server.BoundPort};Database=WalhallaSql;User Id=test;Password=test;Pooling=true;MaxPoolSize=64;MinPoolSize=4;Timeout=10;Command Timeout=30;No Reset On Close=true";

@@ -18,8 +18,7 @@ public static class SimpleQueryStandalone
         for (int i = 0; i < 1000; i++)
             engine.Execute($"INSERT INTO Customers (Id, Name) VALUES ({i}, 'Customer_{i}')");
 
-        var backendFactory = new Func<IPgWireBackendConnection>(() => new WalhallaSqlPgWireBackend(engine));
-        var server = new PgWireServer(backendFactory, "127.0.0.1", 0);
+        var server = new PgWireServer(new WalhallaSqlPgWireBackend(engine), "127.0.0.1", 0);
         server.StartAsync().GetAwaiter().GetResult();
         var port = server.BoundPort;
         Console.WriteLine($"Server on port {port}");
