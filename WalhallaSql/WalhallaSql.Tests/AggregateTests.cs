@@ -172,4 +172,36 @@ public class AggregateTests
 
         Assert.Equal(2, result.Rows.Count);
     }
+
+    [Fact]
+    public void CountStar_WholeTable_ReturnsTotalRowCount()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE Sales (Id INT PRIMARY KEY, Region STRING, Amount DOUBLE)");
+        engine.Execute("INSERT INTO Sales (Id, Region, Amount) VALUES (1, 'EU', 100.0)");
+        engine.Execute("INSERT INTO Sales (Id, Region, Amount) VALUES (2, 'EU', 200.0)");
+        engine.Execute("INSERT INTO Sales (Id, Region, Amount) VALUES (3, 'US', 150.0)");
+
+        var result = engine.Execute("SELECT COUNT(*) FROM Sales");
+
+        Assert.Single(result.Rows);
+        Assert.Equal(3L, result.Rows[0]["COUNT(*)"]);
+    }
+
+    [Fact]
+    public void CountStar_Prepared_WholeTable_ReturnsTotalRowCount()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE Sales (Id INT PRIMARY KEY, Region STRING, Amount DOUBLE)");
+        engine.Execute("INSERT INTO Sales (Id, Region, Amount) VALUES (1, 'EU', 100.0)");
+        engine.Execute("INSERT INTO Sales (Id, Region, Amount) VALUES (2, 'EU', 200.0)");
+
+        var stmt = engine.Prepare("SELECT COUNT(*) FROM Sales");
+        var result = stmt.Execute();
+
+        Assert.Single(result.Rows);
+        Assert.Equal(2L, result.Rows[0]["COUNT(*)"]);
+    }
 }

@@ -161,4 +161,36 @@ public class MvccBPlusTreeStorageTests : IDisposable
         Assert.Single(result.Rows);
         Assert.Equal(1, result.Rows[0]["Id"]);
     }
+
+    [Fact]
+    public void Mvcc_Binary_RoundTrip_And_Count()
+    {
+        using var engine = CreateEngine();
+        engine.Execute("CREATE TABLE Documents (Id INT PRIMARY KEY, Name STRING, Content VARBINARY)");
+
+        var random = new Random(42);
+        int rowCount = 20000;
+        for (int i = 1; i <= rowCount; i++)
+        {
+            var length = i % 2 == 0 ? 100 : 5000; // abwechselnd inline und sidecar-BLOB
+            var payload = new byte[length];
+            random.NextBytes(payload);
+            var hex = Convert.ToHexString(payload);
+            engine.Execute($"INSERT INTO Documents (Id, Name, Content) VALUES ({i}, 'doc{i}', X'{hex}')");
+        }
+
+        var countResult = engine.Execute("SELECT COUNT(*) FROM Documents");
+        Assert.Single(countResult.Rows);
+        Assert.Equal((long)rowCount, countResult.Rows[0]["COUNT(*)"]);
+
+        var all = engine.Execute("SELECT * FROM Documents ORDER BY Id");
+        Assert.Equal(rowCount, all.Rows.Count);
+        for (int i = 0; i < rowCount; i++)
+        {
+            var rowId = (int)all.Rows[i]["Id"];
+            var expectedLength = rowId % 2 == 0 ? 100 : 5000;
+            var bytes = Assert.IsType<byte[]>(all.Rows[i]["Content"]);
+            Assert.Equal(expectedLength, bytes.Length);
+        }
+    }
 }

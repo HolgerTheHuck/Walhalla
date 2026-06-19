@@ -283,4 +283,37 @@ public class DataTypeTests
         var result = engine.Execute("SELECT * FROM T");
         Assert.Single(result.Rows);
     }
+
+    // ── BINARY / VARBINARY ───────────────────────────────────────────────────
+
+    [Fact]
+    public void Binary_CreateAndInsert()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Data VARBINARY)");
+        engine.Execute("INSERT INTO T (Id, Data) VALUES (1, X'010203')");
+        engine.Execute("INSERT INTO T (Id, Data) VALUES (2, X'FFFE')");
+
+        var result = engine.Execute("SELECT Data FROM T WHERE Id = 1");
+        Assert.Single(result.Rows);
+        var bytes = Assert.IsType<byte[]>(result.Rows[0]["Data"]);
+        Assert.Equal(new byte[] { 0x01, 0x02, 0x03 }, bytes);
+    }
+
+    [Fact]
+    public void Binary_LargeValue_RoundTrip()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Data VARBINARY)");
+
+        var payload = new byte[5000];
+        new Random(42).NextBytes(payload);
+        var hex = Convert.ToHexString(payload);
+        engine.Execute($"INSERT INTO T (Id, Data) VALUES (1, X'{hex}')");
+
+        var result = engine.Execute("SELECT Data FROM T WHERE Id = 1");
+        Assert.Single(result.Rows);
+        var bytes = Assert.IsType<byte[]>(result.Rows[0]["Data"]);
+        Assert.Equal(payload, bytes);
+    }
 }
