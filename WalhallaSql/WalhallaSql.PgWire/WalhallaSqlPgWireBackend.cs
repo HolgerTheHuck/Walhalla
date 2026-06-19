@@ -304,7 +304,7 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
         public void Dispose() { }
     }
 
-    private sealed class WalhallaBackendReader : IPgWireBackendReader
+    internal sealed class WalhallaBackendReader : IPgWireBackendReader
     {
         private readonly WalhallaResultSet? _result;
         private readonly IEnumerator<IReadOnlyDictionary<string, object?>>? _streamingEnumerator;

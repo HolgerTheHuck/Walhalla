@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using WalhallaSql;
 using WalhallaSql.Parsing;
 
 namespace WalhallaSql.PgWire;
@@ -336,7 +337,7 @@ public sealed class PgWireServer : IAsyncDisposable
                             break;
 
                         case 'B':
-                            HandleBind(session, payload);
+                            HandleBind(backend, session, payload);
                             await SendBindCompleteAsync(stream);
                             break;
 
@@ -1047,7 +1048,7 @@ public sealed class PgWireServer : IAsyncDisposable
         session.PreparedStatements[key] = new PgPreparedStatement(sql, parameterTypes);
     }
 
-    private static void HandleBind(PgDbSessionState session, byte[] payload)
+    private static void HandleBind(IPgWireBackendConnection backend, PgDbSessionState session, byte[] payload)
     {
         var reader = new PgPayloadReader(payload);
         var portalName = NormalizeName(reader.ReadCString());
@@ -1060,6 +1061,7 @@ public sealed class PgWireServer : IAsyncDisposable
 
         var parameterCount = reader.ReadInt16();
         var parameterLiterals = new string?[parameterCount];
+        var parameterValues = new object?[parameterCount];
         for (var i = 0; i < parameterCount; i++)
         {
             var len = reader.ReadInt32();
@@ -1073,15 +1075,26 @@ public sealed class PgWireServer : IAsyncDisposable
             var formatCode = ResolveFormatCode(formatCodes, i);
             var parameterTypeOid = i < prepared.ParameterTypeOids.Count ? prepared.ParameterTypeOids[i] : 0;
             parameterLiterals[i] = DecodeBindParameterLiteral(raw, formatCode, parameterTypeOid);
+            parameterValues[i] = DecodeBindParameterValue(raw, formatCode, parameterTypeOid);
         }
 
         var resultFormatCodes = ReadFormatCodes(reader);
 
-        var sql = NormalizeSqlForExecution(RenderSqlWithParameters(prepared.Sql, parameterLiterals));
-        var isQuery = ReturnsRows(sql);
+        var literalSql = NormalizeSqlForExecution(RenderSqlWithParameters(prepared.Sql, parameterLiterals));
+        var isQuery = ReturnsRows(literalSql);
+
+        // Try to compile a reusable engine-side prepared statement (SELECTs only, no transaction fallback).
+        var parameterizedSql = NormalizeSqlForExecution(RenderSqlWithParameterMarkers(prepared.Sql, parameterCount));
+        var compiled = isQuery && parameterCount >= 0
+            ? TryCompilePgStatement(backend, prepared, parameterizedSql, parameterCount)
+            : null;
+
         // Inherit MetadataDescribed from statement so repeated executions don't send a second RowDescription
-        session.Portals[portalName] = new PgBoundPortal(sql, isQuery, prepared.MetadataDescribed, prepared)
+        session.Portals[portalName] = new PgBoundPortal(literalSql, isQuery, prepared.MetadataDescribed, prepared)
         {
+            ParameterizedSql = parameterizedSql,
+            ParameterValues = parameterValues,
+            PreparedStatement = compiled,
             DescribedFields = prepared.DescribedFields,
             ResultFormatCodes = resultFormatCodes
         };
@@ -1321,7 +1334,9 @@ public sealed class PgWireServer : IAsyncDisposable
 
             if (portal.IsQuery)
             {
-                using var dbReader = command.ExecuteReader();
+                using var dbReader = portal.PreparedStatement != null && session.Transaction == null
+                    ? ExecutePreparedReader(portal)
+                    : command.ExecuteReader();
 
                 if (TryExpandSingleJsonColumnResult(dbReader, out var expandedFields, out var expandedRows))
                 {
@@ -1736,6 +1751,69 @@ public sealed class PgWireServer : IAsyncDisposable
         return codes[index];
     }
 
+    /// <summary>
+    /// Ersetzt <c>$N</c> und <c>?</c>-Platzhalter durch <c>@p{N-1}</c>,
+    /// damit <see cref="WalhallaEngine.Prepare"/> das Statement kompilieren kann.
+    /// Zeichenkettenliterale werden dabei nicht verändert.
+    /// </summary>
+    private static string RenderSqlWithParameterMarkers(string sql, int parameterCount)
+    {
+        var markerSql = Regex.Replace(
+            sql,
+            @"\$(\d+)",
+            match =>
+            {
+                if (!int.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ordinal))
+                    return match.Value;
+
+                if (ordinal < 1 || ordinal > parameterCount)
+                    throw new InvalidOperationException($"Parameter ${ordinal} out of range.");
+
+                return "@p" + (ordinal - 1);
+            },
+            RegexOptions.CultureInvariant);
+
+        if (markerSql.IndexOf('?', StringComparison.Ordinal) < 0)
+            return markerSql;
+
+        var sb = new StringBuilder(markerSql.Length + (parameterCount * 4));
+        var inString = false;
+        var nextIndex = 0;
+
+        for (var i = 0; i < markerSql.Length; i++)
+        {
+            var ch = markerSql[i];
+
+            if (ch == '\'')
+            {
+                if (inString && i + 1 < markerSql.Length && markerSql[i + 1] == '\'')
+                {
+                    sb.Append("''");
+                    i++;
+                    continue;
+                }
+
+                inString = !inString;
+                sb.Append(ch);
+                continue;
+            }
+
+            if (!inString && ch == '?')
+            {
+                if (nextIndex >= parameterCount)
+                    throw new InvalidOperationException($"Missing parameter marker ? at position {nextIndex + 1}.");
+
+                sb.Append("@p").Append(nextIndex);
+                nextIndex++;
+                continue;
+            }
+
+            sb.Append(ch);
+        }
+
+        return sb.ToString();
+    }
+
     private static string RenderSqlWithParameters(string sql, IReadOnlyList<string?> parameterLiterals)
     {
         var rendered = Regex.Replace(
@@ -1795,6 +1873,64 @@ public sealed class PgWireServer : IAsyncDisposable
         return sb.ToString();
     }
 
+    private static WalhallaPreparedStatement? TryCompilePgStatement(
+        IPgWireBackendConnection backend,
+        PgPreparedStatement prepared,
+        string parameterizedSql,
+        int parameterCount)
+    {
+        if (prepared.Compiled != null)
+        {
+            // Stelle sicher, dass das kompilierte Statement dieselbe Parametrisierung hat.
+            if (prepared.ParameterizedSql == parameterizedSql
+                && prepared.Compiled.GetPlan().ParameterCount == parameterCount)
+            {
+                return prepared.Compiled;
+            }
+
+            prepared.Compiled = null;
+        }
+
+        prepared.ParameterizedSql = parameterizedSql;
+
+        if (backend is not WalhallaSqlPgWireBackend walhallaBackend)
+            return null;
+
+        try
+        {
+            var compiled = walhallaBackend.GetEngine().Prepare(parameterizedSql);
+            if (compiled.GetPlan().ParameterCount != parameterCount)
+                return null;
+
+            prepared.Compiled = compiled;
+            return compiled;
+        }
+        catch (Exception ex)
+        {
+            PgWireTrace.Sql("PREPARE-FALLBACK", $"{parameterizedSql} [{ex.Message}]");
+            return null;
+        }
+    }
+
+    private static IPgWireBackendReader ExecutePreparedReader(PgBoundPortal portal)
+    {
+        var prepared = portal.PreparedStatement!;
+        prepared.ClearBindings();
+
+        var values = portal.ParameterValues;
+        if (values != null)
+        {
+            for (var i = 0; i < values.Length; i++)
+            {
+                var value = values[i];
+                if (value != null)
+                    prepared.Bind(i, value);
+            }
+        }
+
+        return new WalhallaSqlPgWireBackend.WalhallaBackendReader(prepared.Execute());
+    }
+
     private static string ToSqlLiteral(string input)
     {
         if (string.Equals(input, "null", StringComparison.OrdinalIgnoreCase))
@@ -1824,6 +1960,104 @@ public sealed class PgWireServer : IAsyncDisposable
             return ToSqlLiteral(utf8Text);
 
         return ToSqlLiteral("\\x" + Convert.ToHexString(raw).ToLowerInvariant());
+    }
+
+    /// <summary>
+    /// Wandelt einen Bind-Parameter in einen typisierten CLR-Wert um, der an
+    /// <see cref="WalhallaPreparedStatement.Bind(int, object?)"/> übergeben werden kann.
+    /// </summary>
+    private static object? DecodeBindParameterValue(byte[] raw, short formatCode, int parameterTypeOid)
+    {
+        if (formatCode == 1)
+        {
+            if (TryDecodeBinaryParameterValue(raw, parameterTypeOid, out var value))
+                return value;
+        }
+
+        if (!TryDecodeUtf8Text(raw, out var text))
+            text = Convert.ToHexString(raw).ToLowerInvariant();
+
+        return ParseTextParameterValue(text, parameterTypeOid);
+    }
+
+    private static object? ParseTextParameterValue(string text, int parameterTypeOid)
+    {
+        switch (parameterTypeOid)
+        {
+            case 16:
+                return text.Equals("t", StringComparison.OrdinalIgnoreCase)
+                    || text.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || text == "1";
+
+            case 21:
+                if (short.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var s))
+                    return s;
+                break;
+
+            case 23 or 26:
+                if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i))
+                    return i;
+                break;
+
+            case 20:
+                if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var l))
+                    return l;
+                break;
+
+            case 700:
+                if (float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var f))
+                    return f;
+                break;
+
+            case 701:
+                if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
+                    return d;
+                break;
+
+            case 1700:
+                if (decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var m))
+                    return m;
+                break;
+
+            case 1114 or 1184:
+                if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dt))
+                    return dt;
+                break;
+
+            case 2950:
+                if (Guid.TryParse(text, out var g))
+                    return g;
+                break;
+
+            case 17:
+                if (text.StartsWith("\\\\x", StringComparison.Ordinal) && text.Length > 2)
+                {
+                    try { return Convert.FromHexString(text.AsSpan(2)); }
+                    catch { /* fall through to string */ }
+                }
+                break;
+        }
+
+        return InferTextParameterValue(text);
+    }
+
+    private static object? InferTextParameterValue(string text)
+    {
+        if (text.Equals("true", StringComparison.OrdinalIgnoreCase) || text.Equals("t", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (text.Equals("false", StringComparison.OrdinalIgnoreCase) || text.Equals("f", StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var l))
+            return l;
+        if (decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var m))
+            return m;
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
+            return d;
+        if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dt))
+            return dt;
+        if (Guid.TryParse(text, out var g))
+            return g;
+        return text;
     }
 
     private static bool TryDecodeBinaryParameter(byte[] raw, int parameterTypeOid, out string literal)
@@ -1873,6 +2107,47 @@ public sealed class PgWireServer : IAsyncDisposable
         }
 
         literal = string.Empty;
+        return false;
+    }
+
+    private static bool TryDecodeBinaryParameterValue(byte[] raw, int parameterTypeOid, out object? value)
+    {
+        switch (parameterTypeOid)
+        {
+            case 16 when raw.Length == 1:
+                value = raw[0] != 0;
+                return true;
+
+            case 21 when raw.Length == 2:
+                value = BinaryPrimitives.ReadInt16BigEndian(raw);
+                return true;
+
+            case 23 or 26 when raw.Length == 4:
+                value = BinaryPrimitives.ReadInt32BigEndian(raw);
+                return true;
+
+            case 20 when raw.Length == 8:
+                value = BinaryPrimitives.ReadInt64BigEndian(raw);
+                return true;
+
+            case 700 when raw.Length == 4:
+                value = BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32BigEndian(raw));
+                return true;
+
+            case 701 when raw.Length == 8:
+                value = BitConverter.Int64BitsToDouble(BinaryPrimitives.ReadInt64BigEndian(raw));
+                return true;
+        }
+
+        if (parameterTypeOid == 0)
+        {
+            if (raw.Length == 1) { value = raw[0] != 0; return true; }
+            if (raw.Length == 2) { value = BinaryPrimitives.ReadInt16BigEndian(raw); return true; }
+            if (raw.Length == 4) { value = BinaryPrimitives.ReadInt32BigEndian(raw); return true; }
+            if (raw.Length == 8) { value = BinaryPrimitives.ReadInt64BigEndian(raw); return true; }
+        }
+
+        value = null;
         return false;
     }
 
@@ -4074,6 +4349,12 @@ internal sealed class PgPreparedStatement
     public IReadOnlyList<int> ParameterTypeOids { get; }
     public bool MetadataDescribed { get; set; }
     public IReadOnlyList<(string Name, Type ClrType)>? DescribedFields { get; set; }
+
+    /// <summary>Reusable engine-side prepared statement. Null until first successful Bind compiles it.</summary>
+    public WalhallaPreparedStatement? Compiled { get; set; }
+
+    /// <summary>SQL text with <c>@p0</c>-style placeholders used for the compiled statement.</summary>
+    public string? ParameterizedSql { get; set; }
 }
 
 internal sealed class PgBoundPortal
@@ -4092,6 +4373,15 @@ internal sealed class PgBoundPortal
     public PgPreparedStatement? SourceStatement { get; }
     public IReadOnlyList<(string Name, Type ClrType)>? DescribedFields { get; set; }
     public IReadOnlyList<short> ResultFormatCodes { get; set; } = Array.Empty<short>();
+
+    /// <summary>SQL text with <c>@p0</c>-style placeholders; used to compile the reusable statement.</summary>
+    public string? ParameterizedSql { get; set; }
+
+    /// <summary>Decoded parameter values for the current bind, indexed 0..N-1.</summary>
+    public object?[]? ParameterValues { get; set; }
+
+    /// <summary>Engine-side prepared statement reused across Execute calls for this portal.</summary>
+    public WalhallaPreparedStatement? PreparedStatement { get; set; }
 }
 
 internal sealed record PgVirtualQueryResult(

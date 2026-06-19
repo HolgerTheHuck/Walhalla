@@ -73,6 +73,41 @@ public class WalhallaSqlPgWireSmokeTests
         Assert.False(await reader.ReadAsync(), "Expected no rows after DELETE.");
     }
 
+    [Fact]
+    public async Task ExtendedQuery_ParameterizedSelect_ReusesStatementAcrossExecutions()
+    {
+        await using var scope = await WalhallaSqlPgWireTestScope.CreateAsync();
+        await using var conn = await scope.OpenConnectionAsync();
+
+        await Execute(conn, "CREATE TABLE PkItems (Id INT, Value INT)");
+        await Execute(conn, "INSERT INTO PkItems (Id, Value) VALUES (1, 100)");
+        await Execute(conn, "INSERT INTO PkItems (Id, Value) VALUES (2, 200)");
+        await Execute(conn, "INSERT INTO PkItems (Id, Value) VALUES (3, 300)");
+
+        // Npgsql uses the extended query protocol automatically as soon as parameters
+        // are present. This exercises the engine-side prepared-statement cache
+        // (Parse/Bind/Execute) instead of the literal-rewrite fallback.
+        await using var selectCmd = new NpgsqlCommand(
+            "SELECT Value FROM PkItems WHERE Id = @id", conn);
+        selectCmd.Parameters.AddWithValue("id", 2);
+
+        var first = await selectCmd.ExecuteScalarAsync();
+        Assert.Equal("200", first?.ToString());
+
+        selectCmd.Parameters["id"].Value = 3;
+        var second = await selectCmd.ExecuteScalarAsync();
+        Assert.Equal("300", second?.ToString());
+
+        // Range query to ensure the compiled PK-range path is also covered.
+        await using var rangeCmd = new NpgsqlCommand(
+            "SELECT COUNT(*) FROM PkItems WHERE Id >= @min AND Id <= @max", conn);
+        rangeCmd.Parameters.AddWithValue("min", 1);
+        rangeCmd.Parameters.AddWithValue("max", 3);
+
+        var count = await rangeCmd.ExecuteScalarAsync();
+        Assert.Equal("3", count?.ToString());
+    }
+
     private static async Task Execute(NpgsqlConnection conn, string sql)
     {
         await using var cmd = new NpgsqlCommand(sql, conn);
