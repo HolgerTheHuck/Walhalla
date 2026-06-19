@@ -25,13 +25,35 @@ internal sealed class JoinKeyComparer : IEqualityComparer<object>
         if (x.GetType() == y.GetType())
             return x.Equals(y);
 
+        // Cross-type numeric comparison: INT/BIGINT/SMALLINT/DOUBLE/FLOAT/DECIMAL
+        // must match when their values are equal, because migrations can map a single
+        // MSSQL INT/BIGINT column to different Walhalla scalar types on the referencing
+        // and referenced sides of a foreign key.
+        if (IsNumeric(x) && IsNumeric(y))
+            return ToDecimal(x) == ToDecimal(y);
+
         // Cross-type coercion: try to convert both to the same type.
         return CoerceAndCompare(x, y) || CoerceAndCompare(y, x);
     }
 
     public int GetHashCode(object obj)
     {
-        if (obj is string s) return CollationManager.GetHashCode(s, _collation);
+        if (obj == null) return 0;
+        if (obj is string s)
+        {
+            // Normalisiere String-Darstellungen, damit sie denselben Hash wie ihre typisierte
+            // Entsprechung erhalten. Das muss konsistent mit Equals/CoerceAndCompare sein,
+            // sonst findet der Hash-Join keine Bucket-Übereinstimmungen bei Cross-Type-Keys.
+            if (decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture, out var dec))
+                return dec.GetHashCode();
+            if (Guid.TryParse(s, out var g))
+                return g.GetHashCode();
+            if (bool.TryParse(s, out var b))
+                return b.GetHashCode();
+            return CollationManager.GetHashCode(s, _collation);
+        }
+        // Normalize numeric hash codes so equal cross-type numeric keys land in the same bucket.
+        if (IsNumeric(obj)) return ToDecimal(obj).GetHashCode();
         return obj.GetHashCode();
     }
 
@@ -52,6 +74,31 @@ internal sealed class JoinKeyComparer : IEqualityComparer<object>
         }
         return false;
     }
+
+    /// <summary>True for the numeric scalar types that can appear as SQL join keys.</summary>
+    internal static bool IsNumeric(object? value)
+    {
+        return value is int or long or short or byte or sbyte
+            or uint or ushort or ulong
+            or double or float or decimal;
+    }
+
+    /// <summary>Converts a numeric value to decimal for type-normalised comparison/hashing.</summary>
+    internal static decimal ToDecimal(object value) => value switch
+    {
+        int i => i,
+        long l => l,
+        short s => s,
+        byte b => b,
+        sbyte sb => sb,
+        uint u => u,
+        ushort us => us,
+        ulong ul => ul,
+        double d => (decimal)d,
+        float f => (decimal)f,
+        decimal dec => dec,
+        _ => throw new InvalidOperationException($"Value {value} is not numeric.")
+    };
 }
 
 /// <summary>
@@ -76,6 +123,8 @@ internal sealed class JoinKeyOrderComparer : IComparer<object?>
         if (a == null || b == null) return true;
         if (a is string && b is string) return true;
         if (a.GetType() == b.GetType()) return a is IComparable;
+        // Cross-type numeric ordering must be consistent with JoinKeyComparer equality.
+        if (JoinKeyComparer.IsNumeric(a) && JoinKeyComparer.IsNumeric(b)) return true;
         // Cross-type: if one side is a string that can be coerced, ordering is possible.
         if (a is string sa) return TryCoerce(b, sa, out _);
         if (b is string sb) return TryCoerce(a, sb, out _);
@@ -91,6 +140,10 @@ internal sealed class JoinKeyOrderComparer : IComparer<object?>
             return CollationManager.Compare(sx, sy, _collation);
         if (x.GetType() == y.GetType() && x is IComparable cx)
             return cx.CompareTo(y);
+
+        // Cross-type numeric comparison consistent with JoinKeyComparer equality.
+        if (JoinKeyComparer.IsNumeric(x) && JoinKeyComparer.IsNumeric(y))
+            return JoinKeyComparer.ToDecimal(x).CompareTo(JoinKeyComparer.ToDecimal(y));
 
         // Cross-type coercion: try to coerce string to numeric and compare.
         if (x is string sx2 && TryCoerce(y, sx2, out var cy2))

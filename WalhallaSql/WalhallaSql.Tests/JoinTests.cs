@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using WalhallaSql.Sql;
 using Xunit;
@@ -199,5 +200,250 @@ public class JoinTests
         Assert.Equal(2, result.Rows.Count);
         Assert.Equal("a1", result.Rows[0]["Val"]);
         Assert.Equal("b1", result.Rows[0]["Data"]);
+    }
+
+    [Fact]
+    public void InnerJoin_CrossNumericTypes_ReturnsMatchingRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE A (Id INT PRIMARY KEY, Val STRING)");
+        engine.Execute("CREATE TABLE B (Id BIGINT PRIMARY KEY, Data STRING)");
+
+        engine.Execute("INSERT INTO A (Id, Val) VALUES (1, 'a1')");
+        engine.Execute("INSERT INTO B (Id, Data) VALUES (1, 'b1')");
+
+        var result = engine.Execute(
+            "SELECT a.Val, b.Data FROM A a INNER JOIN B b ON a.Id = b.Id");
+
+        Assert.Single(result.Rows);
+        Assert.Equal("a1", result.Rows[0]["Val"]);
+        Assert.Equal("b1", result.Rows[0]["Data"]);
+    }
+
+    [Fact]
+    public void InnerJoin_ThreeTables_CrossNumericKeys_ReturnsMatchingRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        // Simuliert eine typische Migration aus MSSQL: PK- und FK-Spalten können
+        // unterschiedliche numerische Typen bekommen (z. B. INT vs BIGINT).
+        engine.Execute("CREATE TABLE Module (Id INT PRIMARY KEY, DetailsId BIGINT, NameResource INT)");
+        engine.Execute("CREATE TABLE ModuleDetails (Id BIGINT PRIMARY KEY, Name STRING, NameResource INT)");
+        engine.Execute("CREATE TABLE Documents (Id INT PRIMARY KEY, Content STRING)");
+
+        engine.Execute("INSERT INTO Module (Id, DetailsId, NameResource) VALUES (1, 100, 200)");
+        engine.Execute("INSERT INTO Module (Id, DetailsId, NameResource) VALUES (2, 101, 201)");
+
+        engine.Execute("INSERT INTO ModuleDetails (Id, Name, NameResource) VALUES (100, 'Details-A', 200)");
+        engine.Execute("INSERT INTO ModuleDetails (Id, Name, NameResource) VALUES (101, 'Details-B', 201)");
+
+        engine.Execute("INSERT INTO Documents (Id, Content) VALUES (200, 'Content-A')");
+        engine.Execute("INSERT INTO Documents (Id, Content) VALUES (201, 'Content-B')");
+
+        var result = engine.Execute(
+            "SELECT m.Id, md.Name, d.Content FROM Module m " +
+            "JOIN ModuleDetails md ON md.Id = m.DetailsId " +
+            "JOIN Documents d ON d.Id = md.NameResource");
+
+        Assert.Equal(2, result.Rows.Count);
+    }
+
+    [Fact]
+    public void InnerJoin_GuidKeys_ReturnsMatchingRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE ModuleDetails (Id BIGINT PRIMARY KEY, Name STRING, NameResource GUID)");
+        engine.Execute("CREATE TABLE Documents (Id GUID PRIMARY KEY, Content STRING)");
+
+        var g1 = Guid.NewGuid();
+        var g2 = Guid.NewGuid();
+
+        engine.Execute($"INSERT INTO ModuleDetails (Id, Name, NameResource) VALUES (1, 'Details-A', '{g1}')");
+        engine.Execute($"INSERT INTO ModuleDetails (Id, Name, NameResource) VALUES (2, 'Details-B', '{g2}')");
+
+        engine.Execute($"INSERT INTO Documents (Id, Content) VALUES ('{g1}', 'Content-A')");
+        engine.Execute($"INSERT INTO Documents (Id, Content) VALUES ('{g2}', 'Content-B')");
+
+        var result = engine.Execute(
+            "SELECT md.Name, d.Content FROM ModuleDetails md " +
+            "JOIN Documents d ON d.Id = md.NameResource");
+
+        Assert.Equal(2, result.Rows.Count);
+    }
+
+    [Fact]
+    public void InnerJoin_GuidAndStringKeys_ReturnsMatchingRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE ModuleDetails (Id BIGINT PRIMARY KEY, Name STRING, NameResource STRING)");
+        engine.Execute("CREATE TABLE Documents (Id GUID PRIMARY KEY, Content STRING)");
+
+        var g1 = Guid.NewGuid();
+        var g2 = Guid.NewGuid();
+
+        engine.Execute($"INSERT INTO ModuleDetails (Id, Name, NameResource) VALUES (1, 'Details-A', '{g1}')");
+        engine.Execute($"INSERT INTO ModuleDetails (Id, Name, NameResource) VALUES (2, 'Details-B', '{g2}')");
+
+        engine.Execute($"INSERT INTO Documents (Id, Content) VALUES ('{g1}', 'Content-A')");
+        engine.Execute($"INSERT INTO Documents (Id, Content) VALUES ('{g2}', 'Content-B')");
+
+        var result = engine.Execute(
+            "SELECT md.Name, d.Content FROM ModuleDetails md " +
+            "JOIN Documents d ON d.Id = md.NameResource");
+
+        Assert.Equal(2, result.Rows.Count);
+    }
+
+
+
+    [Fact]
+    public void InnerJoin_GuidAndStringKeys_HashJoin_ReturnsMatchingRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE ModuleDetails (Id BIGINT PRIMARY KEY, Name STRING, NameResource STRING)");
+        engine.Execute("CREATE TABLE Documents (Id GUID PRIMARY KEY, Content STRING)");
+
+        var guids = Enumerable.Range(0, 150).Select(_ => Guid.NewGuid()).ToArray();
+
+        for (int i = 0; i < guids.Length; i++)
+        {
+            engine.Execute($"INSERT INTO ModuleDetails (Id, Name, NameResource) VALUES ({1000 + i}, 'Details-{i}', '{guids[i]}')");
+            engine.Execute($"INSERT INTO Documents (Id, Content) VALUES ('{guids[i]}', 'Content-{i}')");
+        }
+
+        var result = engine.Execute(
+            "SELECT md.Name, d.Content FROM ModuleDetails md " +
+            "JOIN Documents d ON d.Id = md.NameResource");
+
+        Assert.Equal(150, result.Rows.Count);
+    }
+
+    [Fact]
+    public void InnerJoin_ThreeTables_GuidString_HashJoin_ReturnsMatchingRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE Module (Id BIGINT PRIMARY KEY, Details_ID BIGINT)");
+        engine.Execute("CREATE TABLE ModuleDetails (Id BIGINT PRIMARY KEY, Name STRING, NameResource STRING)");
+        engine.Execute("CREATE TABLE Documents (Id GUID PRIMARY KEY, Content STRING)");
+
+        var guids = Enumerable.Range(0, 150).Select(_ => Guid.NewGuid()).ToArray();
+
+        for (int i = 0; i < guids.Length; i++)
+        {
+            engine.Execute($"INSERT INTO Module (Id, Details_ID) VALUES ({i}, {1000 + i})");
+            engine.Execute($"INSERT INTO ModuleDetails (Id, Name, NameResource) VALUES ({1000 + i}, 'Details-{i}', '{guids[i]}')");
+            engine.Execute($"INSERT INTO Documents (Id, Content) VALUES ('{guids[i]}', 'Content-{i}')");
+        }
+
+        var result = engine.Execute(
+            "SELECT m.Id, md.Name, d.Content FROM Module m " +
+            "JOIN ModuleDetails md ON md.Id = m.Details_ID " +
+            "JOIN Documents d ON d.Id = md.NameResource");
+
+        Assert.Equal(150, result.Rows.Count);
+    }
+
+    [Fact]
+    public void InnerJoin_GuidKeys_DiskMode_ReturnsMatchingRows()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"walhalla-guid-join-test-{Guid.NewGuid()}");
+        try
+        {
+            using var engine = WalhallaEngine.Open(path);
+
+            engine.Execute("CREATE TABLE ModuleDetails (Id BIGINT PRIMARY KEY, Name STRING, NameResource GUID)");
+            engine.Execute("CREATE TABLE Documents (Id GUID PRIMARY KEY, Content STRING)");
+
+            var g1 = Guid.NewGuid();
+            var g2 = Guid.NewGuid();
+
+            engine.Execute($"INSERT INTO ModuleDetails (Id, Name, NameResource) VALUES (1, 'Details-A', '{g1}')");
+            engine.Execute($"INSERT INTO ModuleDetails (Id, Name, NameResource) VALUES (2, 'Details-B', '{g2}')");
+
+            engine.Execute($"INSERT INTO Documents (Id, Content) VALUES ('{g1}', 'Content-A')");
+            engine.Execute($"INSERT INTO Documents (Id, Content) VALUES ('{g2}', 'Content-B')");
+
+            engine.Checkpoint();
+
+            var result = engine.Execute(
+                "SELECT md.Name, d.Content FROM ModuleDetails md " +
+                "JOIN Documents d ON d.Id = md.NameResource");
+
+            Assert.Equal(2, result.Rows.Count);
+        }
+        finally
+        {
+            try { Directory.Delete(path, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void InnerJoin_ThreeTables_MixedCaseNames_ReturnsMatchingRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE Module (ID INT PRIMARY KEY, Details_ID BIGINT, NameResource GUID)");
+        engine.Execute("CREATE TABLE ModuleDetails (ID BIGINT PRIMARY KEY, Name STRING, NameResource GUID)");
+        engine.Execute("CREATE TABLE Documents (Id GUID PRIMARY KEY, Content STRING)");
+
+        var g1 = Guid.NewGuid();
+        var g2 = Guid.NewGuid();
+
+        engine.Execute($"INSERT INTO Module (ID, Details_ID, NameResource) VALUES (1, 100, '{g1}')");
+        engine.Execute($"INSERT INTO Module (ID, Details_ID, NameResource) VALUES (2, 101, '{g2}')");
+
+        engine.Execute($"INSERT INTO ModuleDetails (ID, Name, NameResource) VALUES (100, 'Details-A', '{g1}')");
+        engine.Execute($"INSERT INTO ModuleDetails (ID, Name, NameResource) VALUES (101, 'Details-B', '{g2}')");
+
+        engine.Execute($"INSERT INTO Documents (Id, Content) VALUES ('{g1}', 'Content-A')");
+        engine.Execute($"INSERT INTO Documents (Id, Content) VALUES ('{g2}', 'Content-B')");
+
+        var result = engine.Execute(
+            "SELECT m.ID, md.Name, nameDoc.Content FROM Module m " +
+            "JOIN ModuleDetails md ON md.ID = m.Details_ID " +
+            "JOIN Documents nameDoc ON nameDoc.Id = md.NameResource");
+
+        Assert.Equal(2, result.Rows.Count);
+    }
+
+    [Fact]
+    public void InnerJoin_GuidAndStringKeys_DiskMode_ReturnsMatchingRows()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"walhalla-guid-string-join-test-{Guid.NewGuid()}");
+        try
+        {
+            using var engine = WalhallaEngine.Open(path);
+
+            // Simuliert eine Migration, bei der ein uniqueidentifier einmal als GUID
+            // und einmal als STRING landet (z. B. wegen unterschiedlicher Heuristiken).
+            engine.Execute("CREATE TABLE ModuleDetails (Id BIGINT PRIMARY KEY, Name STRING, NameResource STRING)");
+            engine.Execute("CREATE TABLE Documents (Id GUID PRIMARY KEY, Content STRING)");
+
+            var g1 = Guid.NewGuid();
+            var g2 = Guid.NewGuid();
+
+            engine.Execute($"INSERT INTO ModuleDetails (Id, Name, NameResource) VALUES (1, 'Details-A', '{g1}')");
+            engine.Execute($"INSERT INTO ModuleDetails (Id, Name, NameResource) VALUES (2, 'Details-B', '{g2}')");
+
+            engine.Execute($"INSERT INTO Documents (Id, Content) VALUES ('{g1}', 'Content-A')");
+            engine.Execute($"INSERT INTO Documents (Id, Content) VALUES ('{g2}', 'Content-B')");
+
+            engine.Checkpoint();
+
+            var result = engine.Execute(
+                "SELECT md.Name, d.Content FROM ModuleDetails md " +
+                "JOIN Documents d ON d.Id = md.NameResource");
+
+            Assert.Equal(2, result.Rows.Count);
+        }
+        finally
+        {
+            try { Directory.Delete(path, recursive: true); } catch { }
+        }
     }
 }

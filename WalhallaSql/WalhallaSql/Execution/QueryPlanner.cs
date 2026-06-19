@@ -129,8 +129,15 @@ internal static class QueryPlanner
         var tables = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var tableDefs = new Dictionary<string, SqlTableDefinition>(StringComparer.OrdinalIgnoreCase);
 
-        tables[select.TableAlias ?? select.TableName] = baseTableId;
-        tableDefs[select.TableAlias ?? select.TableName] = baseTableDef;
+        var baseAlias = select.TableAlias ?? select.TableName;
+        tables[baseAlias] = baseTableId;
+        tableDefs[baseAlias] = baseTableDef;
+
+        // Kumulative Spalten-Offsets innerhalb der kombinierten Join-Reihe.
+        var tableOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        int cumulativeOffset = 0;
+        tableOffsets[baseAlias] = cumulativeOffset;
+        cumulativeOffset += baseTableDef.Columns.Count;
 
         foreach (var join in select.Joins!)
         {
@@ -164,49 +171,48 @@ internal static class QueryPlanner
 
                 foreach (var (lName, rName) in keyPairs)
                 {
-                    // Try the natural assignment: lName = left, rName = right.
-                    int leftIdx = FindColumnIndex(baseTableDef, lName);
-                    if (leftIdx < 0)
+                    // Sucht den Spaltennamen in der Basis-Tabelle und allen bereits beigetretenen
+                    // Tabellen und liefert den lokalen Spaltenindex sowie den Tabellen-Alias zurück.
+                    (int localIdx, string tableAlias, string actualName) FindLeft(string name)
                     {
-                        foreach (var td in tableDefs.Values)
+                        var idx = FindColumnIndex(baseTableDef, name);
+                        if (idx >= 0) return (idx, baseAlias, name);
+                        foreach (var step in steps)
                         {
-                            leftIdx = FindColumnIndex(td, lName);
-                            if (leftIdx >= 0) break;
+                            idx = FindColumnIndex(step.TableDef, name);
+                            if (idx >= 0) return (idx, step.Alias!, name);
                         }
+                        return (-1, string.Empty, name);
                     }
-                    int rightIdx = FindColumnIndex(joinTableDef, rName);
 
-                    string actualLeftName = lName;
+                    // Try the natural assignment: lName = left, rName = right.
+                    var (leftLocalIdx, leftTableAlias, actualLeftName) = FindLeft(lName);
+                    int rightIdx = FindColumnIndex(joinTableDef, rName);
                     string actualRightName = rName;
 
                     // If either side is missing, try the swapped assignment.
-                    if (leftIdx < 0 || rightIdx < 0)
+                    if (leftLocalIdx < 0 || rightIdx < 0)
                     {
-                        var swappedLeftIdx = FindColumnIndex(baseTableDef, rName);
-                        if (swappedLeftIdx < 0)
-                        {
-                            foreach (var td in tableDefs.Values)
-                            {
-                                swappedLeftIdx = FindColumnIndex(td, rName);
-                                if (swappedLeftIdx >= 0) break;
-                            }
-                        }
+                        var (swappedLeftLocalIdx, swappedLeftAlias, swappedLeftName) = FindLeft(rName);
                         var swappedRightIdx = FindColumnIndex(joinTableDef, lName);
-                        if (swappedLeftIdx >= 0 && swappedRightIdx >= 0)
+                        if (swappedLeftLocalIdx >= 0 && swappedRightIdx >= 0)
                         {
-                            leftIdx = swappedLeftIdx;
+                            leftLocalIdx = swappedLeftLocalIdx;
+                            leftTableAlias = swappedLeftAlias;
+                            actualLeftName = swappedLeftName;
                             rightIdx = swappedRightIdx;
-                            actualLeftName = rName;
                             actualRightName = lName;
                         }
                     }
 
-                    if (leftIdx < 0)
+                    if (leftLocalIdx < 0)
                         throw new WalhallaException($"Join key column '{actualLeftName}' not found in left tables.");
                     if (rightIdx < 0)
                         throw new WalhallaException($"Join key column '{actualRightName}' not found in table '{join.TableName}'.");
 
-                    leftColIndices.Add(leftIdx);
+                    // Linke Spaltenindizes beziehen sich auf die kombinierte Reihe;
+                    // rechte Indizes bleiben lokal zur neu beigetretenen Tabelle.
+                    leftColIndices.Add(tableOffsets[leftTableAlias] + leftLocalIdx);
                     rightColIndices.Add(rightIdx);
                     leftColNames.Add(actualLeftName);
                     rightColNames.Add(actualRightName);
@@ -220,20 +226,8 @@ internal static class QueryPlanner
 
             tables[joinAlias] = joinTableId;
             tableDefs[joinAlias] = joinTableDef;
-        }
-
-        // Compute cumulative column offsets for each table in the combined row.
-        var tableOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        int cumulativeOffset = 0;
-        // Base table
-        var baseAlias = select.TableAlias ?? select.TableName;
-        tableOffsets[baseAlias] = cumulativeOffset;
-        cumulativeOffset += baseTableDef.Columns.Count;
-        // Join tables (in order)
-        foreach (var step in steps)
-        {
-            tableOffsets[step.Alias!] = cumulativeOffset;
-            cumulativeOffset += step.TableDef.Columns.Count;
+            tableOffsets[joinAlias] = cumulativeOffset;
+            cumulativeOffset += joinTableDef.Columns.Count;
         }
 
         // Build a synthetic table definition that mirrors the combined row schema,
@@ -267,7 +261,7 @@ internal static class QueryPlanner
         }
 
         // Build combined projection from SELECT columns.
-        // Each column may be qualified with an alias (e.g., "a.Id") or unqualified.
+        // Each column may be qualified with an alias (e.g., "a.Id").
         var projIndices = new List<int>();
         var projNames = new List<string>();
         var computedEvaluators = new List<Func<object?[], object?>?>();

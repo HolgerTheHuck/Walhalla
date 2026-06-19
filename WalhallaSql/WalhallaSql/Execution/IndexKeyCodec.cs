@@ -33,7 +33,7 @@ internal static class IndexKeyCodec
             SqlScalarType.DateTime => DateTimeSortable((DateTime)value),
             SqlScalarType.Date => DateTimeSortable(value is DateTime dt ? dt : Convert.ToDateTime(value).Date),
             SqlScalarType.Time => TimeSortable(value is TimeSpan ts ? ts : TimeSpan.Parse(value.ToString()!)),
-            SqlScalarType.Guid => GuidSortable((Guid)value),
+            SqlScalarType.Guid => GuidSortable(value is Guid gv ? gv : Guid.Parse(value.ToString()!)),
             SqlScalarType.Binary => BinarySortable((byte[])value),
             _ => StringSortable(value.ToString() ?? string.Empty)
         };

@@ -175,7 +175,7 @@ internal static class HashJoinOperator
         public int GetHashCode(CompositeKey obj)
         {
             var hash = new HashCode();
-            foreach (var v in obj.Values) hash.Add(v);
+            foreach (var v in obj.Values) hash.Add(v, _elementComparer);
             return hash.ToHashCode();
         }
     }
