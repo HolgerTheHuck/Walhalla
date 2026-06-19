@@ -116,7 +116,7 @@ public sealed class WalhallaMigrationService
                 }
 
                 var copyResult = CopyRows(
-                    sourceConnection, targetConnection, schema,
+                    sourceConnection, engine, schema,
                     request.BatchSize, progress, cancellationToken);
                 engine.Checkpoint();
                 var importedRows = copyResult.ImportedRows;
@@ -352,9 +352,11 @@ WHERE tc.TABLE_SCHEMA = @schema
         return $"DECIMAL({precision.Value},{normalizedScale})";
     }
 
+    private const int MaxBatchBytes = 16 * 1024 * 1024;
+
     private static CopyRowsResult CopyRows(
         SqlConnection sourceConnection,
-        WalhallaSqlDbConnection targetConnection,
+        WalhallaEngine engine,
         TableSchema schema,
         int batchSize,
         IProgress<string>? progress,
@@ -373,7 +375,8 @@ WHERE tc.TABLE_SCHEMA = @schema
         long failed = 0;
         long sourceRowNumber = 0;
         string? firstError = null;
-        var rowBuffer = new List<object?[]>(Math.Max(batchSize, 1));
+        var batch = new List<object?[]>(Math.Max(batchSize, 1));
+        long batchBytes = 0;
 
         while (reader.Read())
         {
@@ -382,12 +385,15 @@ WHERE tc.TABLE_SCHEMA = @schema
 
             var rowValues = new object?[orderedColumns.Count];
             bool rowOk = true;
+            long rowBytes = 0;
             for (var index = 0; index < orderedColumns.Count; index++)
             {
                 var value = reader.IsDBNull(index) ? null : reader.GetValue(index);
                 try
                 {
-                    rowValues[index] = ConvertValue(value) ?? DBNull.Value;
+                    var converted = ConvertValue(value);
+                    rowValues[index] = converted;
+                    rowBytes += EstimateValueSize(converted);
                 }
                 catch (Exception ex)
                 {
@@ -404,109 +410,80 @@ WHERE tc.TABLE_SCHEMA = @schema
             if (!rowOk)
                 continue;
 
-            rowBuffer.Add(rowValues);
-
-            if (rowBuffer.Count >= batchSize)
+            if (batch.Count >= batchSize || (batchBytes + rowBytes > MaxBatchBytes && batch.Count > 0))
             {
-                ExecuteBatchInsert(targetConnection, schema.TableName, orderedColumns, rowBuffer, progress, ref imported, ref failed, ref firstError, sourceRowNumber, schema.TableName);
-                rowBuffer.Clear();
+                FlushBatch(engine, schema.TableName, batch, progress, ref imported, ref failed, ref firstError, schema.TableName, sourceRowNumber);
+                batchBytes = 0;
             }
+
+            batch.Add(rowValues);
+            batchBytes += rowBytes;
         }
 
-        if (rowBuffer.Count > 0)
+        if (batch.Count > 0)
         {
-            ExecuteBatchInsert(targetConnection, schema.TableName, orderedColumns, rowBuffer, progress, ref imported, ref failed, ref firstError, sourceRowNumber, schema.TableName);
+            FlushBatch(engine, schema.TableName, batch, progress, ref imported, ref failed, ref firstError, schema.TableName, sourceRowNumber);
         }
 
         return new CopyRowsResult(imported, failed, firstError);
     }
 
-    private static void ExecuteBatchInsert(
-        WalhallaSqlDbConnection targetConnection,
+    private static void FlushBatch(
+        WalhallaEngine engine,
         string tableName,
-        IReadOnlyList<MigrationSourceColumnInfo> orderedColumns,
-        List<object?[]> rows,
+        List<object?[]> batch,
         IProgress<string>? progress,
         ref long imported,
         ref long failed,
         ref string? firstError,
-        long sourceRowNumber,
-        string tableNameForLog)
+        string tableNameForLog,
+        long sourceRowNumber)
     {
-        using var transaction = targetConnection.BeginTransaction();
+        if (batch.Count == 0)
+            return;
+
         try
         {
-            var sql = BuildMultiRowInsertSql(tableName, orderedColumns, rows);
-            using var insert = targetConnection.CreateCommand();
-            insert.Transaction = transaction;
-            insert.CommandText = sql;
-            insert.ExecuteNonQuery();
-            transaction.Commit();
-            imported += rows.Count;
+            engine.InsertBatch(tableName, batch);
+            imported += batch.Count;
             progress?.Report($"[{tableNameForLog}] imported {imported} rows...");
+            batch.Clear();
         }
-        catch (Exception batchEx)
+        catch (Exception ex)
         {
-            transaction.Rollback();
-            // Fallback: row-by-row to identify the failing row(s)
-            foreach (var row in rows)
+            if (batch.Count == 1)
             {
-                using var tx2 = targetConnection.BeginTransaction();
-                try
-                {
-                    var sql = BuildSingleRowInsertSql(tableName, orderedColumns, row);
-                    using var insert = targetConnection.CreateCommand();
-                    insert.Transaction = tx2;
-                    insert.CommandText = sql;
-                    insert.ExecuteNonQuery();
-                    tx2.Commit();
-                    imported++;
-                }
-                catch (Exception ex)
-                {
-                    tx2.Rollback();
-                    failed++;
-                    var rowError = $"[{tableNameForLog}] skipped source row (batch fallback): {DescribeException(ex)}";
-                    firstError ??= rowError;
-                    progress?.Report(rowError);
-                }
+                failed++;
+                var rowError = $"[{tableNameForLog}] skipped source row {sourceRowNumber}: {DescribeException(ex)}";
+                firstError ??= rowError;
+                progress?.Report(rowError);
+                batch.Clear();
+            }
+            else
+            {
+                progress?.Report($"[{tableNameForLog}] batch of {batch.Count} rows failed, splitting: {DescribeException(ex)}");
+                var half = batch.Count / 2;
+                var secondHalf = batch.Skip(half).ToList();
+                var firstHalf = batch.Take(half).ToList();
+                batch.Clear();
+
+                FlushBatch(engine, tableName, firstHalf, progress, ref imported, ref failed, ref firstError, tableNameForLog, sourceRowNumber);
+                FlushBatch(engine, tableName, secondHalf, progress, ref imported, ref failed, ref firstError, tableNameForLog, sourceRowNumber);
             }
         }
     }
 
-    private static string BuildMultiRowInsertSql(string tableName, IReadOnlyList<MigrationSourceColumnInfo> orderedColumns, List<object?[]> rows)
-    {
-        var names = string.Join(", ", orderedColumns.Select(c => c.Name));
-        var valueGroups = new System.Text.StringBuilder();
-        for (int r = 0; r < rows.Count; r++)
-        {
-            if (r > 0) valueGroups.Append(", ");
-            valueGroups.Append('(');
-            var row = rows[r];
-            for (int c = 0; c < orderedColumns.Count; c++)
-            {
-                if (c > 0) valueGroups.Append(", ");
-                valueGroups.Append(ToSqlLiteral(row[c]));
-            }
-            valueGroups.Append(')');
-        }
-        return $"INSERT INTO {tableName} ({names}) VALUES {valueGroups}";
-    }
-
-    private static string BuildSingleRowInsertSql(string tableName, IReadOnlyList<MigrationSourceColumnInfo> orderedColumns, object?[] row)
-    {
-        var names = string.Join(", ", orderedColumns.Select(c => c.Name));
-        var values = string.Join(", ", row.Select(ToSqlLiteral));
-        return $"INSERT INTO {tableName} ({names}) VALUES ({values})";
-    }
-
-    private static string ToSqlLiteral(object? value)
+    private static long EstimateValueSize(object? value)
     {
         if (value == null || value == DBNull.Value)
-            return "NULL";
+            return 0;
 
-        // Use the engine's literal formatter for consistency
-        return WalhallaSql.AdoNet.SqlClient.SqlLiteralFormatter.ToLiteral(value);
+        return value switch
+        {
+            byte[] bytes => bytes.Length,
+            string text => text.Length * 2,
+            _ => 32
+        };
     }
 
     private static object? ConvertValue(object? value)
@@ -519,7 +496,7 @@ WHERE tc.TABLE_SCHEMA = @schema
             decimal number => number,
             DateTimeOffset dto => dto.UtcDateTime,
             Guid guid => guid,
-            TimeSpan timeSpan => DateTime.UnixEpoch.Add(timeSpan),
+            TimeSpan timeSpan => timeSpan,
             _ => ConvertNonStandard(value)
         };
     }
@@ -584,9 +561,29 @@ WHERE tc.TABLE_SCHEMA = @schema
 
     private static string DescribeException(Exception exception)
     {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(exception.GetType().Name);
         if (!string.IsNullOrWhiteSpace(exception.Message))
-            return $"{exception.GetType().Name}: {exception.Message}";
-        return exception.GetType().Name;
+        {
+            sb.Append(": ");
+            sb.Append(exception.Message);
+        }
+
+        if (exception.InnerException != null)
+        {
+            sb.Append(" | Inner: ");
+            sb.Append(DescribeException(exception.InnerException));
+        }
+
+        if (!string.IsNullOrWhiteSpace(exception.StackTrace))
+        {
+            var stack = exception.StackTrace!.Replace("\r\n", " ", StringComparison.Ordinal)
+                .Replace("\n", " ", StringComparison.Ordinal);
+            sb.Append(" | Stack: ");
+            sb.Append(stack.Length <= 500 ? stack : stack[..500] + "...");
+        }
+
+        return sb.ToString();
     }
 
     private static string FormatValueForError(object? value)

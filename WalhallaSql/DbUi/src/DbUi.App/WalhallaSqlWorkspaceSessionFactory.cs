@@ -1,3 +1,4 @@
+using System.Threading;
 using DbUi.Core.Workspace;
 using WalhallaSql;
 using WalhallaSql.AdoNet;
@@ -7,27 +8,37 @@ namespace DbUi.App;
 public sealed class WalhallaSqlWorkspaceSessionFactory : IWorkspaceSessionFactory
 {
     public Task<IWorkspaceSession> CreateAsync(WorkspaceConnectionInfo connectionInfo)
+        => CreateAsync(connectionInfo, CancellationToken.None);
+
+    public async Task<IWorkspaceSession> CreateAsync(WorkspaceConnectionInfo connectionInfo, CancellationToken cancellationToken)
     {
-        WalhallaEngine engine;
-        if (connectionInfo.IsInMemory)
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Engine-Öffnung und Connection-Setup synchron auf einem Hintergrund-Thread,
+        // damit das Öffnen großer/corrupt Datenbanken den WPF-UI-Thread nicht einfriert.
+        return await Task.Run(() =>
         {
-            engine = WalhallaEngine.InMemory();
-        }
-        else
-        {
-            engine = WalhallaEngine.Open(connectionInfo.StoragePath);
-        }
+            cancellationToken.ThrowIfCancellationRequested();
 
-        var databaseName = string.IsNullOrWhiteSpace(connectionInfo.DatabaseName)
-            ? WalhallaSqlDbConnection.DefaultDatabaseName
-            : connectionInfo.DatabaseName;
+            WalhallaEngine engine;
+            if (connectionInfo.IsInMemory)
+            {
+                engine = WalhallaEngine.InMemory();
+            }
+            else
+            {
+                engine = WalhallaEngine.Open(connectionInfo.StoragePath);
+            }
 
-        var session = new WalhallaSqlWorkspaceSession(
-            engine,
-            connectionInfo.StoragePath,
-            databaseName,
-            connectionInfo.DisplayName);
+            var databaseName = string.IsNullOrWhiteSpace(connectionInfo.DatabaseName)
+                ? WalhallaSqlDbConnection.DefaultDatabaseName
+                : connectionInfo.DatabaseName;
 
-        return Task.FromResult<IWorkspaceSession>(session);
+            return new WalhallaSqlWorkspaceSession(
+                engine,
+                connectionInfo.StoragePath,
+                databaseName,
+                connectionInfo.DisplayName);
+        }, cancellationToken);
     }
 }

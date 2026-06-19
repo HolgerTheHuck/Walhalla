@@ -87,7 +87,7 @@ public sealed class MssqlMigrationService
                     throw new InvalidOperationException($"Failed to create target table '{schema.TableName}'. SQL: {createSql}", ex);
                 }
 
-                var copyResult = CopyRows(sourceConnection, targetConnection, schema, request.BatchSize, progress, cancellationToken);
+                var copyResult = CopyRows(sourceConnection, engine, schema, request.BatchSize, progress, cancellationToken);
                 var importedRows = copyResult.ImportedRows;
                 var sourceCount = CountSourceRows(sourceConnection, schema) ?? 0;
                 var targetCount = CountTargetRows(targetConnection, schema.TableName);
@@ -338,75 +338,133 @@ WHERE tc.TABLE_SCHEMA = @schema
         return Math.Min(maxLength.Value, 4000);
     }
 
-    private static CopyRowsResult CopyRows(SqlConnection sourceConnection, WalhallaSqlDbConnection targetConnection, TableSchema schema, int batchSize, IProgress<string>? progress, CancellationToken cancellationToken)
+    private const int MaxBatchBytes = 16 * 1024 * 1024;
+
+    private static CopyRowsResult CopyRows(SqlConnection sourceConnection, WalhallaEngine engine, TableSchema schema, int batchSize, IProgress<string>? progress, CancellationToken cancellationToken)
     {
         var orderedColumns = schema.Columns.OrderBy(column => column.Ordinal).ToList();
         var sourceSql = $"SELECT {string.Join(", ", orderedColumns.Select(column => QuoteSourceIdentifier(column.Name)))} FROM {QuoteSourceIdentifier(schema.SchemaName)}.{QuoteSourceIdentifier(schema.TableName)}";
-        var insertSql = BuildInsertSql(schema);
 
         using var select = sourceConnection.CreateCommand();
         select.CommandText = sourceSql;
 
         using var reader = select.ExecuteReader(CommandBehavior.SequentialAccess);
-        using var transaction = targetConnection.BeginTransaction();
-        using var insert = targetConnection.CreateCommand();
-        insert.Transaction = transaction;
-        insert.CommandText = insertSql;
-
-        var targetParameters = orderedColumns
-            .Select((_, index) =>
-            {
-                var parameter = insert.CreateParameter();
-                parameter.ParameterName = $"@p{index}";
-                insert.Parameters.Add(parameter);
-                return parameter;
-            })
-            .ToArray();
 
         long imported = 0;
         long failed = 0;
         long sourceRowNumber = 0;
         string? firstError = null;
+        var batch = new List<object?[]>(Math.Max(batchSize, 1));
+        long batchBytes = 0;
+
         while (reader.Read())
         {
             sourceRowNumber++;
             cancellationToken.ThrowIfCancellationRequested();
 
-            try
+            var rowValues = new object?[orderedColumns.Count];
+            bool rowOk = true;
+            long rowBytes = 0;
+            for (var index = 0; index < orderedColumns.Count; index++)
             {
-                for (var index = 0; index < orderedColumns.Count; index++)
+                var value = reader.IsDBNull(index) ? null : reader.GetValue(index);
+
+                try
                 {
-                    var value = reader.IsDBNull(index) ? null : reader.GetValue(index);
-
-                    try
-                    {
-                        targetParameters[index].Value = ConvertValue(value) ?? DBNull.Value;
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new InvalidOperationException(
-                            $"Column '{orderedColumns[index].Name}' at row {sourceRowNumber} could not be converted. Value={FormatValueForError(value)}",
-                            ex);
-                    }
+                    var converted = ConvertValue(value);
+                    rowValues[index] = converted;
+                    rowBytes += EstimateValueSize(converted);
                 }
-
-                insert.ExecuteNonQuery();
-                imported++;
-
-                if (batchSize > 0 && imported % batchSize == 0)
-                    progress?.Report($"[{schema.TableName}] imported {imported} rows...");
+                catch (Exception ex)
+                {
+                    rowOk = false;
+                    failed++;
+                    var rowError = $"[{schema.TableName}] skipped source row {sourceRowNumber}: Column '{orderedColumns[index].Name}' could not be converted. Value={FormatValueForError(value)}. {DescribeException(ex)}";
+                    firstError ??= rowError;
+                    progress?.Report(rowError);
+                    break;
+                }
             }
-            catch (Exception ex)
+
+            if (!rowOk)
+                continue;
+
+            if (batch.Count >= batchSize || (batchBytes + rowBytes > MaxBatchBytes && batch.Count > 0))
             {
-                failed++;
-                var rowError = $"[{schema.TableName}] skipped source row {sourceRowNumber}: {DescribeException(ex)}";
-                firstError ??= rowError;
-                progress?.Report(rowError);
+                FlushBatch(engine, schema.TableName, batch, progress, ref imported, ref failed, ref firstError, schema.TableName, sourceRowNumber);
+                batchBytes = 0;
             }
+
+            batch.Add(rowValues);
+            batchBytes += rowBytes;
+
+            if (batchSize > 0 && imported % batchSize == 0)
+                progress?.Report($"[{schema.TableName}] imported {imported} rows...");
         }
 
-        transaction.Commit();
+        if (batch.Count > 0)
+        {
+            FlushBatch(engine, schema.TableName, batch, progress, ref imported, ref failed, ref firstError, schema.TableName, sourceRowNumber);
+        }
+
         return new CopyRowsResult(imported, failed, firstError);
+    }
+
+    private static void FlushBatch(
+        WalhallaEngine engine,
+        string tableName,
+        List<object?[]> batch,
+        IProgress<string>? progress,
+        ref long imported,
+        ref long failed,
+        ref string? firstError,
+        string tableNameForLog,
+        long sourceRowNumber)
+    {
+        if (batch.Count == 0)
+            return;
+
+        try
+        {
+            engine.InsertBatch(tableName, batch);
+            imported += batch.Count;
+            batch.Clear();
+        }
+        catch (Exception ex)
+        {
+            if (batch.Count == 1)
+            {
+                failed++;
+                var rowError = $"[{tableNameForLog}] skipped source row {sourceRowNumber}: {DescribeException(ex)}";
+                firstError ??= rowError;
+                progress?.Report(rowError);
+                batch.Clear();
+            }
+            else
+            {
+                progress?.Report($"[{tableNameForLog}] batch of {batch.Count} rows failed, splitting: {DescribeException(ex)}");
+                var half = batch.Count / 2;
+                var secondHalf = batch.Skip(half).ToList();
+                var firstHalf = batch.Take(half).ToList();
+                batch.Clear();
+
+                FlushBatch(engine, tableName, firstHalf, progress, ref imported, ref failed, ref firstError, tableNameForLog, sourceRowNumber);
+                FlushBatch(engine, tableName, secondHalf, progress, ref imported, ref failed, ref firstError, tableNameForLog, sourceRowNumber);
+            }
+        }
+    }
+
+    private static long EstimateValueSize(object? value)
+    {
+        if (value == null || value == DBNull.Value)
+            return 0;
+
+        return value switch
+        {
+            byte[] bytes => bytes.Length,
+            string text => text.Length * 2,
+            _ => 32
+        };
     }
 
     private static object? ConvertValue(object? value)
@@ -419,17 +477,9 @@ WHERE tc.TABLE_SCHEMA = @schema
             decimal number => number,
             DateTimeOffset dto => dto.UtcDateTime,
             Guid guid => guid,
-            TimeSpan timeSpan => DateTime.UnixEpoch.Add(timeSpan),
+            TimeSpan timeSpan => timeSpan,
             _ => value
         };
-    }
-
-    private static string BuildInsertSql(TableSchema schema)
-    {
-        var orderedColumns = schema.Columns.OrderBy(column => column.Ordinal).ToList();
-        var names = string.Join(", ", orderedColumns.Select(column => QuoteIdentifier(column.Name)));
-        var values = string.Join(", ", orderedColumns.Select((_, index) => $"@p{index}"));
-        return $"INSERT INTO {QuoteIdentifier(schema.TableName)} ({names}) VALUES ({values})";
     }
 
     private static long? CountSourceRows(SqlConnection sourceConnection, TableSchema schema)
