@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using WalhallaSql.Sql;
+using WalhallaSql.Storage;
 
 namespace WalhallaSql.Execution.Join;
 
@@ -97,6 +98,38 @@ internal static class JoinStepExecutor
         JoinStep step,
         object?[]? parameters = null)
     {
+        return ExecuteStep(accumulated, rightRows, step, store: null, rightDecoder: null, parameters);
+    }
+
+    /// <summary>
+    /// Executes one join step mit optionalen Zugriff auf den TableStore. Wenn ein passender
+    /// Index auf der rechten Seite existiert, wird ein index-gestützter Nested-Loop-Join
+    /// verwendet; ansonsten fällt die Auswahl auf Sort-Merge, Hash oder klassischen Nested-Loop zurück.
+    /// </summary>
+    public static List<object?[]> ExecuteStep(
+        List<object?[]> accumulated,
+        List<object?[]> rightRows,
+        JoinStep step,
+        TableStore? store,
+        RowDecoder? rightDecoder,
+        object?[]? parameters = null)
+    {
+        // Prüfe, ob ein Index auf der rechten Seite einen spezialisierten Join-Pfad erlaubt.
+        if (store != null
+            && rightDecoder != null
+            && IndexNestedLoopJoin.TryGetIndex(store, step, out var indexId, out _, out var rightKeyType))
+        {
+            // InMemory: Punkt-Lookups sind sehr billig, daher pro linker Zeile ein Index-Lookup.
+            // Disk: Ein einzelner Index-Range-Scan für das linke Schlüsselintervall ist
+            // effizienter als viele Punkt-Lookups.
+            if (store.IsInMemory)
+            {
+                return IndexNestedLoopJoin.ExecuteStep(accumulated, step, store, rightDecoder, indexId, rightKeyType, parameters);
+            }
+
+            return IndexRangeHashJoin.ExecuteStep(accumulated, rightRows, step, store, rightDecoder, indexId, rightKeyType, parameters);
+        }
+
         var strategy = ChooseStrategy(accumulated, rightRows, step);
         return strategy switch
         {
