@@ -81,16 +81,27 @@ public class SqlScriptSplitterTests
     }
 
     [Fact]
-    public void CreateProcedure_FollowedByInsert_TwoStatements()
+    public void CSharpProcedure_WithSemicolonInVerbatimString_IsSingleStatement()
     {
-        var sql = @"
-            CREATE PROCEDURE P AS BEGIN INSERT INTO T (Id) VALUES (1); END;
-            INSERT INTO T (Id) VALUES (2);";
+        var lines = new[]
+        {
+            "CREATE OR REPLACE PROCEDURE GetCustomerTotalSpend(@customerId INT)",
+            "AS CSHARP BEGIN",
+            "    var rows = ctx.Query($@\"\"\"",
+            "        SELECT c.Name, COALESCE(SUM(oi.Quantity * p.Price), 0) AS TotalSpend",
+            "        FROM Customers c",
+            "        LEFT JOIN Orders o ON c.Id = o.CustomerId",
+            "        WHERE c.Id = {customerId}",
+            "        GROUP BY c.Id, c.Name\"\"\");",
+            "    return WalhallaResultSet.FromRows(rows);",
+            "END;"
+        };
+        var sql = string.Join("\n", lines);
 
         var result = SqlScriptSplitter.Split(sql);
-        Assert.Equal(2, result.Count);
-        Assert.StartsWith("CREATE PROCEDURE P", result[0]);
-        Assert.Equal("INSERT INTO T (Id) VALUES (2)", result[1]);
+        Assert.Single(result);
+        Assert.Contains("TotalSpend", result[0]);
+        Assert.Contains("GROUP BY c.Id, c.Name", result[0]);
     }
 
     [Fact]

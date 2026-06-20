@@ -6,23 +6,28 @@ namespace WalhallaSql.Sql;
 
 /// <summary>
 /// Zerlegt ein SQL-Skript in einzelne ausfuehrbare Statements.
-/// Beruecksichtigt String-Literale und entfernt Zeilen- sowie Blockkommentare.
-/// Statements, die mit CREATE PROCEDURE/TRIGGER beginnen, werden als Ganzes
-/// bis zum abschliessenden END auf oberster Ebene zusammengehalten.
+/// CREATE PROCEDURE/TRIGGER-Blöcke werden als Ganzes erkannt, damit der darin
+/// enthaltene C#-Code (Verbatim-Strings, Semikolons, Kommentare) nicht zerstört
+/// wird. Zeilen- und Blockkommentare im restlichen SQL werden entfernt.
 /// </summary>
 public static class SqlScriptSplitter
 {
     /// <summary>
-    /// Entfernt Kommentare und teilt das SQL an Semikolons auf dem obersten
-    /// Syntax-Level in einzelne Statements. Leere Fragmente werden ignoriert.
+    /// Teilt das SQL an Semikolons auf dem obersten Syntax-Level in einzelne
+    /// Statements. CREATE PROCEDURE/TRIGGER-Blöcke werden als Ganzes erkannt,
+    /// Kommentare und überflüssige Leerzeichen entfernt. Leere Fragmente
+    /// werden ignoriert.
     /// </summary>
     public static IReadOnlyList<string> Split(string sql)
     {
         if (string.IsNullOrWhiteSpace(sql))
             return Array.Empty<string>();
 
-        var cleaned = RemoveComments(sql);
-        var statements = SplitStatements(cleaned);
+        // CREATE PROCEDURE/TRIGGER-Blöcke zuerst herausziehen, damit deren
+        // Inhalt (C#-Code mit Semikolons, Kommentaren etc.) nicht zerstört wird.
+        var (preservedSql, createBlocks) = ExtractCreateBlocks(sql);
+        var cleaned = RemoveComments(preservedSql);
+        var statements = SplitStatements(cleaned, createBlocks);
 
         // Leere Fragmente entfernen
         var result = new List<string>(statements.Count);
@@ -33,6 +38,95 @@ public static class SqlScriptSplitter
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Ersetzt CREATE PROCEDURE/TRIGGER-Blöcke durch Platzhalter und gibt die
+    /// zugehörigen Original-Blöcke zurück. Dadurch bleiben C#-Verbatim-Strings
+    /// und Kommentare im Prozedur-Body unverändert.
+    /// </summary>
+    private static (string Sql, Dictionary<string, string> Blocks) ExtractCreateBlocks(string sql)
+    {
+        var blocks = new Dictionary<string, string>();
+        var builder = new StringBuilder(sql.Length);
+        var i = 0;
+
+        while (i < sql.Length)
+        {
+            var c = sql[i];
+
+            // SQL-String-Literale überspringen
+            if (c == '\'')
+            {
+                builder.Append(c);
+                i++;
+                while (i < sql.Length)
+                {
+                    if (sql[i] == '\'')
+                    {
+                        if (i + 1 < sql.Length && sql[i + 1] == '\'')
+                        {
+                            builder.Append('\'');
+                            builder.Append('\'');
+                            i += 2;
+                            continue;
+                        }
+                        builder.Append('\'');
+                        i++;
+                        break;
+                    }
+                    builder.Append(sql[i]);
+                    i++;
+                }
+                continue;
+            }
+
+            // Blockkommentar überspringen
+            if (c == '/' && i + 1 < sql.Length && sql[i + 1] == '*')
+            {
+                builder.Append("/*");
+                i += 2;
+                while (i + 1 < sql.Length && !(sql[i] == '*' && sql[i + 1] == '/'))
+                {
+                    builder.Append(sql[i]);
+                    i++;
+                }
+                if (i + 1 < sql.Length)
+                {
+                    builder.Append("*/");
+                    i += 2;
+                }
+                continue;
+            }
+
+            // Zeilenkommentar überspringen
+            if (c == '-' && i + 1 < sql.Length && sql[i + 1] == '-')
+            {
+                i += 2;
+                while (i < sql.Length && sql[i] != '\n')
+                    i++;
+                if (i < sql.Length && sql[i] == '\n')
+                    i++;
+                continue;
+            }
+
+            var remaining = sql[i..];
+            if (StartsWithCreateProcedureOrTrigger(remaining))
+            {
+                var end = FindEndOfCreateBlock(sql, i);
+                var block = sql[i..end];
+                var placeholder = $"__CREATE_BLOCK_{blocks.Count}__";
+                blocks[placeholder] = block;
+                builder.Append(placeholder);
+                i = end;
+                continue;
+            }
+
+            builder.Append(c);
+            i++;
+        }
+
+        return (builder.ToString(), blocks);
     }
 
     private static string RemoveComments(string sql)
@@ -109,7 +203,7 @@ public static class SqlScriptSplitter
         return builder.ToString();
     }
 
-    private static List<string> SplitStatements(string sql)
+    private static List<string> SplitStatements(string sql, Dictionary<string, string> createBlocks)
     {
         var statements = new List<string>();
         var start = 0;
@@ -140,26 +234,11 @@ public static class SqlScriptSplitter
                 continue;
             }
 
-            // CREATE PROCEDURE / TRIGGER als Ganzes halten
-            if (i == start || (i > 0 && char.IsWhiteSpace(sql[i - 1])))
-            {
-                var remaining = sql[i..];
-                if (StartsWithCreateProcedureOrTrigger(remaining))
-                {
-                    var end = FindEndOfCreateBlock(sql, i);
-                    if (end > i)
-                    {
-                        statements.Add(sql[start..end].Trim());
-                        i = end;
-                        start = i;
-                        continue;
-                    }
-                }
-            }
-
             if (c == ';')
             {
-                statements.Add(sql[start..i].Trim());
+                var fragment = sql[start..i].Trim();
+                if (!string.IsNullOrWhiteSpace(fragment))
+                    AddStatement(statements, fragment, createBlocks);
                 i++;
                 start = i;
                 continue;
@@ -169,9 +248,26 @@ public static class SqlScriptSplitter
         }
 
         if (start < sql.Length)
-            statements.Add(sql[start..].Trim());
+        {
+            var fragment = sql[start..].Trim();
+            if (!string.IsNullOrWhiteSpace(fragment))
+                AddStatement(statements, fragment, createBlocks);
+        }
 
         return statements;
+    }
+
+    private static void AddStatement(List<string> statements, string fragment, Dictionary<string, string> createBlocks)
+    {
+        foreach (var placeholder in createBlocks.Keys)
+        {
+            if (fragment.Contains(placeholder, StringComparison.OrdinalIgnoreCase))
+            {
+                fragment = fragment.Replace(placeholder, createBlocks[placeholder]);
+            }
+        }
+
+        statements.Add(fragment.Trim());
     }
 
     private static bool StartsWithCreateProcedureOrTrigger(string text)
