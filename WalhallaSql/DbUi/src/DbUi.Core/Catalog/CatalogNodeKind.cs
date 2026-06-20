@@ -19,4 +19,5 @@ public enum CatalogNodeKind
     ForeignKey,
     Index,
     Constraint,
+    Trigger,
 }

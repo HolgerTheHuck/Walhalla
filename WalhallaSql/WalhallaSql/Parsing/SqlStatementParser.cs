@@ -731,16 +731,26 @@ internal static class SqlStatementParser
             }
             else
             {
-                // Might be "expression alias" (space-separated)
-                var lastSpace = trimmed.LastIndexOf(' ');
-                if (lastSpace > 0 && !trimmed.Contains('('))
+                // Might be "expression alias" (space-separated).
+                // String-Literale wie 'hello world' enthalten selbst Leerzeichen;
+                // diese duerfen nicht als Trenner zwischen Expression und Alias
+                // missverstanden werden.
+                if (IsSingleStringLiteral(trimmed))
                 {
-                    exprText = trimmed[..lastSpace].Trim();
-                    alias = SqlSyntaxText.NormalizeIdentifier(trimmed[(lastSpace + 1)..].Trim());
+                    exprText = trimmed;
                 }
                 else
                 {
-                    exprText = trimmed;
+                    var lastSpace = trimmed.LastIndexOf(' ');
+                    if (lastSpace > 0 && !trimmed.Contains('('))
+                    {
+                        exprText = trimmed[..lastSpace].Trim();
+                        alias = SqlSyntaxText.NormalizeIdentifier(trimmed[(lastSpace + 1)..].Trim());
+                    }
+                    else
+                    {
+                        exprText = trimmed;
+                    }
                 }
             }
 
@@ -754,6 +764,36 @@ internal static class SqlStatementParser
         }
 
         return columns;
+    }
+
+    /// <summary>
+    /// Prueft, ob <paramref name="text"/> ein einzelnes, vollstaendiges SQL-String-Literal
+    /// (ohne ausserhalb des Literals stehenden Alias) ist. Escapede '' innerhalb des Literals
+    /// werden beruecksichtigt.
+    /// </summary>
+    private static bool IsSingleStringLiteral(ReadOnlySpan<char> text)
+    {
+        var trimmed = text.Trim();
+        if (trimmed.Length < 2 || trimmed[0] != '\'')
+            return false;
+
+        int i = 1;
+        while (i < trimmed.Length)
+        {
+            if (trimmed[i] == '\'')
+            {
+                if (i + 1 < trimmed.Length && trimmed[i + 1] == '\'')
+                {
+                    i += 2;
+                    continue;
+                }
+                // Schliessendes Anfuehrungszeichen gefunden.
+                return i == trimmed.Length - 1;
+            }
+            i++;
+        }
+
+        return false;
     }
 
     private static SqlAggregateCall? TryParseAggregateCall(string expr)

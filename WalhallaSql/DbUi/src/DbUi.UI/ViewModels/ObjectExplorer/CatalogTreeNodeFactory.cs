@@ -20,6 +20,7 @@ public static class CatalogTreeNodeFactory
             CatalogNodeKind.Table => new TableNode(node, catalog, insertQuery, dialogService),
             CatalogNodeKind.View => new ViewNode(node, catalog, insertQuery, dialogService),
             CatalogNodeKind.Routine => new StoredProcedureNode(node, insertQuery),
+            CatalogNodeKind.Trigger => new TriggerNode(node, insertQuery),
             CatalogNodeKind.Column => new ColumnNode(node.DisplayName),
             CatalogNodeKind.PrimaryKey => new PrimaryKeyNode(node.DisplayName),
             CatalogNodeKind.ForeignKey => new ForeignKeyNode(node.DisplayName),

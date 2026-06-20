@@ -205,4 +205,39 @@ public class ProcedureTriggerTests
         Assert.Equal(5, result.Rows[0]["A"]);
         Assert.Equal(7, result.Rows[0]["B"]);
     }
+
+    [Fact]
+    public void Trigger_AfterInsert_MultiRow_UsesInsertedTable()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Orders (Id INT PRIMARY KEY, CustomerId INT, OrderDate DATE)");
+        engine.Execute("CREATE TABLE AuditLog (Id INT PRIMARY KEY, Message STRING)");
+
+        engine.Execute(@"
+            CREATE TRIGGER trg_AfterOrderInsert
+            ON Orders AFTER INSERT AS
+            BEGIN
+                INSERT INTO AuditLog (Id, Message)
+                SELECT INSERTED.Id, 'Neue Bestellung eingefuegt'
+                FROM INSERTED;
+            END");
+
+        engine.Execute(@"
+            INSERT INTO Orders (Id, CustomerId, OrderDate)
+            VALUES (1, 1, '2026-06-01'),
+                   (2, 1, '2026-06-10'),
+                   (3, 2, '2026-06-15'),
+                   (4, 99, '2026-06-20');");
+
+        var orders = engine.Execute("SELECT * FROM Orders");
+        Assert.Equal(4, orders.Rows.Count);
+
+        var audit = engine.Execute("SELECT * FROM AuditLog ORDER BY Id");
+        Assert.Equal(4, audit.Rows.Count);
+        Assert.Equal(1, audit.Rows[0]["Id"]);
+        Assert.Equal(2, audit.Rows[1]["Id"]);
+        Assert.Equal(3, audit.Rows[2]["Id"]);
+        Assert.Equal(4, audit.Rows[3]["Id"]);
+        Assert.Equal("Neue Bestellung eingefuegt", audit.Rows[0]["Message"]);
+    }
 }

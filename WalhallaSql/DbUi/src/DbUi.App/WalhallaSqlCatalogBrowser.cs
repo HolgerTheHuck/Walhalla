@@ -172,6 +172,7 @@ public sealed class WalhallaSqlCatalogBrowser : ICatalogBrowser
             "keys" => GetKeyNodes(database, table),
             "foreignkeys" => GetForeignKeyNodes(database, table),
             "indexes" => GetIndexNodes(database, table),
+            "triggers" => GetTriggerNodes(database, table.CollectionName, engine),
             _ => [],
         };
     }
@@ -198,6 +199,36 @@ public sealed class WalhallaSqlCatalogBrowser : ICatalogBrowser
                     ["language"] = proc.Language,
                 }))
             .ToArray();
+    }
+
+    private static IReadOnlyList<CatalogNode> GetTriggerNodes(string database, string tableName, WalhallaEngine engine)
+    {
+        return engine.GetTriggers(tableName)
+            .OrderBy(static t => t.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(trigger => new CatalogNode(
+                CreateId("trigger", database, tableName, trigger.Name),
+                $"{trigger.Name} ({trigger.Timing} {trigger.Event})",
+                CatalogNodeKind.Trigger,
+                HasChildren: false,
+                Actions:
+                [
+                    new CatalogAction("edit", "EDIT", BuildEditTrigger(trigger)),
+                    new CatalogAction("drop", "DROP", $"DROP TRIGGER {EscapeName(trigger.Name)}"),
+                ],
+                Metadata: new Dictionary<string, string?>
+                {
+                    ["database"] = database,
+                    ["objectName"] = trigger.Name,
+                    ["tableName"] = tableName,
+                }))
+            .ToArray();
+    }
+
+    private static string BuildEditTrigger(SqlTriggerDefinition trigger)
+    {
+        return $"CREATE OR REPLACE TRIGGER {EscapeName(trigger.Name)}\n"
+            + $"ON {EscapeName(trigger.TableName)} {trigger.Timing.ToString().ToUpperInvariant()} {trigger.Event.ToString().ToUpperInvariant()} AS\n"
+            + $"BEGIN\n{trigger.Body}\nEND";
     }
 
     private static string BuildExecProcedure(string name, IReadOnlyList<SqlProcedureParameter> parameters)
@@ -355,6 +386,7 @@ public sealed class WalhallaSqlCatalogBrowser : ICatalogBrowser
             CreateFolderNode(database, "keys", "Keys", tableId),
             CreateFolderNode(database, "foreignkeys", "Foreign Keys", tableId),
             CreateFolderNode(database, "indexes", "Indexes", tableId),
+            CreateFolderNode(database, "triggers", "Triggers", tableId),
         ];
     }
 

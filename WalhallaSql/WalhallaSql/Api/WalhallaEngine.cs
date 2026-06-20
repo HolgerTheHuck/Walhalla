@@ -46,6 +46,7 @@ public sealed class WalhallaEngine : IDisposable
     private long _analyzeDurationMs;
     private volatile IsolationLevel _defaultIsolationLevel = IsolationLevel.Snapshot;
     private long _tempTableCounter;
+    private int _triggerDepth;
     private TransactionMode? _transactionMode;
     private readonly StatisticsCatalog _statisticsCatalog = new();
     private readonly AuthIdCatalog _authIdCatalog;
@@ -526,6 +527,24 @@ public sealed class WalhallaEngine : IDisposable
         lock (_metaSync)
         {
             return _procedures.Values.ToList();
+        }
+    }
+
+    /// <summary>
+    /// Gibt die fuer eine Tabelle definierten Trigger zurueck. Ohne tableName
+    /// werden alle Trigger zurueckgegeben.
+    /// </summary>
+    public IReadOnlyList<SqlTriggerDefinition> GetTriggers(string? tableName = null)
+    {
+        lock (_metaSync)
+        {
+            if (tableName == null)
+                return _triggersByTable.Values.SelectMany(list => list).ToList();
+
+            if (_triggersByTable.TryGetValue(tableName, out var list))
+                return list.ToList();
+
+            return Array.Empty<SqlTriggerDefinition>();
         }
     }
 
@@ -1097,6 +1116,12 @@ public sealed class WalhallaEngine : IDisposable
     private void EnsureTablePrivilege(string tableName, GrantPrivilege privilege)
     {
         if (tableName.StartsWith("__dt_", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        // Trigger-Transition-Tabellen (INSERTED/DELETED) sind intern und
+        // unterliegen keinen Rechtepruefungen.
+        if (string.Equals(tableName, "INSERTED", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(tableName, "DELETED", StringComparison.OrdinalIgnoreCase))
             return;
 
         if (!HasTablePrivilege(tableName, privilege))
@@ -2271,7 +2296,7 @@ public sealed class WalhallaEngine : IDisposable
         }
 
         // Fire AFTER triggers
-        FireTriggers(insert.TableName, SqlTriggerEvent.Insert, SqlTriggerTiming.After);
+        FireTriggers(insert.TableName, SqlTriggerEvent.Insert, SqlTriggerTiming.After, decodedRows);
 
         return WalhallaResultSet.Affected(encodedRows.Count);
     }
@@ -2367,7 +2392,7 @@ public sealed class WalhallaEngine : IDisposable
 
         _store.InsertRows(tableId, encodedRows, insertSelectExplicitRowIds, allIndexEntries);
 
-        FireTriggers(insertSelect.TableName, SqlTriggerEvent.Insert, SqlTriggerTiming.After);
+        FireTriggers(insertSelect.TableName, SqlTriggerEvent.Insert, SqlTriggerTiming.After, decodedRows);
         return WalhallaResultSet.Affected(encodedRows.Count);
     }
 
@@ -5021,7 +5046,8 @@ public sealed class WalhallaEngine : IDisposable
         return false;
     }
 
-    private void FireTriggers(string tableName, SqlTriggerEvent evt, SqlTriggerTiming timing)
+    private void FireTriggers(string tableName, SqlTriggerEvent evt, SqlTriggerTiming timing,
+        IReadOnlyList<object?[]>? insertedRows = null, IReadOnlyList<object?[]>? deletedRows = null)
     {
         SqlTriggerDefinition[] snapshot;
         lock (_metaSync)
@@ -5033,9 +5059,161 @@ public sealed class WalhallaEngine : IDisposable
 
         foreach (var trigger in snapshot)
         {
-            if (trigger.Event == evt && trigger.Timing == timing)
-                ExecuteProcedureBody(trigger.Body);
+            if (trigger.Event != evt || trigger.Timing != timing)
+                continue;
+
+            var transitionTables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var createdTables = new List<string>();
+
+            try
+            {
+                _triggerDepth++;
+                var tableDef = _store.GetTableDefinition(tableName);
+
+                if (insertedRows != null && insertedRows.Count > 0)
+                {
+                    var insertedName = $"__tt_{_triggerDepth}_INSERTED";
+                    CreateTransitionTable(insertedName, tableDef!, insertedRows);
+                    createdTables.Add(insertedName);
+                    transitionTables["INSERTED"] = insertedName;
+                }
+
+                if (deletedRows != null && deletedRows.Count > 0)
+                {
+                    var deletedName = $"__tt_{_triggerDepth}_DELETED";
+                    CreateTransitionTable(deletedName, tableDef!, deletedRows);
+                    createdTables.Add(deletedName);
+                    transitionTables["DELETED"] = deletedName;
+                }
+
+                var body = transitionTables.Count > 0
+                    ? ReplaceTransitionTableNames(trigger.Body, transitionTables)
+                    : trigger.Body;
+
+                ExecuteProcedureBody(body);
+            }
+            finally
+            {
+                foreach (var name in createdTables)
+                    _store.DropTable(name);
+                _triggerDepth--;
+            }
         }
+    }
+
+    private void CreateTransitionTable(string actualName, SqlTableDefinition sourceDef,
+        IReadOnlyList<object?[]> rows)
+    {
+        var columns = sourceDef.Columns.ToList();
+
+        // Sicherstellen, dass die Transitionstabelle eine gueltige Primaerschluessel-
+        // Semantik hat. Wenn die Ausgangstabelle keine explizite PK-Spalte hat,
+        // fuegen wir eine interne RowId-Spalte hinzu.
+        var hasPk = columns.Any(c => c.IsPrimaryKey);
+        if (!hasPk)
+        {
+            var idCol = columns.FirstOrDefault(c =>
+                c.Name.Equals("Id", StringComparison.OrdinalIgnoreCase));
+            if (idCol != null)
+            {
+                var idx = columns.IndexOf(idCol);
+                columns[idx] = idCol with { IsPrimaryKey = true };
+                hasPk = true;
+            }
+        }
+
+        if (!hasPk)
+        {
+            columns.Insert(0, new SqlColumnDefinition("__rowid__", SqlScalarType.Int64)
+            {
+                IsPrimaryKey = true,
+                IsNullable = false
+            });
+        }
+
+        var transitionDef = new SqlTableDefinition(
+            actualName,
+            columns,
+            new List<SqlIndexDefinition>(),
+            new List<SqlForeignKeyDefinition>(),
+            new List<SqlProjectionDefinition>());
+
+        _store.CreateTable(transitionDef);
+
+        if (rows.Count == 0) return;
+
+        // Zeilen auf das Transitionstabellen-Schema abbilden. Wenn __rowid__ hinzugefuegt
+        // wurde, muessen die eingehenden Zeilen um diese Spalte ergaenzt werden.
+        var mappedRows = new List<object?[]>();
+        if (columns[0].Name.Equals("__rowid__", StringComparison.OrdinalIgnoreCase))
+        {
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                var newRow = new object?[row.Length + 1];
+                newRow[0] = (long)(i + 1);
+                Array.Copy(row, 0, newRow, 1, row.Length);
+                mappedRows.Add(newRow);
+            }
+        }
+        else
+        {
+            mappedRows.AddRange(rows);
+        }
+
+        InsertBatch(actualName, mappedRows);
+    }
+
+    private static string ReplaceTransitionTableNames(string sql,
+        IReadOnlyDictionary<string, string> transitionTables)
+    {
+        if (string.IsNullOrEmpty(sql)) return sql;
+
+        var result = new StringBuilder(sql.Length);
+        bool inString = false;
+        int i = 0;
+        while (i < sql.Length)
+        {
+            char c = sql[i];
+
+            if (c == '\'')
+            {
+                // String-Literal: beruecksichtige escaped '' innerhalb eines Literals
+                result.Append(c);
+                if (inString && i + 1 < sql.Length && sql[i + 1] == '\'')
+                {
+                    result.Append('\'');
+                    i += 2;
+                    continue;
+                }
+                inString = !inString;
+                i++;
+                continue;
+            }
+
+            if (!inString && char.IsLetter(c))
+            {
+                int start = i;
+                while (i < sql.Length && (char.IsLetterOrDigit(sql[i]) || sql[i] == '_'))
+                    i++;
+
+                var token = sql[start..i];
+                if (transitionTables.TryGetValue(token, out var actualName))
+                {
+                    result.Append(actualName);
+                }
+                else
+                {
+                    result.Append(token);
+                }
+                continue;
+            }
+
+            result.Append(c);
+            i++;
+        }
+
+        return result.ToString();
     }
 
     // -- Foreign Key Enforcement --------------------------------------------------
