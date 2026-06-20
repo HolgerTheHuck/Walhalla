@@ -227,6 +227,8 @@ public sealed class PgWireCatalogBrowser : ICatalogBrowser
         CancellationToken cancellationToken)
     {
         var routines = new List<CatalogNode>();
+        var parametersByRoutine = await GetParametersByRoutineAsync(cancellationToken);
+
         var connection = _connectionProvider();
         await using var cmd = connection.CreateCommand();
         cmd.CommandText =
@@ -242,6 +244,8 @@ public sealed class PgWireCatalogBrowser : ICatalogBrowser
         {
             var name = reader.GetString(0);
             var type = reader.GetString(1);
+            parametersByRoutine.TryGetValue(name, out var parameters);
+
             routines.Add(new CatalogNode(
                 CreateId("routine", database, name),
                 $"{name} ({type})",
@@ -249,7 +253,7 @@ public sealed class PgWireCatalogBrowser : ICatalogBrowser
                 HasChildren: false,
                 Actions:
                 [
-                    new CatalogAction("exec", "EXEC", $"EXEC {EscapeName(name)}"),
+                    new CatalogAction("exec", "EXEC", BuildExecProcedure(name, parameters ?? [])),
                     new CatalogAction("drop", "DROP", $"DROP {type} {EscapeName(name)}"),
                 ],
                 Metadata: new Dictionary<string, string?>
@@ -260,6 +264,44 @@ public sealed class PgWireCatalogBrowser : ICatalogBrowser
         }
 
         return routines;
+    }
+
+    private async Task<Dictionary<string, List<(string Name, string Type)>>> GetParametersByRoutineAsync(
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<string, List<(string Name, string Type)>>(StringComparer.OrdinalIgnoreCase);
+        var connection = _connectionProvider();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText =
+            """
+            SELECT specific_name, parameter_name, data_type
+            FROM information_schema.parameters
+            ORDER BY specific_name, ordinal_position
+            """;
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var routineName = reader.GetString(0);
+            var paramName = reader.GetString(1);
+            var dataType = reader.GetString(2);
+
+            if (!result.TryGetValue(routineName, out var parameters))
+            {
+                parameters = [];
+                result[routineName] = parameters;
+            }
+
+            parameters.Add((paramName, dataType));
+        }
+
+        return result;
+    }
+
+    private static string BuildExecProcedure(string name, IReadOnlyList<(string Name, string Type)> parameters)
+    {
+        var args = string.Join(", ", parameters.Select(p => $"@{p.Name}"));
+        return $"EXEC {EscapeName(name)} {args}".TrimEnd();
     }
 
     private async Task<IReadOnlyList<CatalogNode>> GetTableChildrenAsync(
@@ -319,40 +361,28 @@ public sealed class PgWireCatalogBrowser : ICatalogBrowser
     private async Task<IReadOnlyList<CatalogProcedure>> GetRoutinesAsync(
         CancellationToken cancellationToken)
     {
+        var parametersByRoutine = await GetParametersByRoutineAsync(cancellationToken);
+
         var routines = new List<CatalogProcedure>();
         var connection = _connectionProvider();
         await using var cmd = connection.CreateCommand();
         cmd.CommandText =
             """
-            SELECT routine_name, parameter_name, data_type
-            FROM information_schema.routines r
-            LEFT JOIN information_schema.parameters p
-              ON r.specific_name = p.specific_name
-            WHERE r.routine_schema = 'public'
-            ORDER BY r.routine_name, p.ordinal_position
+            SELECT routine_name
+            FROM information_schema.routines
+            WHERE routine_schema = 'public'
+            ORDER BY routine_name
             """;
 
-        var parametersByRoutine = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
             var name = reader.GetString(0);
-            var paramName = reader.IsDBNull(1) ? null : reader.GetString(1);
-            var dataType = reader.IsDBNull(2) ? null : reader.GetString(2);
-
-            if (!parametersByRoutine.TryGetValue(name, out var parameters))
-            {
-                parameters = [];
-                parametersByRoutine[name] = parameters;
-            }
-
-            if (!string.IsNullOrEmpty(paramName))
-                parameters.Add($"{paramName} {dataType}");
+            parametersByRoutine.TryGetValue(name, out var parameters);
+            routines.Add(new CatalogProcedure(name, (parameters ?? []).Select(p => $"{p.Name} {p.Type}").ToArray()));
         }
 
-        return parametersByRoutine
-            .Select(kv => new CatalogProcedure(kv.Key, kv.Value))
-            .ToArray();
+        return routines;
     }
 
     private async Task<IReadOnlyList<string>> GetTableColumnsAsync(

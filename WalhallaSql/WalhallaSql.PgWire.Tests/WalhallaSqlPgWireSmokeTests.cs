@@ -108,6 +108,38 @@ public class WalhallaSqlPgWireSmokeTests
         Assert.Equal("3", count?.ToString());
     }
 
+    [Fact]
+    public async Task VirtualCatalog_InformationSchema_RoutinesAndParameters_ListsProcedure()
+    {
+        await using var scope = await WalhallaSqlPgWireTestScope.CreateAsync();
+        await using var conn = await scope.OpenConnectionAsync();
+
+        await Execute(conn, "CREATE TABLE Orders (Id INT)");
+        await Execute(conn, "CREATE PROCEDURE GetOrderCount(@minId INT) AS SELECT COUNT(*) FROM Orders WHERE Id >= @minId");
+
+        var routines = new List<(string Name, string Type)>();
+        await using (var cmd = new NpgsqlCommand(
+            "SELECT routine_name, routine_type FROM information_schema.routines WHERE routine_schema = 'public'", conn))
+        await using (var reader = await cmd.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+                routines.Add((reader.GetString(0), reader.GetString(1)));
+        }
+
+        Assert.Contains(routines, r => r.Name == "GetOrderCount");
+
+        var parameters = new List<(string RoutineName, string ParameterName, string DataType)>();
+        await using (var cmd = new NpgsqlCommand(
+            "SELECT specific_name, parameter_name, data_type FROM information_schema.parameters", conn))
+        await using (var reader = await cmd.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+                parameters.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+        }
+
+        Assert.Contains(parameters, p => p.RoutineName == "GetOrderCount" && p.ParameterName == "minId");
+    }
+
     private static async Task Execute(NpgsqlConnection conn, string sql)
     {
         await using var cmd = new NpgsqlCommand(sql, conn);

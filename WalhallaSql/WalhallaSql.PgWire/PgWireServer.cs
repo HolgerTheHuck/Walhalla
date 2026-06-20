@@ -2835,7 +2835,7 @@ public sealed class PgWireServer : IAsyncDisposable
                 {
                     ["routine_catalog"] = dbName, ["routine_schema"] = "public", ["routine_name"] = routine.Name,
                     ["routine_type"] = routine.Type, ["specific_catalog"] = dbName, ["specific_schema"] = "public",
-                    ["specific_name"] = routine.Name
+                    ["specific_name"] = routine.Name, ["specific_schema"] = "public"
                 })
                 .ToArray();
             result = BuildProjectedVirtualResult(sql, rows, new[]

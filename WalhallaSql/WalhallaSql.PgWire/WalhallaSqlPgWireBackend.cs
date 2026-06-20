@@ -72,7 +72,7 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
             {
                 var parameters = proc.Parameters
                     .Select(p => new PgVirtualRoutineParameter(
-                        p.Name,
+                        NormalizeParameterName(p.Name),
                         MapTypeToString(p.Type),
                         p.IsOutput ? "OUT" : "IN"))
                     .ToArray();
@@ -250,6 +250,14 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
         }
         storedHash = string.Empty;
         return false;
+    }
+
+    private static string NormalizeParameterName(string name)
+    {
+        name = name.Trim();
+        if (name.StartsWith("@", StringComparison.Ordinal))
+            name = name.Substring(1);
+        return name;
     }
 
     private static string MapTypeToString(SqlScalarType type) => type switch
