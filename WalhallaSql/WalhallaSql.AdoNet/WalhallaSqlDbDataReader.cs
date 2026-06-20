@@ -532,7 +532,16 @@ public sealed class WalhallaSqlDbDataReader : DbDataReader
 
         if (_streamingEnumerator != null)
         {
-            // Streaming mode: only hold the current row
+            // Streaming mode: only hold the current row.
+            // Wenn FieldCount/HasRows bereits eine Zeile vorgelesen hat
+            // (position == -1 und currentRow != null), diese direkt liefern,
+            // sonst erst zur naechsten Zeile wechseln.
+            if (_position == -1 && _currentRow != null)
+            {
+                _position = 0;
+                return true;
+            }
+
             if (!TryReadNextStreamingRow())
                 return false;
             _position = 0;
