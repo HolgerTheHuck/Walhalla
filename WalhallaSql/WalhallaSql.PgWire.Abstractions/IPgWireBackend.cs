@@ -23,6 +23,16 @@ public sealed record PgVirtualTableDefinition(
     IReadOnlyList<PgVirtualColumnDefinition> Columns,
     PgVirtualRelationKind RelationKind = PgVirtualRelationKind.Table);
 
+public sealed record PgVirtualRoutineDefinition(
+    string Name,
+    string Type,
+    IReadOnlyList<PgVirtualRoutineParameter> Parameters);
+
+public sealed record PgVirtualRoutineParameter(
+    string Name,
+    string DataType,
+    string Mode = "IN");
+
 // ── Backend abstraction interfaces ──────────────────────────────────────────
 
 public interface IPgWireBackendConnection : IDisposable
@@ -33,6 +43,13 @@ public interface IPgWireBackendConnection : IDisposable
     IPgWireBackendCommand CreateCommand();
     IPgWireBackendTransaction BeginTransaction();
     IReadOnlyList<PgVirtualTableDefinition> DiscoverTables();
+
+    /// <summary>
+    /// Returns all stored routines visible to the PgWire catalog.
+    /// Default returns an empty list; override in backends that support procedures/functions.
+    /// </summary>
+    IReadOnlyList<PgVirtualRoutineDefinition> DiscoverRoutines()
+        => Array.Empty<PgVirtualRoutineDefinition>();
 
     /// <summary>
     /// Describe the result columns of a query without executing it (optional optimization).

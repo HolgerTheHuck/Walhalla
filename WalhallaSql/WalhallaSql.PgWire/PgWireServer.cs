@@ -577,7 +577,7 @@ public sealed class PgWireServer : IAsyncDisposable
                 }
 
                 if (TryResolveVirtualQuery(trimmed, backend.DatabaseName, DiscoverTableDefinitions(backend, session), out var virtualResult,
-                    backend.DatabaseCollation, backend.DatabaseCType, backend.GetPgStatsRows()))
+                    backend.DatabaseCollation, backend.DatabaseCType, backend.GetPgStatsRows(), DiscoverRoutineDefinitions(backend, session)))
                 {
                     await SendVirtualQueryResultAsync(stream, virtualResult);
                     continue;
@@ -1133,7 +1133,7 @@ public sealed class PgWireServer : IAsyncDisposable
                 }
 
                     if (TryResolveVirtualQuery(statementDescribeSql, backend.DatabaseName, statementKnownTables, out var statementVirtualResult,
-                        backend.DatabaseCollation, backend.DatabaseCType, backend.GetPgStatsRows()))
+                        backend.DatabaseCollation, backend.DatabaseCType, backend.GetPgStatsRows(), DiscoverRoutineDefinitions(backend, session)))
                 {
                     statement.DescribedFields = statementVirtualResult.Fields;
                     await SendRowDescriptionAsync(stream, statement.DescribedFields);
@@ -1193,7 +1193,7 @@ public sealed class PgWireServer : IAsyncDisposable
                 }
 
                 if (TryResolveVirtualQuery(describeSql, backend.DatabaseName, knownTables, out var virtualResult,
-                    backend.DatabaseCollation, backend.DatabaseCType, backend.GetPgStatsRows()))
+                    backend.DatabaseCollation, backend.DatabaseCType, backend.GetPgStatsRows(), DiscoverRoutineDefinitions(backend, session)))
                 {
                     portal.DescribedFields = virtualResult.Fields;
                     await SendRowDescriptionAsync(stream, portal.DescribedFields, portal.ResultFormatCodes);
@@ -1318,7 +1318,7 @@ public sealed class PgWireServer : IAsyncDisposable
         }
 
         if (portal.IsQuery && TryResolveVirtualQuery(trimmedSql, backend.DatabaseName, knownTables, out var virtualResult,
-            backend.DatabaseCollation, backend.DatabaseCType, backend.GetPgStatsRows()))
+            backend.DatabaseCollation, backend.DatabaseCType, backend.GetPgStatsRows(), DiscoverRoutineDefinitions(backend, session)))
         {
             await SendVirtualExecuteResultAsync(stream, virtualResult, !portal.MetadataDescribed, portal.ResultFormatCodes);
             MarkPortalDescribed(portal);
@@ -2585,7 +2585,8 @@ public sealed class PgWireServer : IAsyncDisposable
 
     private static bool TryResolveVirtualQuery(string sql, string? databaseName, IReadOnlyList<PgVirtualTableDefinition>? tables, out PgVirtualQueryResult result,
         string databaseCollation = "C", string databaseCType = "C",
-        IReadOnlyList<Dictionary<string, object?>>? pgStatsRows = null)
+        IReadOnlyList<Dictionary<string, object?>>? pgStatsRows = null,
+        IReadOnlyList<PgVirtualRoutineDefinition>? routines = null)
     {
         var normalized = NormalizeSqlForCatalogDetection(sql);
         if (string.IsNullOrWhiteSpace(normalized))
@@ -2821,6 +2822,57 @@ public sealed class PgWireServer : IAsyncDisposable
                 ("data_type", typeof(string)), ("is_primary_key", typeof(string))
             });
             PgWireTrace.Virtual("columns", normalized, result.Rows.Count);
+            return true;
+        }
+
+        if (normalized.Contains("information_schema.routines", StringComparison.Ordinal))
+        {
+            var dbName = string.IsNullOrWhiteSpace(databaseName) ? "App" : databaseName;
+            var resolvedRoutines = routines ?? Array.Empty<PgVirtualRoutineDefinition>();
+            var rows = resolvedRoutines
+                .OrderBy(static r => r.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(routine => new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["routine_catalog"] = dbName, ["routine_schema"] = "public", ["routine_name"] = routine.Name,
+                    ["routine_type"] = routine.Type, ["specific_catalog"] = dbName, ["specific_schema"] = "public",
+                    ["specific_name"] = routine.Name
+                })
+                .ToArray();
+            result = BuildProjectedVirtualResult(sql, rows, new[]
+            {
+                ("routine_catalog", typeof(string)), ("routine_schema", typeof(string)), ("routine_name", typeof(string)),
+                ("routine_type", typeof(string)), ("specific_catalog", typeof(string)), ("specific_schema", typeof(string)),
+                ("specific_name", typeof(string))
+            });
+            PgWireTrace.Virtual("routines", normalized, result.Rows.Count);
+            return true;
+        }
+
+        if (normalized.Contains("information_schema.parameters", StringComparison.Ordinal))
+        {
+            var dbName = string.IsNullOrWhiteSpace(databaseName) ? "App" : databaseName;
+            var resolvedRoutines = routines ?? Array.Empty<PgVirtualRoutineDefinition>();
+            var rows = new List<Dictionary<string, object?>>();
+            foreach (var routine in resolvedRoutines.OrderBy(static r => r.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                for (var i = 0; i < routine.Parameters.Count; i++)
+                {
+                    var parameter = routine.Parameters[i];
+                    rows.Add(new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["specific_catalog"] = dbName, ["specific_schema"] = "public", ["specific_name"] = routine.Name,
+                        ["ordinal_position"] = i + 1, ["parameter_name"] = parameter.Name,
+                        ["data_type"] = parameter.DataType, ["parameter_mode"] = parameter.Mode
+                    });
+                }
+            }
+            result = BuildProjectedVirtualResult(sql, rows, new[]
+            {
+                ("specific_catalog", typeof(string)), ("specific_schema", typeof(string)), ("specific_name", typeof(string)),
+                ("ordinal_position", typeof(int)), ("parameter_name", typeof(string)),
+                ("data_type", typeof(string)), ("parameter_mode", typeof(string))
+            });
+            PgWireTrace.Virtual("parameters", normalized, result.Rows.Count);
             return true;
         }
 
@@ -3232,6 +3284,28 @@ public sealed class PgWireServer : IAsyncDisposable
         return Array.Empty<PgVirtualTableDefinition>();
     }
 
+    private static IReadOnlyList<PgVirtualRoutineDefinition> DiscoverRoutineDefinitions(IPgWireBackendConnection backend, PgDbSessionState? session = null)
+    {
+        if (session?.CachedRoutineDefinitions is { } cached)
+            return cached;
+
+        try
+        {
+            var discovered = backend.DiscoverRoutines();
+            if (discovered.Count > 0)
+            {
+                if (session != null)
+                    session.CachedRoutineDefinitions = discovered;
+                return discovered;
+            }
+        }
+        catch
+        {
+            // Fall through to empty result
+        }
+
+        return Array.Empty<PgVirtualRoutineDefinition>();
+    }
 
     private static IReadOnlyList<PgVirtualTableDefinition> DiscoverTableDefinitionsFromCatalog(object databaseHandle)
     {
@@ -4317,6 +4391,9 @@ internal sealed class PgDbSessionState
     /// <summary>Cached result of DiscoverTableDefinitions; null = stale/not-yet-computed.</summary>
     public IReadOnlyList<PgVirtualTableDefinition>? CachedTableDefinitions { get; set; }
     public void InvalidateTableDefinitionCache() => CachedTableDefinitions = null;
+    /// <summary>Cached result of DiscoverRoutineDefinitions; null = stale/not-yet-computed.</summary>
+    public IReadOnlyList<PgVirtualRoutineDefinition>? CachedRoutineDefinitions { get; set; }
+    public void InvalidateRoutineDefinitionCache() => CachedRoutineDefinitions = null;
     public Dictionary<string, PgPreparedStatement> PreparedStatements { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, PgBoundPortal> Portals { get; } = new(StringComparer.Ordinal);
 

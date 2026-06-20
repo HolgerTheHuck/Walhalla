@@ -62,6 +62,34 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
         }
     }
 
+    public IReadOnlyList<PgVirtualRoutineDefinition> DiscoverRoutines()
+    {
+        try
+        {
+            var procedures = _engine.GetProcedures();
+            var result = new List<PgVirtualRoutineDefinition>(procedures.Count);
+            foreach (var proc in procedures)
+            {
+                var parameters = proc.Parameters
+                    .Select(p => new PgVirtualRoutineParameter(
+                        p.Name,
+                        MapTypeToString(p.Type),
+                        p.IsOutput ? "OUT" : "IN"))
+                    .ToArray();
+
+                result.Add(new PgVirtualRoutineDefinition(
+                    proc.Name,
+                    string.Equals(proc.Language, "csharp", StringComparison.OrdinalIgnoreCase) ? "PROCEDURE" : "PROCEDURE",
+                    parameters));
+            }
+            return result;
+        }
+        catch
+        {
+            return Array.Empty<PgVirtualRoutineDefinition>();
+        }
+    }
+
     public IReadOnlyList<Dictionary<string, object?>> GetPgStatsRows()
     {
         try
