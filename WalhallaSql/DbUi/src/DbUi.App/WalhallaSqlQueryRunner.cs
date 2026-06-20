@@ -4,6 +4,7 @@ using System.Diagnostics;
 using DbUi.Core.Providers;
 using DbUi.Core.Queries;
 using WalhallaSql.AdoNet;
+using WalhallaSql.Sql;
 
 namespace DbUi.App;
 
@@ -38,11 +39,38 @@ public sealed class WalhallaSqlQueryRunner : IQueryRunner
                 };
             }
 
-            var connection = _connectionProvider();
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = request.Text;
+            var statements = SqlScriptSplitter.Split(request.Text);
+            if (statements.Count == 0)
+            {
+                stopwatch.Stop();
+                return new QueryResult
+                {
+                    ErrorMessage = "Query text is empty.",
+                    Elapsed = stopwatch.Elapsed,
+                };
+            }
 
-            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            var connection = _connectionProvider();
+            var totalAffectedRows = 0;
+
+            // Alle Statements bis auf das letzte als NonQuery ausfuehren,
+            // damit Skripte wie "CREATE TABLE ...; INSERT ...; SELECT ..." funktionieren.
+            for (int i = 0; i < statements.Count - 1; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = statements[i];
+                var affected = cmd.ExecuteNonQuery();
+                if (affected >= 0)
+                    totalAffectedRows += affected;
+            }
+
+            // Letztes Statement mit Reader ausfuehren, damit Ergebnisdaten angezeigt werden.
+            var lastSql = statements[^1];
+            using var lastCmd = connection.CreateCommand();
+            lastCmd.CommandText = lastSql;
+
+            await using var reader = await lastCmd.ExecuteReaderAsync(cancellationToken);
 
             var columns = new List<QueryColumn>(reader.FieldCount);
             for (int i = 0; i < reader.FieldCount; i++)
@@ -58,7 +86,9 @@ public sealed class WalhallaSqlQueryRunner : IQueryRunner
                 rowCount++;
             }
 
-            var affectedRows = reader.RecordsAffected >= 0 ? reader.RecordsAffected : rows.Count;
+            var affectedRows = reader.RecordsAffected >= 0
+                ? totalAffectedRows + reader.RecordsAffected
+                : totalAffectedRows + rows.Count;
 
             stopwatch.Stop();
 
