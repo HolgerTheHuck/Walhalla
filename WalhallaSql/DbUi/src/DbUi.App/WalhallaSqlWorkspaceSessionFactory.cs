@@ -1,5 +1,7 @@
+using System.Data.Common;
 using System.Threading;
 using DbUi.Core.Workspace;
+using Npgsql;
 using WalhallaSql;
 using WalhallaSql.AdoNet;
 
@@ -14,31 +16,55 @@ public sealed class WalhallaSqlWorkspaceSessionFactory : IWorkspaceSessionFactor
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Engine-Öffnung und Connection-Setup synchron auf einem Hintergrund-Thread,
-        // damit das Öffnen großer/corrupt Datenbanken den WPF-UI-Thread nicht einfriert.
         return await Task.Run(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            WalhallaEngine engine;
-            if (connectionInfo.IsInMemory)
-            {
-                engine = WalhallaEngine.InMemory();
-            }
-            else
-            {
-                engine = WalhallaEngine.Open(connectionInfo.StoragePath);
-            }
+            if (connectionInfo.Mode == WorkspaceConnectionMode.PgWire)
+                return CreatePgWireSession(connectionInfo);
 
-            var databaseName = string.IsNullOrWhiteSpace(connectionInfo.DatabaseName)
-                ? WalhallaSqlDbConnection.DefaultDatabaseName
-                : connectionInfo.DatabaseName;
-
-            return new WalhallaSqlWorkspaceSession(
-                engine,
-                connectionInfo.StoragePath,
-                databaseName,
-                connectionInfo.DisplayName);
+            return CreateLocalSession(connectionInfo);
         }, cancellationToken);
     }
+
+    private static IWorkspaceSession CreateLocalSession(WorkspaceConnectionInfo connectionInfo)
+    {
+        WalhallaEngine engine;
+        if (connectionInfo.IsInMemory)
+        {
+            engine = WalhallaEngine.InMemory();
+        }
+        else
+        {
+            engine = WalhallaEngine.Open(connectionInfo.StoragePath);
+        }
+
+        var databaseName = string.IsNullOrWhiteSpace(connectionInfo.DatabaseName)
+            ? WalhallaSqlDbConnection.DefaultDatabaseName
+            : connectionInfo.DatabaseName;
+
+        return new WalhallaSqlWorkspaceSession(
+            engine,
+            connectionInfo.StoragePath,
+            databaseName,
+            connectionInfo.DisplayName);
+    }
+
+    private static IWorkspaceSession CreatePgWireSession(WorkspaceConnectionInfo connectionInfo)
+    {
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = connectionInfo.PgWireHost,
+            Port = connectionInfo.PgWirePort,
+            Username = connectionInfo.PgWireUser,
+            Password = connectionInfo.PgWirePassword,
+            Database = connectionInfo.PgWireDatabase,
+        };
+
+        var connection = new NpgsqlConnection(builder.ConnectionString);
+        connection.Open();
+
+        return new PgWireWorkspaceSession(connection, connectionInfo.DisplayName);
+    }
 }
+
