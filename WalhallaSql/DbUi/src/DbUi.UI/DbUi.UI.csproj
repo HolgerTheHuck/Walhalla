@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DbUi.Core\DbUi.Core.csproj" />
+    <ProjectReference Include="..\..\..\WalhallaSql\WalhallaSql.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -121,4 +121,74 @@ public class SqlScriptSplitterTests
         Assert.Equal("INSERT INTO T (Id) VALUES (1)", result[1]);
         Assert.Equal("SELECT * FROM T", result[2]);
     }
+
+    [Fact]
+    public void GetStatementAtOffset_SingleStatement_ReturnsIt()
+    {
+        var sql = "SELECT 1";
+        Assert.Equal("SELECT 1", SqlScriptSplitter.GetStatementAtOffset(sql, 0));
+        Assert.Equal("SELECT 1", SqlScriptSplitter.GetStatementAtOffset(sql, 3));
+        Assert.Equal("SELECT 1", SqlScriptSplitter.GetStatementAtOffset(sql, sql.Length));
+    }
+
+    [Fact]
+    public void GetStatementAtOffset_FirstOfTwoStatements()
+    {
+        var sql = "SELECT 1; SELECT 2";
+        Assert.Equal("SELECT 1", SqlScriptSplitter.GetStatementAtOffset(sql, 0));
+        Assert.Equal("SELECT 1", SqlScriptSplitter.GetStatementAtOffset(sql, 7));
+        Assert.Equal("SELECT 1", SqlScriptSplitter.GetStatementAtOffset(sql, 8)); // auf Semikolon
+    }
+
+    [Fact]
+    public void GetStatementAtOffset_SecondOfTwoStatements()
+    {
+        var sql = "SELECT 1; SELECT 2";
+        Assert.Equal("SELECT 2", SqlScriptSplitter.GetStatementAtOffset(sql, 10));
+        Assert.Equal("SELECT 2", SqlScriptSplitter.GetStatementAtOffset(sql, 18));
+    }
+
+    [Fact]
+    public void GetStatementAtOffset_BetweenStatements_ReturnsNext()
+    {
+        var sql = "SELECT 1;\n\n   SELECT 2";
+        Assert.Equal("SELECT 2", SqlScriptSplitter.GetStatementAtOffset(sql, 11));
+    }
+
+    [Fact]
+    public void GetStatementAtOffset_SemicolonInString_NotSplit()
+    {
+        var sql = "SELECT 'a;b'; SELECT 2";
+        Assert.Equal("SELECT 'a;b'", SqlScriptSplitter.GetStatementAtOffset(sql, 5));
+        Assert.Equal("SELECT 2", SqlScriptSplitter.GetStatementAtOffset(sql, 16));
+    }
+
+    [Fact]
+    public void GetStatementAtOffset_CreateBlock_ReturnsWholeBlock()
+    {
+        var sql = @"
+            CREATE TRIGGER trg
+            ON T AFTER INSERT AS
+            BEGIN
+                INSERT INTO AuditLog (Id) SELECT INSERTED.Id FROM INSERTED;
+            END;
+            SELECT 1";
+
+        var blockStart = sql.IndexOf("CREATE TRIGGER", StringComparison.OrdinalIgnoreCase);
+        var blockEnd = sql.IndexOf("END;", StringComparison.OrdinalIgnoreCase) + 3;
+        var afterBlock = sql.IndexOf("SELECT 1", StringComparison.OrdinalIgnoreCase);
+
+        var result = SqlScriptSplitter.GetStatementAtOffset(sql, blockStart + 5);
+        Assert.Contains("CREATE TRIGGER trg", result);
+        Assert.Contains("INSERTED", result);
+
+        Assert.Equal("SELECT 1", SqlScriptSplitter.GetStatementAtOffset(sql, afterBlock));
+    }
+
+    [Fact]
+    public void GetStatementAtOffset_CursorAfterLastStatement_ReturnsLast()
+    {
+        var sql = "SELECT 1; SELECT 2";
+        Assert.Equal("SELECT 2", SqlScriptSplitter.GetStatementAtOffset(sql, sql.Length + 100));
+    }
 }

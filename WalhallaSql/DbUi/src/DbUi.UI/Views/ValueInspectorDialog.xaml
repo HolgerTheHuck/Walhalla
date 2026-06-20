@@ -1,0 +1,93 @@
+<Window x:Class="DbUi.UI.Views.ValueInspectorDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:DbUi.UI.ViewModels.Dialogs"
+        xmlns:conv="clr-namespace:DbUi.UI.Converters"
+        Title="{Binding ColumnName}"
+        Width="720" Height="520"
+        MinWidth="480" MinHeight="320"
+        ResizeMode="CanResize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="{StaticResource BgPanelBrush}">
+
+    <Window.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="Column:" Foreground="{StaticResource FgMainBrush}" Margin="0,0,8,0" />
+            <TextBlock Text="{Binding ColumnName}" FontWeight="Bold" Foreground="{StaticResource FgMainBrush}" />
+            <TextBlock Text="  |  Type:" Foreground="{StaticResource FgMainBrush}" Margin="16,0,8,0" />
+            <TextBlock Text="{Binding ValueType}" Foreground="{StaticResource FgMainBrush}" />
+        </StackPanel>
+
+        <!-- NULL indicator -->
+        <TextBlock Grid.Row="1"
+                  Text="NULL"
+                  FontSize="24"
+                  FontWeight="Bold"
+                  Foreground="#808080"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Visibility="{Binding IsNull, Converter={StaticResource BoolToVis}}" />
+
+        <!-- Text view (default for strings / JSON / hex / etc.) -->
+        <Border Grid.Row="2"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1"
+                Background="{StaticResource BgMainBrush}"
+                Visibility="{Binding IsImage, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                         VerticalScrollBarVisibility="Auto">
+                <TextBox Text="{Binding DisplayText, Mode=OneWay}"
+                          IsReadOnly="True"
+                          IsReadOnlyCaretVisible="False"
+                          FontFamily="Cascadia Code, Consolas, Courier New"
+                          FontSize="13"
+                          Foreground="{StaticResource FgMainBrush}"
+                          Background="Transparent"
+                          BorderThickness="0"
+                          Padding="8"
+                          TextWrapping="NoWrap"
+                          AcceptsReturn="True" />
+            </ScrollViewer>
+        </Border>
+
+        <!-- Image view -->
+        <Border Grid.Row="2"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1"
+                Background="{StaticResource BgMainBrush}"
+                Visibility="{Binding IsImage, Converter={StaticResource BoolToVis}}">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                         VerticalScrollBarVisibility="Auto">
+                <Image Source="{Binding ImageSource}"
+                        Stretch="None"
+                        Margin="8" />
+            </ScrollViewer>
+        </Border>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Copy"
+                    Command="{Binding CopyToClipboardCommand}"
+                    Padding="12,4"
+                    Margin="0,0,8,0" />
+            <Button Content="Close"
+                    IsCancel="True"
+                    IsDefault="True"
+                    Padding="12,4"
+                    Click="OnCloseClick" />
+        </StackPanel>
+    </Grid>
+</Window>

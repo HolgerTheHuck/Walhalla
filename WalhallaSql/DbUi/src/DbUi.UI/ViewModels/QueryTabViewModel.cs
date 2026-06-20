@@ -9,6 +9,7 @@ using DbUi.Core.Providers;
 using DbUi.Core.Queries;
 using DbUi.Core.Workspace;
 using Microsoft.Win32;
+using WalhallaSql.Sql;
 
 namespace DbUi.UI.ViewModels;
 
@@ -41,6 +42,8 @@ public sealed partial class QueryTabViewModel : ObservableObject
 
     [ObservableProperty] private string _title;
     [ObservableProperty] private string _queryText = "";
+    [ObservableProperty] private string _editorSelectedText = "";
+    [ObservableProperty] private int _editorCaretOffset;
     [ObservableProperty] private string _messagesText = "";
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ExportToCsvCommand))]
@@ -53,9 +56,10 @@ public sealed partial class QueryTabViewModel : ObservableObject
     [RelayCommand]
     public async Task ExecuteQueryAsync()
     {
-        if (string.IsNullOrWhiteSpace(QueryText))
+        var queryToExecute = ResolveQueryToExecute();
+        if (string.IsNullOrWhiteSpace(queryToExecute))
         {
-            AppendMessage("Nothing to execute — query editor is empty.");
+            AppendMessage("Nothing to execute — no statement at caret position and no text selected.");
             SelectedResultTabIndex = 1;
             return;
         }
@@ -66,7 +70,7 @@ public sealed partial class QueryTabViewModel : ObservableObject
         AppendMessage("Executing…");
         try
         {
-            var result = await _session.Queries.ExecuteAsync(new QueryRequest(QueryText), _cts.Token);
+            var result = await _session.Queries.ExecuteAsync(new QueryRequest(queryToExecute), _cts.Token);
 
             foreach (var msg in result.Messages)
                 AppendMessage(msg);
@@ -94,6 +98,19 @@ public sealed partial class QueryTabViewModel : ObservableObject
         {
             IsExecuting = false;
         }
+    }
+
+    private string ResolveQueryToExecute()
+    {
+        // 1. Markierter Text hat immer Vorrang (SSMS-Verhalten).
+        if (!string.IsNullOrWhiteSpace(EditorSelectedText))
+            return EditorSelectedText.Trim();
+
+        // 2. Sonst Statement an der Cursor-Position bestimmen.
+        if (string.IsNullOrWhiteSpace(QueryText))
+            return string.Empty;
+
+        return SqlScriptSplitter.GetStatementAtOffset(QueryText, EditorCaretOffset);
     }
 
     [RelayCommand]

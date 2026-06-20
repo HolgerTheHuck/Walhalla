@@ -1,9 +1,16 @@
-using AvalonDock.Themes;
+using System.Data;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Runtime.InteropServices;
+using AvalonDock.Themes;
 using DbUi.UI.ViewModels;
+using DbUi.UI.ViewModels.Dialogs;
 using MahApps.Metro.IconPacks;
+using WpfDataGrid = System.Windows.Controls.DataGrid;
+using WpfDataGridCell = System.Windows.Controls.DataGridCell;
 
 namespace DbUi.UI.Views;
 
@@ -51,6 +58,50 @@ public partial class MainWindow : Window
             icon.Kind = WindowState == WindowState.Maximized
                 ? PackIconMaterialKind.WindowRestore
                 : PackIconMaterialKind.WindowMaximize;
+    }
+
+    private void OnResultDataGridAutoGeneratingColumn(object? sender, DataGridAutoGeneratingColumnEventArgs e)
+    {
+        if (e.Column is DataGridTextColumn textColumn)
+        {
+            var style = new Style(typeof(TextBlock));
+            style.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
+            style.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.NoWrap));
+            textColumn.ElementStyle = style;
+        }
+    }
+
+    private void OnResultDataGridDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not WpfDataGrid grid) return;
+        if (e.OriginalSource is not DependencyObject source) return;
+
+        var cell = FindParentOfType<WpfDataGridCell>(source);
+        if (cell == null || cell.Column == null) return;
+
+        if (grid.SelectedCells.Count == 0)
+            return;
+
+        var selectedCell = grid.SelectedCells[0];
+        if (selectedCell.Item is not DataRowView rowView)
+            return;
+
+        var columnName = selectedCell.Column.Header?.ToString() ?? "Value";
+        var value = rowView.Row[columnName];
+
+        var vm = new ValueInspectorViewModel(columnName, value);
+        var dialog = new ValueInspectorDialog { DataContext = vm, Owner = this };
+        dialog.ShowDialog();
+    }
+
+    private static T? FindParentOfType<T>(DependencyObject? child) where T : DependencyObject
+    {
+        while (child != null)
+        {
+            if (child is T parent) return parent;
+            child = VisualTreeHelper.GetParent(child);
+        }
+        return null;
     }
 
     private void ApplyDwmDarkMode()

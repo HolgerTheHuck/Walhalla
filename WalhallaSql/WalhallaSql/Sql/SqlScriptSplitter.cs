@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace WalhallaSql.Sql;
@@ -12,6 +13,119 @@ namespace WalhallaSql.Sql;
 /// </summary>
 public static class SqlScriptSplitter
 {
+    /// <summary>
+    /// Ermittelt das SQL-Statement, das den angegebenen Offset in der
+    /// ursprünglichen Eingabe enthält. Liegt der Offset zwischen zwei
+    /// Statements (Whitespace/Kommentar), wird das naechste nicht-leere
+    /// Statement zurueckgegeben. String-Literale, Blockkommentare und
+    /// CREATE PROCEDURE/TRIGGER-Blöcke werden korrekt übersprungen.
+    /// </summary>
+    public static string GetStatementAtOffset(string sql, int offset)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+            return string.Empty;
+
+        offset = Math.Clamp(offset, 0, sql.Length);
+
+        int i = 0;
+        int statementStart = 0;
+        bool inString = false;
+
+        while (i < sql.Length)
+        {
+            var c = sql[i];
+
+            // String-Literal überspringen (inklusive escaped '')
+            if (c == '\'')
+            {
+                if (inString && i + 1 < sql.Length && sql[i + 1] == '\'')
+                {
+                    i += 2;
+                    continue;
+                }
+                inString = !inString;
+                i++;
+                continue;
+            }
+
+            if (inString)
+            {
+                i++;
+                continue;
+            }
+
+            var remaining = sql[i..];
+            if (StartsWithCreateProcedureOrTrigger(remaining))
+            {
+                var end = FindEndOfCreateBlock(sql, i);
+                // Wenn der Cursor innerhalb des CREATE-Blocks liegt, den Block
+                // als Ganzes zurueckgeben.
+                if (offset >= statementStart && offset < end)
+                    return sql[statementStart..end].Trim();
+                i = end;
+                statementStart = i;
+                continue;
+            }
+
+            // Blockkommentar überspringen
+            if (c == '/' && i + 1 < sql.Length && sql[i + 1] == '*')
+            {
+                i += 2;
+                while (i + 1 < sql.Length && !(sql[i] == '*' && sql[i + 1] == '/'))
+                    i++;
+                if (i + 1 < sql.Length)
+                    i += 2;
+                continue;
+            }
+
+            // Zeilenkommentar überspringen
+            if (c == '-' && i + 1 < sql.Length && sql[i + 1] == '-')
+            {
+                while (i < sql.Length && sql[i] != '\n')
+                    i++;
+                if (i < sql.Length)
+                    i++;
+                continue;
+            }
+
+            if (c == ';')
+            {
+                if (offset >= statementStart && offset <= i)
+                {
+                    var fragment = sql[statementStart..i].Trim();
+                    return string.IsNullOrWhiteSpace(fragment)
+                        ? FindNextStatement(sql, i + 1)
+                        : fragment;
+                }
+                statementStart = i + 1;
+            }
+
+            i++;
+        }
+
+        if (offset >= statementStart)
+        {
+            var lastFragment = sql[statementStart..].Trim();
+            return string.IsNullOrWhiteSpace(lastFragment)
+                ? FindPreviousStatement(sql, offset)
+                : lastFragment;
+        }
+
+        return FindNextStatement(sql, offset);
+    }
+
+    private static string FindNextStatement(string sql, int startIndex)
+    {
+        var split = Split(sql[startIndex..]);
+        return split.FirstOrDefault() ?? string.Empty;
+    }
+
+    private static string FindPreviousStatement(string sql, int offset)
+    {
+        var split = Split(sql[..offset]);
+        return split.LastOrDefault() ?? string.Empty;
+    }
+
     /// <summary>
     /// Teilt das SQL an Semikolons auf dem obersten Syntax-Level in einzelne
     /// Statements. CREATE PROCEDURE/TRIGGER-Blöcke werden als Ganzes erkannt,

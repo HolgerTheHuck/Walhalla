@@ -38,6 +38,8 @@
                 <controls:BindableTextEditor
                     Grid.Row="0"
                     BindableText="{Binding QueryText, UpdateSourceTrigger=PropertyChanged}"
+                    EditorSelectedText="{Binding EditorSelectedText, Mode=OneWayToSource, UpdateSourceTrigger=PropertyChanged}"
+                    EditorCaretOffset="{Binding EditorCaretOffset, Mode=OneWayToSource, UpdateSourceTrigger=PropertyChanged}"
                     CatalogSnapshot="{Binding CatalogSnapshot}"
                     FontFamily="Cascadia Code, Consolas, Courier New"
                     FontSize="13"
@@ -87,8 +89,11 @@
                                       SelectionMode="Extended"
                                       SelectionUnit="Cell"
                                       VirtualizingPanel.IsVirtualizing="True"
-                                      VirtualizingPanel.VirtualizationMode="Recycling"
-                                      ClipboardCopyMode="IncludeHeader" />
+                                      VirtualizingPanel.VirtualizationMode="Standard"
+                                      MaxColumnWidth="400"
+                                      ClipboardCopyMode="IncludeHeader"
+                                      MouseDoubleClick="OnResultDataGridDoubleClick"
+                                      AutoGeneratingColumn="OnResultDataGridAutoGeneratingColumn" />
                         </DockPanel>
                     </TabItem>
                     <TabItem Header="Messages">
@@ -416,6 +421,24 @@
                                                             <MenuItem Header="EXEC"
                                                                       Command="{Binding ScriptExecCommand}" />
                                                             <MenuItem Header="ALTER"
+                                                                      Command="{Binding ScriptEditCommand}" />
+                                                            <MenuItem Header="DROP"
+                                                                      Command="{Binding ScriptDropCommand}" />
+                                                        </ContextMenu>
+                                                    </TextBlock.ContextMenu>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </DataTemplate>
+
+                                        <DataTemplate DataType="{x:Type oe:TriggerNode}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="LightningBolt"
+                                                    Width="14" Height="14" VerticalAlignment="Center"
+                                                    Foreground="#FFD700" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}">
+                                                    <TextBlock.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="EDIT"
                                                                       Command="{Binding ScriptEditCommand}" />
                                                             <MenuItem Header="DROP"
                                                                       Command="{Binding ScriptDropCommand}" />

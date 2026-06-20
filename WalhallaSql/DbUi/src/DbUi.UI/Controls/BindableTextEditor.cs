@@ -26,6 +26,76 @@ public sealed class BindableTextEditor : TextEditor
         LoadSyntaxHighlighting();
         TextChanged += OnEditorTextChanged;
         PreviewKeyDown += OnPreviewKeyDown;
+        TextArea.Caret.PositionChanged += OnCaretPositionChanged;
+        TextArea.SelectionChanged += OnSelectionChanged;
+    }
+
+    // ── Caret / Selection bindable properties ───────────────────────────
+    // Umbenannt, damit sie die gleichnamigen AvalonEdit-Member nicht verdecken.
+
+    public static readonly DependencyProperty EditorCaretOffsetProperty =
+        DependencyProperty.Register(
+            nameof(EditorCaretOffset),
+            typeof(int),
+            typeof(BindableTextEditor),
+            new PropertyMetadata(0));
+
+    public int EditorCaretOffset
+    {
+        get => (int)GetValue(EditorCaretOffsetProperty);
+        set => SetValue(EditorCaretOffsetProperty, value);
+    }
+
+    public static readonly DependencyProperty EditorSelectedTextProperty =
+        DependencyProperty.Register(
+            nameof(EditorSelectedText),
+            typeof(string),
+            typeof(BindableTextEditor),
+            new PropertyMetadata(string.Empty));
+
+    public string EditorSelectedText
+    {
+        get => (string)GetValue(EditorSelectedTextProperty);
+        set => SetValue(EditorSelectedTextProperty, value);
+    }
+
+    public static readonly DependencyProperty EditorSelectionStartProperty =
+        DependencyProperty.Register(
+            nameof(EditorSelectionStart),
+            typeof(int),
+            typeof(BindableTextEditor),
+            new PropertyMetadata(0));
+
+    public int EditorSelectionStart
+    {
+        get => (int)GetValue(EditorSelectionStartProperty);
+        set => SetValue(EditorSelectionStartProperty, value);
+    }
+
+    public static readonly DependencyProperty EditorSelectionLengthProperty =
+        DependencyProperty.Register(
+            nameof(EditorSelectionLength),
+            typeof(int),
+            typeof(BindableTextEditor),
+            new PropertyMetadata(0));
+
+    public int EditorSelectionLength
+    {
+        get => (int)GetValue(EditorSelectionLengthProperty);
+        set => SetValue(EditorSelectionLengthProperty, value);
+    }
+
+    private void OnCaretPositionChanged(object? sender, EventArgs e)
+        => EditorCaretOffset = TextArea.Caret.Offset;
+
+    private void OnSelectionChanged(object? sender, EventArgs e)
+    {
+        var selection = TextArea.Selection;
+        EditorSelectedText = selection.IsEmpty ? string.Empty : selection.GetText();
+        EditorSelectionStart = selection.IsEmpty
+            ? EditorCaretOffset
+            : Document.GetOffset(selection.StartPosition.Line, selection.StartPosition.Column);
+        EditorSelectionLength = selection.IsEmpty ? 0 : Math.Max(selection.Length, 0);
     }
 
     // ── CatalogSnapshot dependency property ─────────────────────────────
