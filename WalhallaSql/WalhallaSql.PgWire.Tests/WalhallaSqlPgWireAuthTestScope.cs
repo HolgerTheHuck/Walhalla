@@ -34,13 +34,24 @@ internal sealed class WalhallaSqlPgWireAuthTestScope : IAsyncDisposable
     public string ConnectionString =>
         $"Host=127.0.0.1;Port={_server.BoundPort};Database=WalhallaSql;User Id={_userName};Password={_password};Pooling=false;Timeout=5;Command Timeout=10";
 
-    public static async Task<WalhallaSqlPgWireAuthTestScope> CreateAsync(string userName, string password)
+    public WalhallaEngine Engine => _engine;
+
+    public NpgsqlConnection OpenConnectionAs(string userName, string password)
+    {
+        var cs = $"Host=127.0.0.1;Port={_server.BoundPort};Database=WalhallaSql;User Id={userName};Password={password};Pooling=false;Timeout=5;Command Timeout=10";
+        return new NpgsqlConnection(cs);
+    }
+
+    public static Task<WalhallaSqlPgWireAuthTestScope> CreateAsync(string userName, string password)
+        => CreateAsync(userName, password, canLogin: true);
+
+    public static async Task<WalhallaSqlPgWireAuthTestScope> CreateAsync(string userName, string password, bool canLogin)
     {
         var tempPath = Path.Combine(Path.GetTempPath(), "WalhallaSqlPgWireTests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempPath);
 
         var engine = new WalhallaEngine(new WalhallaOptions(tempPath));
-        engine.AuthIdCatalog.CreateRole(userName, password);
+        engine.AuthIdCatalog.CreateRole(userName, password, canLogin, isSuperuser: false);
 
         var backend = new WalhallaSqlPgWireBackend(engine);
         var server = new PgWireServer(backend, host: "127.0.0.1", port: 0);

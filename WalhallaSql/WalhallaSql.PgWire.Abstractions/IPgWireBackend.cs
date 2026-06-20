@@ -59,12 +59,31 @@ public interface IPgWireBackendConnection : IDisposable
 
     /// <summary>
     /// Attempts to retrieve the stored SCRAM-SHA-256 hash for a user.
-    /// Return false if the user does not exist or auth is not configured.
+    /// Return false if the user does not exist, is not allowed to login, or auth is not configured.
     /// </summary>
     bool TryGetStoredHash(string username, out string storedHash)
     {
         storedHash = string.Empty;
         return false;
+    }
+
+    /// <summary>
+    /// Returns whether the supplied user name is known to the backend.
+    /// Used by the PgWire server to distinguish "unknown user → trust" from
+    /// "known user but not allowed to login → reject".
+    /// </summary>
+    bool IsKnownUser(string username)
+    {
+        return false;
+    }
+
+    /// <summary>
+    /// Sets the current database user for the backend session.
+    /// Called by the PgWire server after successful authentication.
+    /// </summary>
+    void SetCurrentUser(string username)
+    {
+        // Default no-op for backends without user-level security.
     }
 
     /// <summary>

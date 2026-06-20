@@ -243,13 +243,21 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
 
     public bool TryGetStoredHash(string username, out string storedHash)
     {
-        if (_engine.AuthIdCatalog.TryGetRole(username, out var entry))
+        if (_engine.AuthIdCatalog.TryGetRole(username, out var entry) && entry.CanLogin)
         {
             storedHash = entry.Rolpassword;
             return true;
         }
         storedHash = string.Empty;
         return false;
+    }
+
+    public bool IsKnownUser(string username)
+        => _engine.AuthIdCatalog.TryGetRole(username, out _);
+
+    public void SetCurrentUser(string username)
+    {
+        _engine.CurrentRole = username;
     }
 
     private static string NormalizeParameterName(string name)

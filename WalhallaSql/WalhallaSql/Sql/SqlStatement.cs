@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using WalhallaSql.Catalog;
 
 namespace WalhallaSql.Sql;
 
@@ -234,6 +235,35 @@ public sealed record SqlVacuumStatement(string? TableName) : SqlStatement;
 public sealed record SqlAnalyzeStatement(string? TableName) : SqlStatement;
 
 public sealed record SqlDescribeStatement(string TableName) : SqlStatement;
+
+// ── Roles & Grants ───────────────────────────────────────────────────────────────
+
+public sealed record SqlCreateRoleStatement(
+    string RoleName,
+    string Password,
+    bool CanLogin,
+    bool IsSuperuser) : SqlStatement;
+
+public sealed record SqlAlterRoleStatement(
+    string RoleName,
+    string? NewPassword = null,
+    bool? IsSuperuser = null) : SqlStatement;
+
+public sealed record SqlDropRoleStatement(
+    string RoleName,
+    bool IfExists = false) : SqlStatement;
+
+public sealed record SqlGrantStatement(
+    IReadOnlyList<GrantPrivilege> Privileges,
+    GrantObjectType ObjectType,
+    string ObjectName,
+    string Grantee) : SqlStatement;
+
+public sealed record SqlRevokeStatement(
+    IReadOnlyList<GrantPrivilege> Privileges,
+    GrantObjectType ObjectType,
+    string ObjectName,
+    string Grantee) : SqlStatement;
 
 public sealed record SqlSetTransactionStatement(string IsolationLevelName) : SqlStatement;
 

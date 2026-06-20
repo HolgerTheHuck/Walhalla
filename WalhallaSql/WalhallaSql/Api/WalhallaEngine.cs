@@ -49,9 +49,23 @@ public sealed class WalhallaEngine : IDisposable
     private TransactionMode? _transactionMode;
     private readonly StatisticsCatalog _statisticsCatalog = new();
     private readonly AuthIdCatalog _authIdCatalog;
+    private readonly GrantCatalog _grantCatalog;
 
     internal bool UseMvcc => _transactionMode == TransactionMode.Mvcc
         || (_transactionMode == null && _options.StorageMode == StorageMode.MvccBPlusTree);
+
+    private readonly AsyncLocal<string> _currentRole = new();
+
+    /// <summary>
+    /// Aktuelle Sitzungsrolle fuer Rechtepruefungen. Ueber <see cref="AsyncLocal{T}">/>
+    /// wird die Rolle pro asynchronem Kontext (PgWire-Backend-Session) getrennt gehalten,
+    /// damit parallele Verbindungen sich nicht gegenseitig ueberschreiben.
+    /// </summary>
+    public string CurrentRole
+    {
+        get => _currentRole.Value ?? "postgres";
+        set => _currentRole.Value = value;
+    }
 
     public long PlanCacheHits => Volatile.Read(ref _planCacheHits);
     public long PlanCacheMisses => Volatile.Read(ref _planCacheMisses);
@@ -93,6 +107,14 @@ public sealed class WalhallaEngine : IDisposable
         _store = new TableStore(options);
         _authIdCatalog = new AuthIdCatalog(
             options.StorageMode != StorageMode.InMemory ? options.RootPath : null);
+        _grantCatalog = new GrantCatalog(
+            options.StorageMode != StorageMode.InMemory ? options.RootPath : null);
+
+        if (_authIdCatalog.Count == 0)
+        {
+            _authIdCatalog.CreateRole("postgres", "postgres", canLogin: true, isSuperuser: true);
+        }
+
         LoadStatisticsFromStore();
 
         var cacheCapacity = ParsePlanCacheCapacity();
@@ -403,6 +425,21 @@ public sealed class WalhallaEngine : IDisposable
 
             case SqlAnalyzeStatement analyze:
                 return ExecuteAnalyze(analyze);
+
+            case SqlCreateRoleStatement createRole:
+                return ExecuteCreateRole(createRole);
+
+            case SqlAlterRoleStatement alterRole:
+                return ExecuteAlterRole(alterRole);
+
+            case SqlDropRoleStatement dropRole:
+                return ExecuteDropRole(dropRole);
+
+            case SqlGrantStatement grant:
+                return ExecuteGrant(grant);
+
+            case SqlRevokeStatement revoke:
+                return ExecuteRevoke(revoke);
 
             default:
                 throw new NotSupportedException($"Statement type '{statement.GetType().Name}' is not supported.");
@@ -880,6 +917,21 @@ public sealed class WalhallaEngine : IDisposable
             case SqlAnalyzeStatement analyze:
                 return ExecuteAnalyze(analyze);
 
+            case SqlCreateRoleStatement createRole:
+                return ExecuteCreateRole(createRole);
+
+            case SqlAlterRoleStatement alterRole:
+                return ExecuteAlterRole(alterRole);
+
+            case SqlDropRoleStatement dropRole:
+                return ExecuteDropRole(dropRole);
+
+            case SqlGrantStatement grant:
+                return ExecuteGrant(grant);
+
+            case SqlRevokeStatement revoke:
+                return ExecuteRevoke(revoke);
+
             default:
                 throw new NotSupportedException(
                     $"Statement type '{statement.GetType().Name}' is not supported inside a transaction.");
@@ -899,6 +951,7 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteVacuum(SqlVacuumStatement vacuum)
     {
+        EnsureSuperuser("VACUUM");
         if (vacuum.TableName != null)
         {
             var tableDef = _store.GetTableDefinition(vacuum.TableName);
@@ -914,6 +967,7 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteAnalyze(SqlAnalyzeStatement analyze)
     {
+        EnsureSuperuser("ANALYZE");
         IReadOnlyList<SqlTableDefinition> tables;
         if (analyze.TableName != null)
         {
@@ -946,6 +1000,115 @@ public sealed class WalhallaEngine : IDisposable
         WalhallaDiagnostics.AnalyzeDurationMs.Record(sw.ElapsedMilliseconds);
 
         return WalhallaResultSet.Affected(analyzed);
+    }
+
+    // ── Roles & Grants ───────────────────────────────────────────────────────
+
+    private WalhallaResultSet ExecuteCreateRole(SqlCreateRoleStatement createRole)
+    {
+        EnsureSuperuser("CREATE ROLE");
+        _authIdCatalog.CreateRole(
+            createRole.RoleName,
+            createRole.Password,
+            createRole.CanLogin,
+            createRole.IsSuperuser);
+        return WalhallaResultSet.Affected(0);
+    }
+
+    private WalhallaResultSet ExecuteAlterRole(SqlAlterRoleStatement alterRole)
+    {
+        EnsureSuperuser("ALTER ROLE");
+
+        if (alterRole.NewPassword != null)
+        {
+            if (!_authIdCatalog.AlterRolePassword(alterRole.RoleName, alterRole.NewPassword))
+                throw new WalhallaException($"Role '{alterRole.RoleName}' not found.");
+        }
+
+        if (alterRole.IsSuperuser.HasValue)
+        {
+            if (!_authIdCatalog.AlterRoleSuperuser(alterRole.RoleName, alterRole.IsSuperuser.Value))
+                throw new WalhallaException($"Role '{alterRole.RoleName}' not found.");
+        }
+
+        return WalhallaResultSet.Affected(0);
+    }
+
+    private WalhallaResultSet ExecuteDropRole(SqlDropRoleStatement dropRole)
+    {
+        EnsureSuperuser("DROP ROLE");
+        var removed = _authIdCatalog.DropRole(dropRole.RoleName);
+        if (!removed && !dropRole.IfExists)
+            throw new WalhallaException($"Role '{dropRole.RoleName}' not found.");
+
+        _grantCatalog.RevokeAllForGrantee(dropRole.RoleName);
+        return WalhallaResultSet.Affected(0);
+    }
+
+    private WalhallaResultSet ExecuteGrant(SqlGrantStatement grant)
+    {
+        EnsureSuperuser("GRANT");
+        foreach (var privilege in grant.Privileges)
+        {
+            _grantCatalog.Grant(new GrantEntry(grant.Grantee, grant.ObjectType, grant.ObjectName, privilege));
+        }
+
+        return WalhallaResultSet.Affected(0);
+    }
+
+    private WalhallaResultSet ExecuteRevoke(SqlRevokeStatement revoke)
+    {
+        EnsureSuperuser("REVOKE");
+        foreach (var privilege in revoke.Privileges)
+        {
+            _grantCatalog.Revoke(new GrantEntry(revoke.Grantee, revoke.ObjectType, revoke.ObjectName, privilege));
+        }
+
+        return WalhallaResultSet.Affected(0);
+    }
+
+    private void EnsureSuperuser(string operation)
+    {
+        if (!_authIdCatalog.TryGetRole(CurrentRole, out var role))
+            throw new WalhallaException($"Role '{CurrentRole}' does not exist.", "42501");
+
+        if (!role.IsSuperuser)
+            throw new WalhallaException($"Operation '{operation}' requires superuser privileges.", "42501");
+    }
+
+    private bool HasTablePrivilege(string tableName, GrantPrivilege privilege)
+    {
+        if (!_authIdCatalog.TryGetRole(CurrentRole, out var role))
+            return false;
+
+        return role.IsSuperuser
+            || _grantCatalog.HasPrivilege(CurrentRole, GrantObjectType.Table, tableName, privilege);
+    }
+
+    private bool HasProcedurePrivilege(string procedureName, GrantPrivilege privilege)
+    {
+        if (!_authIdCatalog.TryGetRole(CurrentRole, out var role))
+            return false;
+
+        return role.IsSuperuser
+            || _grantCatalog.HasPrivilege(CurrentRole, GrantObjectType.Procedure, procedureName, privilege);
+    }
+
+    private void EnsureTablePrivilege(string tableName, GrantPrivilege privilege)
+    {
+        if (tableName.StartsWith("__dt_", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (!HasTablePrivilege(tableName, privilege))
+            throw new WalhallaException(
+                $"Role '{CurrentRole}' is not granted {privilege} privilege on '{tableName}'.", "42501");
+    }
+
+    private void EnsureProcedurePrivilege(string procedureName, GrantPrivilege privilege)
+    {
+        if (!HasProcedurePrivilege(procedureName, privilege))
+            throw new WalhallaException(
+                $"Role '{CurrentRole}' is not granted {privilege} privilege on procedure '{procedureName}'.", "42501");
     }
 
     // -- Execute implementations ------------------------------------------------
@@ -1086,6 +1249,8 @@ public sealed class WalhallaEngine : IDisposable
     private WalhallaResultSet ExecuteSelect(SqlSelectStatement select, string? planCacheKey = null,
         ITransaction<byte[], byte[]>? storageTx = null)
     {
+        EnsureTablePrivilege(select.TableName, GrantPrivilege.Select);
+
         // Resolve views: redirect to the underlying SELECT
         SqlCreateViewStatement? viewDef;
         lock (_metaSync)
@@ -1654,6 +1819,7 @@ public sealed class WalhallaEngine : IDisposable
             && select.Columns.Count == 1
             && select.Columns[0].Aggregate is { Function: SqlAggregateFunction.Count, Argument: null })
         {
+            EnsureTablePrivilege(select.TableName, GrantPrivilege.Select);
             var count = _store.CountRows(plan.TableId);
             var fastResult = new object?[plan.OutputColumnNames.Length];
             fastResult[0] = count;
@@ -1785,6 +1951,9 @@ public sealed class WalhallaEngine : IDisposable
             return null;
 
         var tableName = tableSpan.ToString();
+        if (!HasTablePrivilege(tableName, GrantPrivilege.Select))
+            return null;
+
         var tableDef = _store.GetTableDefinition(tableName);
         if (tableDef == null) return null;
 
@@ -1973,6 +2142,8 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteInsert(SqlInsertStatement insert, WalhallaSqlTransaction? transaction)
     {
+        EnsureTablePrivilege(insert.TableName, GrantPrivilege.Insert);
+
         if (transaction != null)
             return ExecuteInsertBuffered(insert, transaction);
 
@@ -2107,6 +2278,7 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteInsertSelect(SqlInsertSelectStatement insertSelect)
     {
+        EnsureSuperuser("INSERT ... SELECT");
         var tableDef = _store.GetTableDefinition(insertSelect.TableName)
             ?? throw new WalhallaException($"Table '{insertSelect.TableName}' not found.");
 
@@ -2350,6 +2522,7 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteMerge(SqlMergeStatement merge, WalhallaSqlTransaction? transaction = null)
     {
+        EnsureSuperuser("MERGE");
         var targetDef = _store.GetTableDefinition(merge.TargetTable)
             ?? throw new WalhallaException($"Target table '{merge.TargetTable}' not found.");
         var sourceDef = _store.GetTableDefinition(merge.SourceTable)
@@ -2771,6 +2944,7 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteCreateTable(SqlCreateTableStatement create)
     {
+        EnsureSuperuser("CREATE TABLE");
         InvalidatePlanCache();
         BumpSchemaVersion(create.Definition.CollectionName);
         if (create.Definition.CheckConstraints is { Count: > 0 } checks)
@@ -2781,6 +2955,7 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteDropTable(SqlDropTableStatement drop)
     {
+        EnsureSuperuser("DROP TABLE");
         InvalidatePlanCache();
         BumpSchemaVersion(drop.TableName);
 
@@ -2811,11 +2986,14 @@ public sealed class WalhallaEngine : IDisposable
         }
         lock (_metaSync)
             _views.Remove(drop.TableName);
+
+        _grantCatalog.RevokeAllForObject(GrantObjectType.Table, drop.TableName);
         return WalhallaResultSet.Affected(0);
     }
 
     private WalhallaResultSet ExecuteTruncateTable(SqlTruncateTableStatement truncate)
     {
+        EnsureSuperuser("TRUNCATE TABLE");
         var tableDef = _store.GetTableDefinition(truncate.TableName)
             ?? throw new WalhallaException($"Table '{truncate.TableName}' not found.");
         var tableId = _store.GetTableId(truncate.TableName);
@@ -2829,6 +3007,7 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteAlterTable(SqlAlterTableStatement alter)
     {
+        EnsureSuperuser("ALTER TABLE");
         InvalidatePlanCache();
         BumpSchemaVersion(alter.TableName);
         var tableDef = _store.GetTableDefinition(alter.TableName)
@@ -3118,6 +3297,7 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteCreateView(SqlCreateViewStatement createView)
     {
+        EnsureSuperuser("CREATE VIEW");
         InvalidatePlanCache();
         lock (_metaSync)
             _views[createView.ViewName] = createView;
@@ -3126,14 +3306,18 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteDropView(SqlDropViewStatement dropView)
     {
+        EnsureSuperuser("DROP VIEW");
         InvalidatePlanCache();
         lock (_metaSync)
             _views.Remove(dropView.ViewName);
+
+        _grantCatalog.RevokeAllForObject(GrantObjectType.View, dropView.ViewName);
         return WalhallaResultSet.Affected(0);
     }
 
     private WalhallaResultSet ExecuteCreateIndex(SqlCreateIndexStatement createIndex)
     {
+        EnsureSuperuser("CREATE INDEX");
         InvalidatePlanCache();
         BumpSchemaVersion(createIndex.TableName);
         var tableDef = _store.GetTableDefinition(createIndex.TableName)
@@ -3229,6 +3413,7 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteDropIndex(SqlDropIndexStatement dropIndex)
     {
+        EnsureSuperuser("DROP INDEX");
         InvalidatePlanCache();
         BumpSchemaVersion(dropIndex.TableName);
         var tableDef = _store.GetTableDefinition(dropIndex.TableName)
@@ -3257,6 +3442,8 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteUpdate(SqlUpdateStatement update)
     {
+        EnsureTablePrivilege(update.TableName, GrantPrivilege.Update);
+
         var tableDef = _store.GetTableDefinition(update.TableName)
             ?? throw new WalhallaException($"Table '{update.TableName}' not found.");
 
@@ -3353,6 +3540,8 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteDelete(SqlDeleteStatement delete)
     {
+        EnsureTablePrivilege(delete.TableName, GrantPrivilege.Delete);
+
         var tableDef = _store.GetTableDefinition(delete.TableName)
             ?? throw new WalhallaException($"Table '{delete.TableName}' not found.");
 
@@ -4508,6 +4697,7 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteCreateProcedure(SqlCreateProcedureStatement stmt)
     {
+        EnsureSuperuser("CREATE PROCEDURE");
         lock (_metaSync)
         {
             if (_procedures.ContainsKey(stmt.ProcedureName) && !stmt.OrReplace)
@@ -4524,17 +4714,22 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteDropProcedure(SqlDropProcedureStatement stmt)
     {
+        EnsureSuperuser("DROP PROCEDURE");
         lock (_metaSync)
         {
             if (!_procedures.Remove(stmt.ProcedureName) && !stmt.IfExists)
                 throw new WalhallaException($"Procedure '{stmt.ProcedureName}' not found.");
             _compiledProcedures.Remove(stmt.ProcedureName);
         }
+
+        _grantCatalog.RevokeAllForObject(GrantObjectType.Procedure, stmt.ProcedureName);
         return WalhallaResultSet.Affected(0);
     }
 
     private WalhallaResultSet ExecuteExec(SqlExecStatement exec)
     {
+        EnsureProcedurePrivilege(exec.ProcedureName, GrantPrivilege.Execute);
+
         SqlStoredProcedureDefinition? proc;
         lock (_metaSync)
         {
@@ -4748,6 +4943,7 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteCreateTrigger(SqlCreateTriggerStatement stmt)
     {
+        EnsureSuperuser("CREATE TRIGGER");
         lock (_metaSync)
         {
             if (!_triggersByTable.TryGetValue(stmt.TableName, out var list))
@@ -4779,6 +4975,7 @@ public sealed class WalhallaEngine : IDisposable
 
     private WalhallaResultSet ExecuteDropTrigger(SqlDropTriggerStatement stmt)
     {
+        EnsureSuperuser("DROP TRIGGER");
         lock (_metaSync)
         {
             foreach (var (tableName, list) in _triggersByTable)

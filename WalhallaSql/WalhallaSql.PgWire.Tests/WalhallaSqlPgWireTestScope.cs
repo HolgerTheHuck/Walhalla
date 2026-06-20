@@ -39,6 +39,8 @@ internal sealed class WalhallaSqlPgWireTestScope : IAsyncDisposable
         Directory.CreateDirectory(tempPath);
 
         var engine = new WalhallaEngine(new WalhallaOptions(tempPath));
+        engine.AuthIdCatalog.CreateRole("test", "test", canLogin: true, isSuperuser: true);
+
         var backend = new WalhallaSqlPgWireBackend(engine);
 
         var server = new PgWireServer(backend, host: "127.0.0.1", port: 0);

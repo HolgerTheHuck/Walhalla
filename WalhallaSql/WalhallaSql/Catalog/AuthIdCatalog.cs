@@ -48,6 +48,12 @@ public sealed class AuthIdCatalog
     /// Creates a role with a SCRAM-SHA-256 hashed password.
     /// </summary>
     public void CreateRole(string rolname, string plainPassword, int iterations = 4096)
+        => CreateRole(rolname, plainPassword, canLogin: true, isSuperuser: false, iterations);
+
+    /// <summary>
+    /// Creates a role with a SCRAM-SHA-256 hashed password and role flags.
+    /// </summary>
+    public void CreateRole(string rolname, string plainPassword, bool canLogin, bool isSuperuser, int iterations = 4096)
     {
         if (string.IsNullOrWhiteSpace(rolname))
             throw new ArgumentException("Role name must not be empty.", nameof(rolname));
@@ -57,8 +63,49 @@ public sealed class AuthIdCatalog
         var hash = ScramHashPassword(plainPassword, iterations);
         lock (_sync)
         {
-            _entries[rolname] = new AuthIdEntry(rolname, hash);
+            _entries[rolname] = new AuthIdEntry(rolname, hash, canLogin, isSuperuser);
             SaveLocked();
+        }
+    }
+
+    /// <summary>
+    /// Changes the password of an existing role.
+    /// </summary>
+    public bool AlterRolePassword(string rolname, string plainPassword, int iterations = 4096)
+    {
+        if (string.IsNullOrWhiteSpace(rolname))
+            throw new ArgumentException("Role name must not be empty.", nameof(rolname));
+        if (string.IsNullOrEmpty(plainPassword))
+            throw new ArgumentException("Password must not be empty.", nameof(plainPassword));
+
+        var hash = ScramHashPassword(plainPassword, iterations);
+        lock (_sync)
+        {
+            if (!_entries.TryGetValue(rolname, out var existing))
+                return false;
+
+            _entries[rolname] = existing with { Rolpassword = hash };
+            SaveLocked();
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Changes the superuser flag of an existing role.
+    /// </summary>
+    public bool AlterRoleSuperuser(string rolname, bool isSuperuser)
+    {
+        if (string.IsNullOrWhiteSpace(rolname))
+            throw new ArgumentException("Role name must not be empty.", nameof(rolname));
+
+        lock (_sync)
+        {
+            if (!_entries.TryGetValue(rolname, out var existing))
+                return false;
+
+            _entries[rolname] = existing with { IsSuperuser = isSuperuser };
+            SaveLocked();
+            return true;
         }
     }
 
@@ -230,7 +277,11 @@ public sealed class AuthIdCatalog
                 foreach (var dto in dtos)
                 {
                     if (!string.IsNullOrWhiteSpace(dto.Rolname) && !string.IsNullOrEmpty(dto.Rolpassword))
-                        _entries[dto.Rolname] = new AuthIdEntry(dto.Rolname, dto.Rolpassword);
+                        _entries[dto.Rolname] = new AuthIdEntry(
+                            dto.Rolname,
+                            dto.Rolpassword,
+                            dto.CanLogin,
+                            dto.IsSuperuser);
                 }
             }
         }
@@ -244,7 +295,7 @@ public sealed class AuthIdCatalog
     {
         if (_persistPath == null) return;
 
-        var dtos = _entries.Values.Select(e => new AuthIdEntryDto(e.Rolname, e.Rolpassword)).ToList();
+        var dtos = _entries.Values.Select(e => new AuthIdEntryDto(e.Rolname, e.Rolpassword, e.CanLogin, e.IsSuperuser)).ToList();
         var json = JsonSerializer.Serialize(dtos, new JsonSerializerOptions
         {
             WriteIndented = true,
@@ -293,20 +344,10 @@ public sealed class AuthIdCatalog
         }
     }
 
-    private sealed record AuthIdEntryDto(string Rolname, string Rolpassword);
+    private sealed record AuthIdEntryDto(string Rolname, string Rolpassword, bool CanLogin = true, bool IsSuperuser = false);
 }
 
 /// <summary>
 /// A single authentication identity entry.
 /// </summary>
-public sealed class AuthIdEntry
-{
-    public AuthIdEntry(string rolname, string rolpassword)
-    {
-        Rolname = rolname ?? throw new ArgumentNullException(nameof(rolname));
-        Rolpassword = rolpassword ?? throw new ArgumentNullException(nameof(rolpassword));
-    }
-
-    public string Rolname { get; }
-    public string Rolpassword { get; }
-}
+public sealed record AuthIdEntry(string Rolname, string Rolpassword, bool CanLogin = true, bool IsSuperuser = false);

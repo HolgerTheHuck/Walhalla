@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using WalhallaSql.Catalog;
 using WalhallaSql.Sql;
 
 namespace WalhallaSql.Parsing;
@@ -126,6 +127,21 @@ internal static class SqlStatementParser
 
         if (SqlSyntaxText.StartsWithKeyword(normalized, "COPY"))
             return ParseCopy(normalized);
+
+        if (SqlSyntaxText.StartsWithKeyword(normalized, "CREATE ROLE"))
+            return ParseCreateRole(normalized);
+
+        if (SqlSyntaxText.StartsWithKeyword(normalized, "ALTER ROLE"))
+            return ParseAlterRole(normalized);
+
+        if (SqlSyntaxText.StartsWithKeyword(normalized, "DROP ROLE"))
+            return ParseDropRole(normalized);
+
+        if (SqlSyntaxText.StartsWithKeyword(normalized, "GRANT"))
+            return ParseGrant(normalized);
+
+        if (SqlSyntaxText.StartsWithKeyword(normalized, "REVOKE"))
+            return ParseRevoke(normalized);
 
         throw new NotSupportedException($"SQL statement type not supported: '{normalized[..Math.Min(normalized.Length, 80)]}'.");
     }
@@ -2933,5 +2949,232 @@ internal static class SqlStatementParser
         if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
             return raw[1..^1];
         return raw;
+    }
+
+    // ── Roles & Grants ────────────────────────────────────────────────────────
+
+    private static SqlCreateRoleStatement ParseCreateRole(string sql)
+    {
+        // CREATE ROLE name [WITH] [LOGIN] [SUPERUSER] PASSWORD 'pw'
+        var remaining = sql["CREATE ROLE".Length..].TrimStart();
+        var nameEnd = remaining.IndexOfAny(new[] { ' ', '\t' });
+        if (nameEnd < 0) nameEnd = remaining.Length;
+
+        var roleName = SqlSyntaxText.NormalizeIdentifier(remaining[..nameEnd]);
+        remaining = remaining[nameEnd..].TrimStart();
+
+        if (remaining.StartsWith("WITH", StringComparison.OrdinalIgnoreCase))
+            remaining = remaining["WITH".Length..].TrimStart();
+
+        bool canLogin = false;
+        bool isSuperuser = false;
+        string? password = null;
+
+        while (remaining.Length > 0)
+        {
+            if (remaining.StartsWith("LOGIN", StringComparison.OrdinalIgnoreCase))
+            {
+                canLogin = true;
+                remaining = remaining["LOGIN".Length..].TrimStart();
+                continue;
+            }
+
+            if (remaining.StartsWith("SUPERUSER", StringComparison.OrdinalIgnoreCase))
+            {
+                isSuperuser = true;
+                remaining = remaining["SUPERUSER".Length..].TrimStart();
+                continue;
+            }
+
+            if (remaining.StartsWith("PASSWORD", StringComparison.OrdinalIgnoreCase))
+            {
+                remaining = remaining["PASSWORD".Length..].TrimStart();
+                password = ReadQuotedString(ref remaining);
+                continue;
+            }
+
+            // Unbekanntes Token ueberspringen
+            var nextSpace = remaining.IndexOf(' ');
+            remaining = nextSpace >= 0 ? remaining[(nextSpace + 1)..].TrimStart() : string.Empty;
+        }
+
+        if (string.IsNullOrEmpty(password))
+            throw new NotSupportedException("CREATE ROLE requires a PASSWORD clause.");
+
+        return new SqlCreateRoleStatement(roleName, password, canLogin, isSuperuser);
+    }
+
+    private static SqlAlterRoleStatement ParseAlterRole(string sql)
+    {
+        // ALTER ROLE name PASSWORD 'pw'
+        // ALTER ROLE name SUPERUSER / NOSUPERUSER
+        var remaining = sql["ALTER ROLE".Length..].TrimStart();
+        var nameEnd = remaining.IndexOfAny(new[] { ' ', '\t' });
+        if (nameEnd < 0) nameEnd = remaining.Length;
+
+        var roleName = SqlSyntaxText.NormalizeIdentifier(remaining[..nameEnd]);
+        remaining = remaining[nameEnd..].TrimStart();
+
+        string? newPassword = null;
+        bool? isSuperuser = null;
+
+        while (remaining.Length > 0)
+        {
+            if (remaining.StartsWith("PASSWORD", StringComparison.OrdinalIgnoreCase))
+            {
+                remaining = remaining["PASSWORD".Length..].TrimStart();
+                newPassword = ReadQuotedString(ref remaining);
+                continue;
+            }
+
+            if (remaining.StartsWith("SUPERUSER", StringComparison.OrdinalIgnoreCase)&& !remaining.StartsWith("NOSUPERUSER", StringComparison.OrdinalIgnoreCase))
+            {
+                isSuperuser = true;
+                remaining = remaining["SUPERUSER".Length..].TrimStart();
+                continue;
+            }
+
+            if (remaining.StartsWith("NOSUPERUSER", StringComparison.OrdinalIgnoreCase))
+            {
+                isSuperuser = false;
+                remaining = remaining["NOSUPERUSER".Length..].TrimStart();
+                continue;
+            }
+
+            var nextSpace = remaining.IndexOf(' ');
+            remaining = nextSpace >= 0 ? remaining[(nextSpace + 1)..].TrimStart() : string.Empty;
+        }
+
+        return new SqlAlterRoleStatement(roleName, newPassword, isSuperuser);
+    }
+
+    private static SqlDropRoleStatement ParseDropRole(string sql)
+    {
+        // DROP ROLE [IF EXISTS] name
+        var remaining = sql["DROP ROLE".Length..].TrimStart();
+        var ifExists = false;
+
+        if (remaining.StartsWith("IF EXISTS", StringComparison.OrdinalIgnoreCase))
+        {
+            ifExists = true;
+            remaining = remaining["IF EXISTS".Length..].TrimStart();
+        }
+
+        var roleName = SqlSyntaxText.NormalizeIdentifier(remaining.Trim());
+        return new SqlDropRoleStatement(roleName, ifExists);
+    }
+
+    private static SqlGrantStatement ParseGrant(string sql)
+    {
+        // GRANT {SELECT|INSERT|...|ALL [PRIVILEGES]} ON {TABLE|PROCEDURE|VIEW} name TO role
+        var remaining = sql["GRANT".Length..].TrimStart();
+
+        var onIdx = SqlSyntaxText.FindTopLevelKeyword(remaining, "ON", 0);
+        if (onIdx < 0)
+            throw new NotSupportedException("GRANT requires ON clause.");
+
+        var privilegesText = remaining[..onIdx].Trim();
+        remaining = remaining[(onIdx + "ON".Length)..].TrimStart();
+
+        var objectType = ParseGrantObjectType(ref remaining);
+        var toIdx = SqlSyntaxText.FindTopLevelKeyword(remaining, "TO", 0);
+        if (toIdx < 0)
+            throw new NotSupportedException("GRANT requires TO clause.");
+
+        var objectName = SqlSyntaxText.NormalizeIdentifier(remaining[..toIdx].Trim());
+        var grantee = SqlSyntaxText.NormalizeIdentifier(remaining[(toIdx + "TO".Length)..].Trim());
+
+        var privileges = ExpandPrivileges(privilegesText, objectType);
+        return new SqlGrantStatement(privileges, objectType, objectName, grantee);
+    }
+
+    private static SqlRevokeStatement ParseRevoke(string sql)
+    {
+        // REVOKE {SELECT|INSERT|...|ALL [PRIVILEGES]} ON {TABLE|PROCEDURE|VIEW} name FROM role
+        var remaining = sql["REVOKE".Length..].TrimStart();
+
+        var onIdx = SqlSyntaxText.FindTopLevelKeyword(remaining, "ON", 0);
+        if (onIdx < 0)
+            throw new NotSupportedException("REVOKE requires ON clause.");
+
+        var privilegesText = remaining[..onIdx].Trim();
+        remaining = remaining[(onIdx + "ON".Length)..].TrimStart();
+
+        var objectType = ParseGrantObjectType(ref remaining);
+        var fromIdx = SqlSyntaxText.FindTopLevelKeyword(remaining, "FROM", 0);
+        if (fromIdx < 0)
+            throw new NotSupportedException("REVOKE requires FROM clause.");
+
+        var objectName = SqlSyntaxText.NormalizeIdentifier(remaining[..fromIdx].Trim());
+        var grantee = SqlSyntaxText.NormalizeIdentifier(remaining[(fromIdx + "FROM".Length)..].Trim());
+
+        var privileges = ExpandPrivileges(privilegesText, objectType);
+        return new SqlRevokeStatement(privileges, objectType, objectName, grantee);
+    }
+
+    private static GrantObjectType ParseGrantObjectType(ref string remaining)
+    {
+        if (remaining.StartsWith("TABLE", StringComparison.OrdinalIgnoreCase))
+        {
+            remaining = remaining["TABLE".Length..].TrimStart();
+            return GrantObjectType.Table;
+        }
+
+        if (remaining.StartsWith("PROCEDURE", StringComparison.OrdinalIgnoreCase))
+        {
+            remaining = remaining["PROCEDURE".Length..].TrimStart();
+            return GrantObjectType.Procedure;
+        }
+
+        if (remaining.StartsWith("VIEW", StringComparison.OrdinalIgnoreCase))
+        {
+            remaining = remaining["VIEW".Length..].TrimStart();
+            return GrantObjectType.View;
+        }
+
+        throw new NotSupportedException("GRANT/REVOKE requires object type TABLE, VIEW or PROCEDURE.");
+    }
+
+    private static IReadOnlyList<GrantPrivilege> ExpandPrivileges(string privilegesText, GrantObjectType objectType)
+    {
+        var trimmed = privilegesText.Trim();
+        if (trimmed.Equals("ALL", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("ALL PRIVILEGES", StringComparison.OrdinalIgnoreCase))
+        {
+            return objectType switch
+            {
+                GrantObjectType.Table => new[] { GrantPrivilege.Select, GrantPrivilege.Insert, GrantPrivilege.Update, GrantPrivilege.Delete },
+                GrantObjectType.View => new[] { GrantPrivilege.Select },
+                GrantObjectType.Procedure => new[] { GrantPrivilege.Execute },
+                _ => throw new NotSupportedException($"Unsupported object type for ALL PRIVILEGES: {objectType}")
+            };
+        }
+
+        var parts = SqlSyntaxText.SplitTopLevel(trimmed, ',');
+        var result = new List<GrantPrivilege>();
+        foreach (var part in parts)
+        {
+            if (!Enum.TryParse<GrantPrivilege>(part.Trim(), true, out var privilege))
+                throw new NotSupportedException($"Unsupported privilege: '{part.Trim()}'.");
+            result.Add(privilege);
+        }
+
+        return result;
+    }
+
+    private static string ReadQuotedString(ref string remaining)
+    {
+        if (remaining.Length >= 2 && remaining[0] == '\'')
+        {
+            var end = remaining.IndexOf('\'', 1);
+            if (end < 0)
+                throw new NotSupportedException("Unterminated string literal.");
+
+            var value = remaining[1..end];
+            remaining = remaining[(end + 1)..].TrimStart();
+            return value;
+        }
+
+        throw new NotSupportedException("Expected quoted string.");
     }
 }

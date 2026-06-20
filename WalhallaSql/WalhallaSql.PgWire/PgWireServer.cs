@@ -290,11 +290,19 @@ public sealed class PgWireServer : IAsyncDisposable
                     return;
                 }
             }
+            else if (!string.IsNullOrEmpty(userName) && backend.IsKnownUser(userName))
+            {
+                // User ist bekannt, darf sich aber nicht anmelden (z. B. NOLOGIN).
+                await SendErrorAsync(stream, "28P01", $"role \"{userName}\" is not permitted to log in");
+                return;
+            }
             else
             {
                 await SendAuthenticationOkAsync(stream);
             }
             session.AuthState = PgAuthState.Authenticated;
+            if (!string.IsNullOrEmpty(userName))
+                backend.SetCurrentUser(userName);
 
             await SendParameterStatusAsync(stream, "server_version", "16.0");
             await SendParameterStatusAsync(stream, "server_encoding", "UTF8");
