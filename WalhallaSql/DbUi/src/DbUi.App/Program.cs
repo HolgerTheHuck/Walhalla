@@ -12,7 +12,7 @@ public static class Program
         using var mutex = new Mutex(true, "Global\\DbUi_SingleInstance", out var isNewInstance);
         if (!isNewInstance)
         {
-            MessageBox.Show("DbUi is already running.", "DbUi",
+            System.Windows.MessageBox.Show("DbUi is already running.", "DbUi",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }

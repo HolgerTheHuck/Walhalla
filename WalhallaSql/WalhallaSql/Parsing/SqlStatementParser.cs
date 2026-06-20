@@ -2443,46 +2443,39 @@ internal static class SqlStatementParser
         }
 
         // Trigger name then ON keyword
-        var onIdx = remaining.IndexOf(" ON ", StringComparison.OrdinalIgnoreCase);
+        var onIdx = FindKeywordIndex(remaining, "ON");
         if (onIdx < 0)
             throw new NotSupportedException("CREATE TRIGGER requires ON <table>.");
         var triggerName = SqlSyntaxText.NormalizeIdentifier(remaining[..onIdx].Trim());
-        remaining = remaining[(onIdx + 4)..].TrimStart();
+        remaining = remaining[(onIdx + "ON".Length)..].TrimStart();
 
         // Table name, then timing, then event, then AS
         var tableNameEnd = remaining.Length;
         var timingIdx = -1;
-        foreach (var kw in new[] { " BEFORE ", " AFTER ", " INSTEAD OF " })
+        var timingKeyword = string.Empty;
+        foreach (var kw in new[] { "BEFORE", "AFTER", "INSTEAD OF" })
         {
-            var idx = remaining.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
+            var idx = FindKeywordIndex(remaining, kw);
             if (idx >= 0 && (timingIdx < 0 || idx < timingIdx))
             {
                 timingIdx = idx;
                 tableNameEnd = idx;
+                timingKeyword = kw;
             }
         }
         if (timingIdx < 0)
             throw new NotSupportedException("CREATE TRIGGER requires BEFORE/AFTER/INSTEAD OF timing.");
 
         var tableName = SqlSyntaxText.NormalizeIdentifier(remaining[..tableNameEnd].Trim());
-        remaining = remaining[timingIdx..].TrimStart();
+        remaining = remaining[(timingIdx + timingKeyword.Length)..].TrimStart();
 
         // Timing
-        var timing = SqlTriggerTiming.After;
-        if (remaining.StartsWith("BEFORE", StringComparison.OrdinalIgnoreCase))
+        var timing = timingKeyword.ToUpperInvariant() switch
         {
-            timing = SqlTriggerTiming.Before;
-            remaining = remaining["BEFORE".Length..].TrimStart();
-        }
-        else if (remaining.StartsWith("INSTEAD OF", StringComparison.OrdinalIgnoreCase))
-        {
-            timing = SqlTriggerTiming.InsteadOf;
-            remaining = remaining["INSTEAD OF".Length..].TrimStart();
-        }
-        else if (remaining.StartsWith("AFTER", StringComparison.OrdinalIgnoreCase))
-        {
-            remaining = remaining["AFTER".Length..].TrimStart();
-        }
+            "BEFORE" => SqlTriggerTiming.Before,
+            "INSTEAD OF" => SqlTriggerTiming.InsteadOf,
+            _ => SqlTriggerTiming.After
+        };
 
         // Event
         var evt = SqlTriggerEvent.Insert;

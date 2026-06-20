@@ -20,6 +20,8 @@ public interface IWorkspaceSession : IAsyncDisposable
 
     IDiagnosticsProvider? Diagnostics { get; }
 
+    IMaintenanceProvider? Maintenance { get; }
+
     Task<IReadOnlyList<string>> GetAvailableDatabasesAsync(
         CancellationToken cancellationToken = default);
 

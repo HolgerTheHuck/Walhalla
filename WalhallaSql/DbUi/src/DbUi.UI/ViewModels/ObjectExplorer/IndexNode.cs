@@ -3,12 +3,12 @@ using DbUi.Core.Catalog;
 
 namespace DbUi.UI.ViewModels.ObjectExplorer;
 
-public sealed partial class StoredProcedureNode : TreeNodeViewModel
+public sealed partial class IndexNode : TreeNodeViewModel
 {
     private readonly CatalogNode _node;
     private readonly Action<string> _insertQuery;
 
-    public StoredProcedureNode(CatalogNode node, Action<string> insertQuery)
+    public IndexNode(CatalogNode node, Action<string> insertQuery)
         : base(node.DisplayName, hasChildren: false)
     {
         _node = node;
@@ -20,22 +20,6 @@ public sealed partial class StoredProcedureNode : TreeNodeViewModel
 
     private string? GetActionCommandText(string actionId) =>
         _node.Actions?.FirstOrDefault(action => string.Equals(action.ActionId, actionId, StringComparison.OrdinalIgnoreCase))?.CommandText;
-
-    [RelayCommand]
-    private void ScriptExec()
-    {
-        var sql = GetActionCommandText("exec");
-        if (!string.IsNullOrEmpty(sql))
-            _insertQuery(sql);
-    }
-
-    [RelayCommand]
-    private void ScriptEdit()
-    {
-        var sql = GetActionCommandText("alter");
-        if (!string.IsNullOrEmpty(sql))
-            _insertQuery(sql);
-    }
 
     [RelayCommand]
     private void ScriptDrop()

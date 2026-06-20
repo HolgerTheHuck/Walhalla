@@ -784,6 +784,7 @@ WalhallaSql.SqlNativeProcedureContext.Query(string! sql) -> System.Collections.G
 WalhallaSql.SqlNativeProcedureContext.SetOutput(string! name, object? value) -> void
 WalhallaSql.WalhallaEngine
 WalhallaSql.WalhallaEngine.BeginTransaction() -> WalhallaSql.WalhallaSqlTransaction!
+WalhallaSql.WalhallaEngine.Backup(string! targetPath) -> void
 WalhallaSql.WalhallaEngine.Checkpoint() -> void
 WalhallaSql.WalhallaEngine.CreateTable(WalhallaSql.Sql.SqlTableDefinition! table) -> void
 WalhallaSql.WalhallaEngine.Dispose() -> void
@@ -792,6 +793,7 @@ WalhallaSql.WalhallaEngine.Execute(string! sql) -> WalhallaSql.WalhallaResultSet
 WalhallaSql.WalhallaEngine.Execute(string! sql, WalhallaSql.WalhallaSqlTransaction? transaction) -> WalhallaSql.WalhallaResultSet!
 WalhallaSql.WalhallaEngine.ExecuteStreaming(string! sql) -> WalhallaSql.WalhallaStreamResult!
 WalhallaSql.WalhallaEngine.GetAllTables() -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlTableDefinition!>!
+WalhallaSql.WalhallaEngine.GetProcedures() -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlStoredProcedureDefinition!>!
 WalhallaSql.WalhallaEngine.GetTable(string! tableName) -> WalhallaSql.Sql.SqlTableDefinition?
 WalhallaSql.WalhallaEngine.GetTableDefinition(string! name) -> WalhallaSql.Sql.SqlTableDefinition?
 WalhallaSql.WalhallaEngine.InsertBatch(string! tableName, System.Collections.Generic.IReadOnlyList<object?[]!>! rows) -> void

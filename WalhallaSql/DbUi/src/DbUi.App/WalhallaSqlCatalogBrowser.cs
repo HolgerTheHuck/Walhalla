@@ -62,6 +62,27 @@ public sealed class WalhallaSqlCatalogBrowser : ICatalogBrowser
         };
     }
 
+    public Task<CatalogSnapshot> GetSnapshotAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var engine = _engineProvider();
+        var tables = engine.GetAllTables()
+            .Select(t => new CatalogTable(
+                t.CollectionName,
+                t.Columns.Select(c => c.Name).ToArray()))
+            .ToArray();
+
+        var procedures = engine.GetProcedures()
+            .Select(p => new CatalogProcedure(
+                p.Name,
+                p.Parameters.Select(par => $"{par.Name} {par.Type}").ToArray()))
+            .ToArray();
+
+        return Task.FromResult(new CatalogSnapshot(tables, procedures));
+    }
+
     private IReadOnlyList<CatalogNode> GetDatabaseNodes()
     {
         var database = _databaseNameProvider();
@@ -90,6 +111,7 @@ public sealed class WalhallaSqlCatalogBrowser : ICatalogBrowser
         [
             CreateFolderNode(database, "tables", "Tables"),
             CreateFolderNode(database, "views", "Views"),
+            CreateFolderNode(database, "routines", "Routines"),
         ];
     }
 
@@ -102,31 +124,216 @@ public sealed class WalhallaSqlCatalogBrowser : ICatalogBrowser
         var folderKind = parts[2];
         var engine = _engineProvider();
 
-        return folderKind switch
+        // Top-level folder under database (e.g. "tables", "views", "routines")
+        if (parts.Length == 3)
         {
-            "tables" => engine.GetAllTables()
-                .OrderBy(static t => t.CollectionName, StringComparer.OrdinalIgnoreCase)
-                .Select(table =>
-                    new CatalogNode(
-                        CreateId("table", database, table.CollectionName),
-                        $"dbo.{table.CollectionName}",
-                        CatalogNodeKind.Table,
-                        HasChildren: table.Columns.Count > 0,
-                        Actions:
-                        [
-                            new CatalogAction("select-top", "SELECT TOP (1000) *", BuildSelectTop(table.CollectionName)),
-                            new CatalogAction("select-all", "SELECT *", BuildSelectAll(table.CollectionName)),
-                            new CatalogAction("count", "SELECT COUNT(*)", BuildCount(table.CollectionName)),
-                        ],
-                        Metadata: new Dictionary<string, string?>
-                        {
-                            ["database"] = database,
-                            ["objectName"] = table.CollectionName,
-                        }))
-                .ToArray(),
-            "views" => [],
+            return folderKind switch
+            {
+                "tables" => engine.GetAllTables()
+                    .OrderBy(static t => t.CollectionName, StringComparer.OrdinalIgnoreCase)
+                    .Select(table =>
+                        new CatalogNode(
+                            CreateId("table", database, table.CollectionName),
+                            $"dbo.{table.CollectionName}",
+                            CatalogNodeKind.Table,
+                            HasChildren: true,
+                            Actions:
+                            [
+                                new CatalogAction("select-top", "SELECT TOP (1000) *", BuildSelectTop(table.CollectionName)),
+                                new CatalogAction("select-all", "SELECT *", BuildSelectAll(table.CollectionName)),
+                                new CatalogAction("count", "SELECT COUNT(*)", BuildCount(table.CollectionName)),
+                            ],
+                            Metadata: new Dictionary<string, string?>
+                            {
+                                ["database"] = database,
+                                ["objectName"] = table.CollectionName,
+                                ["columns"] = string.Join(",", table.Columns.Select(c => c.Name)),
+                            }))
+                    .ToArray(),
+                "views" => [],
+                "routines" => GetRoutineNodes(database, engine),
+                _ => [],
+            };
+        }
+
+        // Nested folder under a table (parts: "folder"|database|tableName|folderKind)
+        if (parts.Length < 4)
+            return [];
+
+        var tableName = parts[2];
+        var nestedFolderKind = parts[3];
+        var table = engine.GetTableDefinition(tableName);
+        if (table is null)
+            return [];
+
+        return nestedFolderKind switch
+        {
+            "columns" => GetColumnNodes(database, table),
+            "keys" => GetKeyNodes(database, table),
+            "foreignkeys" => GetForeignKeyNodes(database, table),
+            "indexes" => GetIndexNodes(database, table),
             _ => [],
         };
+    }
+
+    private static IReadOnlyList<CatalogNode> GetRoutineNodes(string database, WalhallaEngine engine)
+    {
+        return engine.GetProcedures()
+            .OrderBy(static p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(proc => new CatalogNode(
+                CreateId("routine", database, proc.Name),
+                $"{proc.Name} ({proc.Language})",
+                CatalogNodeKind.Routine,
+                HasChildren: false,
+                Actions:
+                [
+                    new CatalogAction("exec", "EXEC", BuildExecProcedure(proc.Name, proc.Parameters)),
+                    new CatalogAction("alter", "ALTER", BuildAlterProcedure(proc.Name, proc.Parameters, proc.Body, proc.Language)),
+                    new CatalogAction("drop", "DROP", $"DROP PROCEDURE {EscapeName(proc.Name)}"),
+                ],
+                Metadata: new Dictionary<string, string?>
+                {
+                    ["database"] = database,
+                    ["objectName"] = proc.Name,
+                    ["language"] = proc.Language,
+                }))
+            .ToArray();
+    }
+
+    private static string BuildExecProcedure(string name, IReadOnlyList<SqlProcedureParameter> parameters)
+    {
+        var args = string.Join(", ", parameters.Select(p => $"@{p.Name}"));
+        return $"EXEC {EscapeName(name)} {args}".TrimEnd();
+    }
+
+    private static string BuildAlterProcedure(string name, IReadOnlyList<SqlProcedureParameter> parameters, string body, string language)
+    {
+        var paramList = string.Join(", ", parameters.Select(p => $"@{p.Name} {FormatType(p.Type)}"));
+        var langClause = string.Equals(language, "csharp", StringComparison.OrdinalIgnoreCase) ? " LANGUAGE CSHARP" : "";
+        return $"CREATE OR REPLACE PROCEDURE {EscapeName(name)}({paramList}){langClause}{Environment.NewLine}AS{Environment.NewLine}{body}";
+    }
+
+    private static IReadOnlyList<CatalogNode> GetColumnNodes(string database, SqlTableDefinition table)
+    {
+        return table.Columns
+            .Select(column =>
+                new CatalogNode(
+                    CreateId("column", database, table.CollectionName, column.Name),
+                    FormatColumnDisplay(column),
+                    CatalogNodeKind.Column,
+                    HasChildren: false,
+                    Metadata: new Dictionary<string, string?>
+                    {
+                        ["database"] = database,
+                        ["objectName"] = table.CollectionName,
+                        ["columnName"] = column.Name,
+                    }))
+            .ToArray();
+    }
+
+    private static string FormatColumnDisplay(SqlColumnDefinition column)
+    {
+        var markers = new List<string>();
+        if (column.IsPrimaryKey) markers.Add("PK");
+        if (column.IsUnique) markers.Add("UQ");
+        var suffix = markers.Count > 0 ? $" [{string.Join(", ", markers)}]" : "";
+        return $"{column.Name} ({FormatType(column.Type)}){suffix}";
+    }
+
+    private static IReadOnlyList<CatalogNode> GetKeyNodes(string database, SqlTableDefinition table)
+    {
+        var nodes = new List<CatalogNode>();
+
+        var pkColumns = table.PrimaryKeyColumns.Select(c => c.Name).ToArray();
+        if (pkColumns.Length > 0)
+        {
+            var pkName = pkColumns.Length == 1 ? $"PK_{table.CollectionName}" : "PRIMARY KEY";
+            nodes.Add(new CatalogNode(
+                CreateId("primarykey", database, table.CollectionName, pkName),
+                $"PRIMARY KEY ({string.Join(", ", pkColumns)})",
+                CatalogNodeKind.PrimaryKey,
+                HasChildren: false,
+                Metadata: new Dictionary<string, string?>
+                {
+                    ["database"] = database,
+                    ["objectName"] = table.CollectionName,
+                }));
+        }
+
+        var uniqueColumns = table.Columns.Where(c => c.IsUnique && !c.IsPrimaryKey).ToArray();
+        foreach (var column in uniqueColumns)
+        {
+            nodes.Add(new CatalogNode(
+                CreateId("constraint", database, table.CollectionName, $"UQ_{column.Name}"),
+                $"UNIQUE ({column.Name})",
+                CatalogNodeKind.Constraint,
+                HasChildren: false,
+                Metadata: new Dictionary<string, string?>
+                {
+                    ["database"] = database,
+                    ["objectName"] = table.CollectionName,
+                    ["columnName"] = column.Name,
+                }));
+        }
+
+        return nodes;
+    }
+
+    private static IReadOnlyList<CatalogNode> GetForeignKeyNodes(string database, SqlTableDefinition table)
+    {
+        if (table.ForeignKeys is null || table.ForeignKeys.Count == 0)
+            return [];
+
+        return table.ForeignKeys
+            .Select(fk =>
+                new CatalogNode(
+                    CreateId("foreignkey", database, table.CollectionName, fk.ConstraintName),
+                    $"{fk.ConstraintName}: ({string.Join(", ", fk.ColumnNames)}) → {fk.ReferencedCollection}({string.Join(", ", fk.ReferencedColumns)})",
+                    CatalogNodeKind.ForeignKey,
+                    HasChildren: false,
+                    Metadata: new Dictionary<string, string?>
+                    {
+                        ["database"] = database,
+                        ["objectName"] = table.CollectionName,
+                        ["constraintName"] = fk.ConstraintName,
+                    }))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<CatalogNode> GetIndexNodes(string database, SqlTableDefinition table)
+    {
+        if (table.Indexes.Count == 0)
+            return [];
+
+        return table.Indexes
+            .Where(index => !index.IsInternal)
+            .Select(index =>
+                new CatalogNode(
+                    CreateId("index", database, table.CollectionName, index.IndexName),
+                    FormatIndexDisplay(index),
+                    CatalogNodeKind.Index,
+                    HasChildren: false,
+                    Actions:
+                    [
+                        new CatalogAction("drop", "DROP INDEX", $"DROP INDEX {EscapeName(index.IndexName)} ON {BuildObjectName(table.CollectionName)}"),
+                    ],
+                    Metadata: new Dictionary<string, string?>
+                    {
+                        ["database"] = database,
+                        ["objectName"] = table.CollectionName,
+                        ["indexName"] = index.IndexName,
+                    }))
+            .ToArray();
+    }
+
+    private static string FormatIndexDisplay(SqlIndexDefinition index)
+    {
+        var columns = index.TargetsProjection
+            ? $"projection {index.TargetProjectionName}"
+            : string.Join(", ", index.ColumnNames);
+        var unique = index.IsUnique ? "UNIQUE " : "";
+        var type = index.IndexType == SqlIndexType.Gin ? "GIN " : "";
+        return $"{unique}{type}{index.IndexName} ({columns})";
     }
 
     private IReadOnlyList<CatalogNode> GetTableChildren(string[] parts)
@@ -141,20 +348,14 @@ public sealed class WalhallaSqlCatalogBrowser : ICatalogBrowser
         if (table is null)
             return [];
 
-        return table.Columns
-            .Select(column =>
-                new CatalogNode(
-                    CreateId("column", database, table.CollectionName, column.Name),
-                    $"{column.Name} ({FormatType(column.Type)})",
-                    CatalogNodeKind.Column,
-                    HasChildren: false,
-                    Metadata: new Dictionary<string, string?>
-                    {
-                        ["database"] = database,
-                        ["objectName"] = table.CollectionName,
-                        ["columnName"] = column.Name,
-                    }))
-            .ToArray();
+        var tableId = table.CollectionName;
+        return
+        [
+            CreateFolderNode(database, "columns", "Columns", tableId),
+            CreateFolderNode(database, "keys", "Keys", tableId),
+            CreateFolderNode(database, "foreignkeys", "Foreign Keys", tableId),
+            CreateFolderNode(database, "indexes", "Indexes", tableId),
+        ];
     }
 
     private static string FormatType(SqlScalarType type) => type switch
@@ -176,17 +377,28 @@ public sealed class WalhallaSqlCatalogBrowser : ICatalogBrowser
         _ => "UNKNOWN",
     };
 
-    private static CatalogNode CreateFolderNode(string database, string folderKind, string displayName) =>
-        new(
-            CreateId("folder", database, folderKind),
+    private static CatalogNode CreateFolderNode(
+        string database, string folderKind, string displayName, string? tableName = null)
+    {
+        var idParts = tableName is null
+            ? new[] { "folder", database, folderKind }
+            : new[] { "folder", database, tableName, folderKind };
+
+        var metadata = new Dictionary<string, string?>
+        {
+            ["database"] = database,
+            ["folderKind"] = folderKind,
+        };
+        if (tableName is not null)
+            metadata["objectName"] = tableName;
+
+        return new CatalogNode(
+            CreateId(idParts),
             displayName,
             CatalogNodeKind.Folder,
             HasChildren: true,
-            Metadata: new Dictionary<string, string?>
-            {
-                ["database"] = database,
-                ["folderKind"] = folderKind,
-            });
+            Metadata: metadata);
+    }
 
     private static CatalogNodeId CreateId(params string[] parts) =>
         new(string.Join("|", parts.Select(Uri.EscapeDataString)));

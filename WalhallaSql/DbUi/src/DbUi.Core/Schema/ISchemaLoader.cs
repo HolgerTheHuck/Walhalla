@@ -18,4 +18,13 @@ public interface ISchemaLoader
 
     Task<IReadOnlyList<SchemaColumn>> GetColumnsAsync(DbConnection connection, string database,
         string schema, string objectName, CancellationToken ct = default);
+
+    Task<IReadOnlyList<SchemaPrimaryKey>> GetPrimaryKeysAsync(DbConnection connection, string database,
+        string schema, string objectName, CancellationToken ct = default);
+
+    Task<IReadOnlyList<SchemaForeignKey>> GetForeignKeysAsync(DbConnection connection, string database,
+        string schema, string objectName, CancellationToken ct = default);
+
+    Task<IReadOnlyList<SchemaIndex>> GetIndexesAsync(DbConnection connection, string database,
+        string schema, string objectName, CancellationToken ct = default);
 }

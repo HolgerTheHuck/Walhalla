@@ -15,6 +15,8 @@ public partial class OpenDatabaseDialog : Window
 
         viewModel.RequestClose = () =>
         {
+            // Synchronisiere PasswordBox zurück ins ViewModel, bevor geschlossen wird.
+            viewModel.PgWirePassword = PgWirePasswordBox.Password;
             DialogResult = viewModel.Result is not null;
             Close();
         };

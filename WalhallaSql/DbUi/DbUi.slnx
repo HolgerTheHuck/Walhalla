@@ -2,11 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/DbUi.App/DbUi.App.csproj" />
     <Project Path="src/DbUi.Core/DbUi.Core.csproj" />
-    <Project Path="src/DbUi.Providers.LayeredSql/DbUi.Providers.LayeredSql.csproj" />
-    <Project Path="src/DbUi.Providers.MsSql/DbUi.Providers.MsSql.csproj" />
     <Project Path="src/DbUi.UI/DbUi.UI.csproj" />
   </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/DbUi.Providers.MsSql.Tests/DbUi.Providers.MsSql.Tests.csproj" />
-  </Folder>
+  <Folder Name="/tests/" />
 </Solution>

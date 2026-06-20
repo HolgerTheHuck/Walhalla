@@ -23,6 +23,7 @@
     <Window.Resources>
         <conv:BoolToTextConverter x:Key="ExecutingStatusConverter"
                                   TrueText="Executing…" FalseText="" />
+        <conv:StringEqualsToVisibilityConverter x:Key="StringEqualsToVis" />
 
         <!-- Implicit DataTemplate: von AvalonDock's ContentPresenter via DataType gefunden,
              aber NICHT auf den OE-DockPanel angewandt (falscher DataType) -->
@@ -37,6 +38,7 @@
                 <controls:BindableTextEditor
                     Grid.Row="0"
                     BindableText="{Binding QueryText, UpdateSourceTrigger=PropertyChanged}"
+                    CatalogSnapshot="{Binding CatalogSnapshot}"
                     FontFamily="Cascadia Code, Consolas, Courier New"
                     FontSize="13"
                     Background="#1E1E1E"
@@ -204,6 +206,9 @@
         <!-- Menu -->
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
+                <MenuItem Header="_New">
+                    <MenuItem Header="_Database…" Command="{Binding NewDatabaseCommand}" />
+                </MenuItem>
                 <MenuItem Header="_Connect…"    Command="{Binding ConnectCommand}" />
                 <MenuItem Header="_Disconnect"  Command="{Binding DisconnectCommand}" />
                 <Separator />
@@ -217,6 +222,13 @@
             </MenuItem>
             <MenuItem Header="_Tools">
                 <MenuItem Header="_Migration…" Command="{Binding ShowMigrationWindowCommand}" />
+                <MenuItem Header="_Maintenance">
+                    <MenuItem Header="_Checkpoint" Command="{Binding CheckpointCommand}" />
+                    <MenuItem Header="_Vacuum" Command="{Binding VacuumCommand}" />
+                    <MenuItem Header="_Analyze" Command="{Binding AnalyzeCommand}" />
+                    <Separator />
+                    <MenuItem Header="_Backup…" Command="{Binding BackupCommand}" />
+                </MenuItem>
             </MenuItem>
         </Menu>
 
@@ -314,7 +326,16 @@
                                                 <iconPacks:PackIconMaterial Kind="Database"
                                                     Width="14" Height="14" VerticalAlignment="Center"
                                                     Foreground="#4EC9B0" Margin="0,0,5,0" />
-                                                <TextBlock Text="{Binding DisplayName}" />
+                                                <TextBlock Text="{Binding DisplayName}">
+                                                    <TextBlock.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="New">
+                                                                <MenuItem Header="Table"
+                                                                          Command="{Binding NewTableCommand}" />
+                                                            </MenuItem>
+                                                        </ContextMenu>
+                                                    </TextBlock.ContextMenu>
+                                                </TextBlock>
                                             </StackPanel>
                                         </HierarchicalDataTemplate>
 
@@ -324,7 +345,20 @@
                                                 <iconPacks:PackIconMaterial Kind="Folder"
                                                     Width="14" Height="14" VerticalAlignment="Center"
                                                     Foreground="#DCCA7A" Margin="0,0,5,0" />
-                                                <TextBlock Text="{Binding DisplayName}" Foreground="#9B9B9B" />
+                                                <TextBlock Text="{Binding DisplayName}" Foreground="#9B9B9B">
+                                                    <TextBlock.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="New">
+                                                                <MenuItem Header="Table"
+                                                                          Command="{Binding NewTableCommand}"
+                                                                          Visibility="{Binding FolderKind, Converter={StaticResource StringEqualsToVis}, ConverterParameter=tables}" />
+                                                                <MenuItem Header="Stored Procedure"
+                                                                          Command="{Binding NewStoredProcedureCommand}"
+                                                                          Visibility="{Binding FolderKind, Converter={StaticResource StringEqualsToVis}, ConverterParameter=routines}" />
+                                                            </MenuItem>
+                                                        </ContextMenu>
+                                                    </TextBlock.ContextMenu>
+                                                </TextBlock>
                                             </StackPanel>
                                         </HierarchicalDataTemplate>
 
@@ -343,6 +377,11 @@
                                                                       Command="{Binding ScriptSelectAllCommand}" />
                                                             <MenuItem Header="SELECT COUNT(*)"
                                                                       Command="{Binding ScriptCountCommand}" />
+                                                            <Separator />
+                                                            <MenuItem Header="New Index"
+                                                                      Command="{Binding NewIndexCommand}" />
+                                                            <MenuItem Header="New Trigger"
+                                                                      Command="{Binding NewTriggerCommand}" />
                                                         </ContextMenu>
                                                     </TextBlock.ContextMenu>
                                                 </TextBlock>
@@ -366,12 +405,66 @@
                                             </StackPanel>
                                         </HierarchicalDataTemplate>
 
-                                        <DataTemplate DataType="{x:Type oe:ProcedureNode}">
+                                        <DataTemplate DataType="{x:Type oe:StoredProcedureNode}">
                                             <StackPanel Orientation="Horizontal">
                                                 <iconPacks:PackIconMaterial Kind="CodeBraces"
                                                     Width="14" Height="14" VerticalAlignment="Center"
                                                     Foreground="#DCDCAA" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}">
+                                                    <TextBlock.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="EXEC"
+                                                                      Command="{Binding ScriptExecCommand}" />
+                                                            <MenuItem Header="ALTER"
+                                                                      Command="{Binding ScriptEditCommand}" />
+                                                            <MenuItem Header="DROP"
+                                                                      Command="{Binding ScriptDropCommand}" />
+                                                        </ContextMenu>
+                                                    </TextBlock.ContextMenu>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </DataTemplate>
+
+                                        <DataTemplate DataType="{x:Type oe:PrimaryKeyNode}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="KeyVariant"
+                                                    Width="14" Height="14" VerticalAlignment="Center"
+                                                    Foreground="#FFD700" Margin="0,0,5,0" />
                                                 <TextBlock Text="{Binding DisplayName}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+
+                                        <DataTemplate DataType="{x:Type oe:ConstraintNode}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="KeyChange"
+                                                    Width="14" Height="14" VerticalAlignment="Center"
+                                                    Foreground="#CE9178" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+
+                                        <DataTemplate DataType="{x:Type oe:ForeignKeyNode}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="LinkVariant"
+                                                    Width="14" Height="14" VerticalAlignment="Center"
+                                                    Foreground="#4EC9B0" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+
+                                        <DataTemplate DataType="{x:Type oe:IndexNode}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <iconPacks:PackIconMaterial Kind="FileTree"
+                                                    Width="14" Height="14" VerticalAlignment="Center"
+                                                    Foreground="#569CD6" Margin="0,0,5,0" />
+                                                <TextBlock Text="{Binding DisplayName}">
+                                                    <TextBlock.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="DROP INDEX"
+                                                                      Command="{Binding ScriptDropCommand}" />
+                                                        </ContextMenu>
+                                                    </TextBlock.ContextMenu>
+                                                </TextBlock>
                                             </StackPanel>
                                         </DataTemplate>
 

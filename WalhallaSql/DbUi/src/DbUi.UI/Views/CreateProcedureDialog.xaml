@@ -1,0 +1,131 @@
+<Window x:Class="DbUi.UI.Views.CreateProcedureDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:DbUi.UI.ViewModels.Dialogs"
+        xmlns:conv="clr-namespace:DbUi.UI.Converters"
+        Title="New Stored Procedure"
+        Width="720" Height="560"
+        MinWidth="560" MinHeight="420"
+        ResizeMode="CanResize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="{StaticResource BgPanelBrush}">
+
+    <Window.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="120" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Procedure name -->
+        <Grid Grid.Row="0" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="110" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Label Content="Name:" VerticalAlignment="Center" />
+            <TextBox Grid.Column="1"
+                     Text="{Binding ProcedureName, UpdateSourceTrigger=PropertyChanged}"
+                     VerticalContentAlignment="Center" />
+            <ComboBox Grid.Column="2"
+                      ItemsSource="{Binding Languages}"
+                      SelectedItem="{Binding Language}"
+                      Width="90" Margin="8,0,0,0" />
+        </Grid>
+
+        <!-- Parameters toolbar -->
+        <ToolBarTray Grid.Row="1" Margin="0,0,0,4">
+            <ToolBar>
+                <Button Content="Add Parameter" Command="{Binding AddParameterCommand}" />
+                <Button Content="Remove Parameter"
+                        Command="{Binding RemoveParameterCommand}"
+                        CommandParameter="{Binding SelectedItem, ElementName=ParametersGrid}" />
+            </ToolBar>
+        </ToolBarTray>
+
+        <!-- Parameters grid -->
+        <Border Grid.Row="2" Grid.RowSpan="2"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                Background="{StaticResource BgMainBrush}">
+            <DataGrid x:Name="ParametersGrid"
+                      ItemsSource="{Binding Parameters}"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      CanUserReorderColumns="False"
+                      CanUserResizeColumns="True"
+                      CanUserSortColumns="False"
+                      SelectionMode="Single"
+                      SelectionUnit="FullRow"
+                      GridLinesVisibility="All"
+                      BorderThickness="0">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Parameter Name"
+                                        Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                        Width="160" />
+                    <DataGridTemplateColumn Header="Data Type" Width="120">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ComboBox ItemsSource="{Binding DataContext.DataTypes, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                          SelectedItem="{Binding DataType, UpdateSourceTrigger=PropertyChanged}"
+                                          BorderThickness="0"
+                                          Background="Transparent" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridCheckBoxColumn Header="Output"
+                                           Binding="{Binding IsOutput}"
+                                           Width="70" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <Label Grid.Row="4" Content="Body:" Margin="0,8,0,4" />
+
+        <!-- Body -->
+        <Border Grid.Row="5" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                Background="{StaticResource BgMainBrush}">
+            <TextBox Text="{Binding Body, UpdateSourceTrigger=PropertyChanged}"
+                     AcceptsReturn="True"
+                     AcceptsTab="True"
+                     FontFamily="Cascadia Code, Consolas, Courier New"
+                     FontSize="13"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     TextWrapping="NoWrap"
+                     BorderThickness="0" />
+        </Border>
+
+        <!-- Error -->
+        <TextBlock Grid.Row="6"
+                   Text="{Binding ErrorMessage}"
+                   Foreground="{StaticResource ErrorBrush}"
+                   Visibility="{Binding ErrorMessage, Converter={StaticResource BoolToVis}}"
+                   TextWrapping="Wrap"
+                   Margin="0,8,0,0" />
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Margin="0,16,0,0">
+            <Button Content="OK"
+                    Command="{Binding OkCommand}"
+                    IsDefault="True"
+                    MinWidth="80" Margin="0,0,8,0" />
+            <Button Content="Cancel"
+                    Command="{Binding CancelCommand}"
+                    IsCancel="True"
+                    MinWidth="80" />
+        </StackPanel>
+    </Grid>
+</Window>

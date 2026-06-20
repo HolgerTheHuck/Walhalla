@@ -34,3 +34,51 @@ public record SchemaColumn(
 
     public string DisplayText => $"{Name}  ({TypeSummary}{(IsNullable ? ", null" : "")})";
 }
+
+public record SchemaPrimaryKey(string Name, IReadOnlyList<string> ColumnNames)
+{
+    public string DisplayText => ColumnNames.Count == 1
+        ? $"{Name} ({ColumnNames[0]})"
+        : $"{Name} ({string.Join(", ", ColumnNames)})";
+}
+
+public record SchemaForeignKey(
+    string Name,
+    IReadOnlyList<string> ColumnNames,
+    string ReferencedCollection,
+    IReadOnlyList<string> ReferencedColumns,
+    string OnDelete,
+    string OnUpdate)
+{
+    public string DisplayText
+    {
+        get
+        {
+            var local = string.Join(", ", ColumnNames);
+            var remote = string.Join(", ", ReferencedColumns);
+            return $"{Name}: ({local}) → {ReferencedCollection}({remote})";
+        }
+    }
+}
+
+public record SchemaIndex(
+    string Name,
+    IReadOnlyList<string> ColumnNames,
+    bool IsUnique,
+    string IndexType,
+    string? TargetProjectionName = null,
+    bool IsInternal = false)
+{
+    public string DisplayText
+    {
+        get
+        {
+            var columns = string.Join(", ", ColumnNames);
+            var suffix = string.IsNullOrWhiteSpace(TargetProjectionName)
+                ? ""
+                : $" (projection {TargetProjectionName})";
+            var unique = IsUnique ? "UNIQUE " : "";
+            return $"{unique}{Name} ({columns}){suffix}";
+        }
+    }
+}

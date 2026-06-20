@@ -481,6 +481,17 @@ public sealed class WalhallaEngine : IDisposable
         return _store.GetAllTables();
     }
 
+    /// <summary>
+    /// Gibt die aktuell im Speicher definierten Stored Procedures zurück.
+    /// </summary>
+    public IReadOnlyList<SqlStoredProcedureDefinition> GetProcedures()
+    {
+        lock (_metaSync)
+        {
+            return _procedures.Values.ToList();
+        }
+    }
+
     public void InsertBatch(string tableName, IReadOnlyList<object?[]> rows)
     {
         if (rows.Count == 0) return;
@@ -562,6 +573,70 @@ public sealed class WalhallaEngine : IDisposable
     public int Vacuum(string? tableName = null)
     {
         return _store.Vacuum(tableName);
+    }
+
+    /// <summary>
+    /// Erstellt ein konsistentes Online-Backup der Datenbank im angegebenen Zielverzeichnis.
+    /// Das Backup umfasst ODS-, Delta-, Checkpoint- und WAL-Dateien sowie den Blob-Sidecar.
+    /// Für ':memory:'-Datenbanken wird eine Ausnahme ausgelöst.
+    /// </summary>
+    public void Backup(string targetPath)
+    {
+        if (string.IsNullOrWhiteSpace(targetPath))
+            throw new ArgumentException("Backup path must not be empty.", nameof(targetPath));
+
+        if (_options.StorageMode == StorageMode.InMemory || _options.RootPath == ":memory:")
+            throw new InvalidOperationException("Backup is not supported for in-memory databases.");
+
+        // Sicherstellen, dass das WAL in die ODS überführt wurde, bevor Dateien kopiert werden.
+        _store.Checkpoint();
+
+        Directory.CreateDirectory(targetPath);
+
+        CopyFileWithRetry(_options.OdsFilePath, Path.Combine(targetPath, _options.OdsFileName));
+        CopyFileWithRetry(_options.DeltaFilePath, Path.Combine(targetPath, _options.DeltaFileName));
+        CopyFileWithRetry(_options.CheckpointFilePath, Path.Combine(targetPath, _options.CheckpointFileName));
+        CopyFileWithRetry(_options.WalFilePath, Path.Combine(targetPath, _options.WalFileName));
+
+        var blobSource = _options.BlobSidecarRootDirectory;
+        if (Directory.Exists(blobSource))
+        {
+            var blobTarget = Path.IsPathRooted(_options.BlobSidecarRootPath)
+                ? Path.Combine(targetPath, Path.GetFileName(blobSource))
+                : Path.Combine(targetPath, _options.BlobSidecarRootPath);
+            CopyDirectory(blobSource, blobTarget);
+        }
+    }
+
+    private static void CopyFileWithRetry(string sourcePath, string targetPath, int maxRetries = 5)
+    {
+        for (int attempt = 0; attempt < maxRetries; attempt++)
+        {
+            try
+            {
+                File.Copy(sourcePath, targetPath, overwrite: true);
+                return;
+            }
+            catch (IOException) when (attempt < maxRetries - 1)
+            {
+                Thread.Sleep(100 * (attempt + 1));
+            }
+        }
+    }
+
+    private static void CopyDirectory(string sourceDir, string targetDir)
+    {
+        Directory.CreateDirectory(targetDir);
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            var targetFile = Path.Combine(targetDir, Path.GetFileName(file));
+            File.Copy(file, targetFile, overwrite: true);
+        }
+        foreach (var subDir in Directory.GetDirectories(sourceDir))
+        {
+            var targetSubDir = Path.Combine(targetDir, Path.GetFileName(subDir));
+            CopyDirectory(subDir, targetSubDir);
+        }
     }
 
     /// <summary>Returns the most recently computed statistics for <paramref name="tableName"/>, or null if not yet analyzed.</summary>

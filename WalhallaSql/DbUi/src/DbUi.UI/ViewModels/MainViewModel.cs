@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbUi.Core.Connection;
+using DbUi.Core.Diagnostics;
 using DbUi.Core.Queries;
 using DbUi.UI.Services;
 using DbUi.Core.Workspace;
@@ -17,7 +18,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     private IWorkspaceSession? _activeSession;
     private int _tabCounter;
 
-    public ObjectExplorerViewModel ObjectExplorer { get; } = new();
+    public ObjectExplorerViewModel ObjectExplorer { get; }
     public ObservableCollection<QueryTabViewModel> QueryTabs { get; } = [];
     public ObservableCollection<string> AvailableDatabases { get; } = [];
 
@@ -28,6 +29,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         _dialogService = dialogService;
         _connectionStore = connectionStore;
 
+        ObjectExplorer = new ObjectExplorerViewModel(dialogService);
         ObjectExplorer.InsertQuery = sql =>
         {
             var tab = CreateTab($"Query {_tabCounter + 1}");
@@ -67,9 +69,24 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand]
     private async Task ConnectAsync()
     {
-        var info = _dialogService.ShowOpenDatabaseDialog();
+        var info = _dialogService.ShowOpenDatabaseDialog(_connectionStore);
         if (info is null) return;
 
+        await OpenConnectionAsync(info);
+    }
+
+    [RelayCommand]
+    private async Task NewDatabaseAsync()
+    {
+        var info = _dialogService.ShowNewDatabaseDialog();
+        if (info is null) return;
+
+        await _connectionStore.SaveRecentAsync(info);
+        await OpenConnectionAsync(info);
+    }
+
+    private async Task OpenConnectionAsync(WorkspaceConnectionInfo info)
+    {
         // Ensure we have a tab to show errors before attempting connection
         _tabCounter = 0;
         var firstTab = CreateTab("Query 1");
@@ -121,6 +138,100 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 
     public event Action? MigrationWindowRequested;
+
+    [RelayCommand(CanExecute = nameof(IsConnected))]
+    private async Task CheckpointAsync()
+    {
+        await ExecuteMaintenanceAsync(
+            provider => provider.CheckpointAsync(),
+            "Checkpoint completed.");
+    }
+
+    [RelayCommand(CanExecute = nameof(IsConnected))]
+    private async Task VacuumAsync()
+    {
+        await ExecuteMaintenanceAsync(
+            async provider =>
+            {
+                var rows = await provider.VacuumAsync();
+                return $"Vacuum completed ({rows} row(s) affected).";
+            },
+            "Vacuum completed.");
+    }
+
+    [RelayCommand(CanExecute = nameof(IsConnected))]
+    private async Task AnalyzeAsync()
+    {
+        await ExecuteMaintenanceAsync(
+            provider => provider.AnalyzeAsync(),
+            "Analyze completed.");
+    }
+
+    [RelayCommand(CanExecute = nameof(IsConnected))]
+    private async Task BackupAsync()
+    {
+        if (_activeSession?.Maintenance is null)
+        {
+            ActiveTab?.AppendMessage("Backup is not supported by the current connection.");
+            return;
+        }
+
+        var targetPath = _dialogService.ShowFolderBrowserDialog("Select backup target folder");
+        if (string.IsNullOrWhiteSpace(targetPath))
+            return;
+
+        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        var backupDir = System.IO.Path.Combine(targetPath, $"Backup_{_activeSession.DisplayName}_{timestamp}");
+
+        try
+        {
+            ActiveTab?.AppendMessage($"Backup to {backupDir}…");
+            await _activeSession.Maintenance.BackupAsync(backupDir);
+            ActiveTab?.AppendMessage($"Backup completed: {backupDir}");
+        }
+        catch (Exception ex)
+        {
+            ActiveTab?.AppendMessage($"Backup failed: {ex.Message}");
+        }
+    }
+
+    private async Task ExecuteMaintenanceAsync(Func<IMaintenanceProvider, Task> operation, string successMessage)
+    {
+        if (_activeSession?.Maintenance is null)
+        {
+            ActiveTab?.AppendMessage("Maintenance is not supported by the current connection.");
+            return;
+        }
+
+        try
+        {
+            await operation(_activeSession.Maintenance);
+            ActiveTab?.AppendMessage(successMessage);
+        }
+        catch (Exception ex)
+        {
+            ActiveTab?.AppendMessage($"Maintenance failed: {ex.Message}");
+        }
+    }
+
+    private async Task ExecuteMaintenanceAsync(Func<IMaintenanceProvider, Task<string>> operation, string fallbackMessage)
+    {
+        if (_activeSession?.Maintenance is null)
+        {
+            ActiveTab?.AppendMessage("Maintenance is not supported by the current connection.");
+            return;
+        }
+
+        try
+        {
+            var message = await operation(_activeSession.Maintenance);
+            ActiveTab?.AppendMessage(message ?? fallbackMessage);
+        }
+        catch (Exception ex)
+        {
+            ActiveTab?.AppendMessage($"Maintenance failed: {ex.Message}");
+        }
+    }
 
     [RelayCommand(CanExecute = nameof(IsConnected))]
     private void NewQueryTab() => CreateTab($"Query {_tabCounter + 1}");

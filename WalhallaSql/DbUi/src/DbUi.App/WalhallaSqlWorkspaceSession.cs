@@ -51,6 +51,8 @@ public sealed class WalhallaSqlWorkspaceSession : IWorkspaceSession
 
     public IDiagnosticsProvider? Diagnostics => null;
 
+    public IMaintenanceProvider? Maintenance => new WalhallaSqlMaintenanceProvider(_engine);
+
     public Task<IReadOnlyList<string>> GetAvailableDatabasesAsync(
         CancellationToken cancellationToken = default)
     {

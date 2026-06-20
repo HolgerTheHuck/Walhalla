@@ -15,4 +15,8 @@ public enum CatalogNodeKind
     Collection,
     SecurityScope,
     Diagnostic,
+    PrimaryKey,
+    ForeignKey,
+    Index,
+    Constraint,
 }

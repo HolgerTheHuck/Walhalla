@@ -195,4 +195,59 @@ public class DdlTests
 
         Assert.Single(engine.Execute("SELECT * FROM Parents").Rows);
     }
+
+    // ── DbUi-Dialog-Generierte SQL-Muster ───────────────────────────────────
+
+    [Fact]
+    public void CreateTable_DialogGeneratedSql_ParsesAndExecutes()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE [Products] (\n    [Id] INT NOT NULL PRIMARY KEY,\n    [Name] NVARCHAR(MAX) NULL,\n    [Price] DECIMAL(18,2) NULL\n);");
+
+        engine.Execute("INSERT INTO Products (Id, Name, Price) VALUES (1, 'Widget', 9.99)");
+        var result = engine.Execute("SELECT Id, Name, Price FROM Products");
+        Assert.Single(result.Rows);
+    }
+
+    [Fact]
+    public void CreateIndex_DialogGeneratedSql_ParsesAndExecutes()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name NVARCHAR(MAX) NULL, Data JSON NULL)");
+
+        engine.Execute("CREATE UNIQUE INDEX [IX_T_Name] ON [T] ([Name]);");
+        engine.Execute("CREATE INDEX [IX_T_Data_Gin] ON [T] USING GIN ([Data]);");
+
+        engine.Execute("INSERT INTO T (Id, Name, Data) VALUES (1, 'Alice', '{\"k\":1}')");
+        Assert.Single(engine.Execute("SELECT * FROM T WHERE Name = 'Alice'").Rows);
+    }
+
+    [Fact]
+    public void CreateProcedure_DialogGeneratedSql_ParsesAndExecutes()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name NVARCHAR(MAX) NULL)");
+        engine.Execute("INSERT INTO T (Id, Name) VALUES (1, 'Alice')");
+
+        engine.Execute("CREATE PROCEDURE [GetCount](@minId BIGINT)\nAS\nBEGIN\n    SELECT COUNT(*) AS C FROM T WHERE Id >= @minId\nEND");
+        var result = engine.Execute("EXEC GetCount 1");
+        Assert.Single(result.Rows);
+        Assert.Equal(1L, result.Rows[0]["C"]);
+    }
+
+    [Fact]
+    public void CreateTrigger_DialogGeneratedSql_ParsesAndExecutes()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Counter INT NULL)");
+        engine.Execute("CREATE TABLE Audit (Id INT PRIMARY KEY, Message NVARCHAR(MAX) NULL)");
+        engine.Execute("INSERT INTO Audit (Id, Message) VALUES (1, 'start')");
+
+        engine.Execute("CREATE TRIGGER [trg_T_Insert] ON [T]\nAFTER INSERT\nAS\nBEGIN\n    UPDATE Audit SET Message = 'inserted' WHERE Id = 1\nEND");
+        engine.Execute("INSERT INTO T (Id, Counter) VALUES (1, 0)");
+
+        var audit = engine.Execute("SELECT Message FROM Audit WHERE Id = 1");
+        Assert.Single(audit.Rows);
+        Assert.Equal("inserted", audit.Rows[0]["Message"]);
+    }
 }

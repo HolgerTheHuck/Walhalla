@@ -2,6 +2,7 @@ using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.CodeCompletion;
 using ICSharpCode.AvalonEdit.Highlighting;
 using ICSharpCode.AvalonEdit.Highlighting.Xshd;
+using DbUi.Core.Catalog;
 using System.Windows;
 using System.Windows.Input;
 using System.Xml;
@@ -25,6 +26,21 @@ public sealed class BindableTextEditor : TextEditor
         LoadSyntaxHighlighting();
         TextChanged += OnEditorTextChanged;
         PreviewKeyDown += OnPreviewKeyDown;
+    }
+
+    // ── CatalogSnapshot dependency property ─────────────────────────────
+
+    public static readonly DependencyProperty CatalogSnapshotProperty =
+        DependencyProperty.Register(
+            nameof(CatalogSnapshot),
+            typeof(CatalogSnapshot),
+            typeof(BindableTextEditor),
+            new PropertyMetadata(default(CatalogSnapshot)));
+
+    public CatalogSnapshot? CatalogSnapshot
+    {
+        get => (CatalogSnapshot?)GetValue(CatalogSnapshotProperty);
+        set => SetValue(CatalogSnapshotProperty, value);
     }
 
     // ── BindableText dependency property ──────────────────────────────────
@@ -64,7 +80,7 @@ public sealed class BindableTextEditor : TextEditor
 
     // ── Ctrl+Space completion ─────────────────────────────────────────────
 
-    private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+    private void OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == Key.Space && e.KeyboardDevice.Modifiers == ModifierKeys.Control)
         {
@@ -73,14 +89,10 @@ public sealed class BindableTextEditor : TextEditor
         }
     }
 
-    private string GetWordBeforeCaret()
+    private string GetTextBeforeCaret()
     {
         var offset = CaretOffset;
-        var doc = Document;
-        var start = offset;
-        while (start > 0 && IsWordChar(doc.GetCharAt(start - 1)))
-            start--;
-        return doc.GetText(start, offset - start);
+        return Document.GetText(0, offset);
     }
 
     private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
@@ -89,14 +101,16 @@ public sealed class BindableTextEditor : TextEditor
     {
         if (_completionWindow is not null) return;
 
-        var word = GetWordBeforeCaret();
-        var completions = (word.Length == 0 && !forceAll)
+        var textBeforeCaret = GetTextBeforeCaret();
+        var prefix = SqlCompletionSource.ExtractPrefix(textBeforeCaret);
+
+        var completions = (prefix.Length == 0 && !forceAll)
             ? []
-            : KeywordCompletionSource.GetCompletions(word);
+            : SqlCompletionSource.GetCompletions(textBeforeCaret, CatalogSnapshot);
 
         if (completions.Count == 0 && !forceAll) return;
         if (completions.Count == 0)
-            completions = KeywordCompletionSource.GetCompletions("");
+            completions = SqlCompletionSource.GetCompletions("", CatalogSnapshot);
 
         _completionWindow = new CompletionWindow(TextArea);
         foreach (var item in completions)

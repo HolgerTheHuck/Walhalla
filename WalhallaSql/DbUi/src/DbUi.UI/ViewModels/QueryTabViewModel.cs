@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DbUi.Core.Catalog;
 using DbUi.Core.Providers;
 using DbUi.Core.Queries;
 using DbUi.Core.Workspace;
@@ -22,7 +23,21 @@ public sealed partial class QueryTabViewModel : ObservableObject
     {
         _title = title;
         _session = session;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                CatalogSnapshot = await _session.Catalog.GetSnapshotAsync();
+            }
+            catch (Exception ex)
+            {
+                AppendMessage($"Warning: could not load catalog snapshot: {ex.Message}");
+            }
+        });
     }
+
+    [ObservableProperty] private CatalogSnapshot? _catalogSnapshot;
 
     [ObservableProperty] private string _title;
     [ObservableProperty] private string _queryText = "";
@@ -93,7 +108,7 @@ public sealed partial class QueryTabViewModel : ObservableObject
     private void ExportToCsv()
     {
         if (ResultTable is null) return;
-        var dlg = new SaveFileDialog
+        var dlg = new Microsoft.Win32.SaveFileDialog
         {
             Title = "Export to CSV",
             Filter = "CSV-Dateien (*.csv)|*.csv|Alle Dateien (*.*)|*.*",
@@ -109,7 +124,7 @@ public sealed partial class QueryTabViewModel : ObservableObject
     private void ExportToJson()
     {
         if (ResultTable is null) return;
-        var dlg = new SaveFileDialog
+        var dlg = new Microsoft.Win32.SaveFileDialog
         {
             Title = "Export to JSON",
             Filter = "JSON-Dateien (*.json)|*.json|Alle Dateien (*.*)|*.*",

@@ -3,68 +3,220 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:DbUi.UI.ViewModels"
         xmlns:conv="clr-namespace:DbUi.UI.Converters"
-        Title="Open Database"
-        Width="420" SizeToContent="Height"
-        ResizeMode="NoResize"
+        xmlns:core="clr-namespace:DbUi.Core.Workspace;assembly=DbUi.Core"
+        Title="Connect to Database"
+        Width="640" Height="520"
+        MinWidth="560" MinHeight="440"
+        ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
         Background="{StaticResource BgPanelBrush}">
 
     <Window.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <conv:EnumToBoolConverter x:Key="EnumToBool" />
     </Window.Resources>
 
-    <Border Background="{StaticResource BgPanelBrush}">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="16" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- In-Memory toggle -->
-        <Grid Grid.Row="0" Margin="0,0,0,10">
+        <!-- Server type selection -->
+        <Grid Grid.Row="0" Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="120" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <Label Content="Mode:" VerticalAlignment="Center" />
-            <CheckBox Grid.Column="1"
-                      IsChecked="{Binding IsInMemory}"
-                      Content="In-Memory"
-                      VerticalAlignment="Center" />
+            <Label Content="Server type:" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <RadioButton Content="WalhallaSql Local"
+                             IsChecked="{Binding Mode, Converter={StaticResource EnumToBool}, ConverterParameter={x:Static core:WorkspaceConnectionMode.Local}}"
+                             Margin="0,0,16,0" />
+                <RadioButton Content="PostgreSQL (PgWire)"
+                             IsChecked="{Binding Mode, Converter={StaticResource EnumToBool}, ConverterParameter={x:Static core:WorkspaceConnectionMode.PgWire}}" />
+            </StackPanel>
         </Grid>
 
-        <!-- Storage Path (visible when not in-memory) -->
-        <Grid Grid.Row="1" Margin="0,0,0,10"
-              Visibility="{Binding IsInMemory, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
+        <!-- Content: recent list + connection settings -->
+        <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="120" />
+                <ColumnDefinition Width="180" />
+                <ColumnDefinition Width="16" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <Label Content="Storage path:" VerticalAlignment="Center" />
-            <TextBox Grid.Column="1" Text="{Binding StoragePath, UpdateSourceTrigger=PropertyChanged}" />
+
+            <!-- Recent connections -->
+            <Border Grid.Column="0"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1"
+                    Background="{StaticResource BgMainBrush}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Label Content="Recent connections"
+                            Grid.Row="0"
+                            Padding="8,4"
+                            Background="{StaticResource BgControlBrush}"
+                            FontWeight="SemiBold" />
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding RecentConnections}"
+                             SelectedItem="{Binding SelectedRecentConnection}"
+                             BorderThickness="0"
+                             Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Vertical" Margin="4,2">
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding Mode}"
+                                               Foreground="{StaticResource FgDimBrush}"
+                                               FontSize="11" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <!-- Settings panel -->
+            <ScrollViewer Grid.Column="2"
+                         VerticalScrollBarVisibility="Auto">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Local: Storage path -->
+                    <Grid Grid.Row="0" Margin="0,0,0,10"
+                          Visibility="{Binding IsLocalMode, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Label Content="Storage path:" VerticalAlignment="Center" />
+                        <TextBox Grid.Column="1"
+                                Text="{Binding StoragePath, UpdateSourceTrigger=PropertyChanged}"
+                                VerticalContentAlignment="Center" />
+                        <Button Grid.Column="2"
+                                Content="..."
+                                Command="{Binding BrowseFolderCommand}"
+                                Width="32" Margin="8,0,0,0" />
+                    </Grid>
+
+                    <!-- Local: Database name -->
+                    <Grid Grid.Row="1" Margin="0,0,0,10"
+                          Visibility="{Binding IsLocalMode, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Label Content="Database name:" VerticalAlignment="Center" />
+                        <TextBox Grid.Column="1"
+                                Text="{Binding DatabaseName, UpdateSourceTrigger=PropertyChanged}"
+                                VerticalContentAlignment="Center" />
+                    </Grid>
+
+                    <!-- In-memory shortcut -->
+                    <Button Grid.Row="2"
+                            Content="Use In-Memory Database"
+                            Command="{Binding NewInMemoryCommand}"
+                            HorizontalAlignment="Left"
+                            Visibility="{Binding IsLocalMode, Converter={StaticResource BoolToVis}}"
+                            Margin="120,0,0,16" />
+
+                    <!-- PgWire: Host -->
+                    <Grid Grid.Row="0" Margin="0,0,0,10"
+                          Visibility="{Binding IsPgWireMode, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="60" />
+                        </Grid.ColumnDefinitions>
+                        <Label Content="Host name:" VerticalAlignment="Center" />
+                        <TextBox Grid.Column="1"
+                                Text="{Binding PgWireHost, UpdateSourceTrigger=PropertyChanged}"
+                                VerticalContentAlignment="Center" />
+                        <Label Grid.Column="2" Content="Port:" VerticalAlignment="Center" Margin="12,0,4,0" />
+                        <TextBox Grid.Column="3"
+                                Text="{Binding PgWirePort, UpdateSourceTrigger=PropertyChanged}"
+                                VerticalContentAlignment="Center" />
+                    </Grid>
+
+                    <!-- PgWire: Database -->
+                    <Grid Grid.Row="1" Margin="0,0,0,10"
+                          Visibility="{Binding IsPgWireMode, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Label Content="Database:" VerticalAlignment="Center" />
+                        <TextBox Grid.Column="1"
+                                Text="{Binding PgWireDatabase, UpdateSourceTrigger=PropertyChanged}"
+                                VerticalContentAlignment="Center" />
+                    </Grid>
+
+                    <!-- PgWire: Authentication group -->
+                    <GroupBox Grid.Row="3"
+                              Header="Authentication"
+                              Visibility="{Binding IsPgWireMode, Converter={StaticResource BoolToVis}}"
+                              Margin="0,0,0,10">
+                        <Grid Margin="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="100" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Label Content="User name:" VerticalAlignment="Center" />
+                            <TextBox Grid.Column="1"
+                                    Text="{Binding PgWireUser, UpdateSourceTrigger=PropertyChanged}"
+                                    VerticalContentAlignment="Center" />
+
+                            <Label Grid.Row="1" Content="Password:" VerticalAlignment="Center" />
+                            <PasswordBox Grid.Row="1" Grid.Column="1"
+                                         x:Name="PgWirePasswordBox"
+                                         VerticalContentAlignment="Center" />
+                        </Grid>
+                    </GroupBox>
+
+                </Grid>
+            </ScrollViewer>
         </Grid>
 
         <!-- Error -->
         <TextBlock Grid.Row="2"
-                   Text="{Binding ErrorMessage}"
-                   Foreground="{StaticResource ErrorBrush}"
-                   Visibility="{Binding ErrorMessage, Converter={StaticResource BoolToVis}}"
-                   TextWrapping="Wrap" />
+                  Text="{Binding ErrorMessage}"
+                  Foreground="{StaticResource ErrorBrush}"
+                  Visibility="{Binding ErrorMessage, Converter={StaticResource BoolToVis}}"
+                  TextWrapping="Wrap"
+                  Margin="0,0,0,12" />
 
         <!-- Buttons -->
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Open"
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Connect"
                     Command="{Binding OpenCommand}"
                     IsDefault="True"
-                    MinWidth="80" Margin="0,0,8,0" />
+                    MinWidth="90" Margin="0,0,8,0" />
             <Button Content="Cancel"
+                    Command="{Binding CancelCommand}"
                     IsCancel="True"
-                    MinWidth="80" />
+                    MinWidth="90" />
         </StackPanel>
     </Grid>
-    </Border>
 </Window>
