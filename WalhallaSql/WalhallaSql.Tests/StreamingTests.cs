@@ -93,8 +93,8 @@ public class StreamingTests
         engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
         engine.Execute("INSERT INTO T (Id, Name) VALUES (1, 'Alpha')");
 
-        Assert.Throws<WalhallaException>(() => engine.ExecuteStreaming("SELECT * FROM T ORDER BY Name"));
-        Assert.Throws<WalhallaException>(() => engine.ExecuteStreaming("SELECT DISTINCT Name FROM T"));
+        Assert.Throws<WalhallaException>(() => engine.ExecuteStreaming("SELECT COUNT(*) AS Cnt FROM T ORDER BY Cnt"));
+        Assert.Throws<WalhallaException>(() => engine.ExecuteStreaming("SELECT t1.Id FROM T t1 RIGHT JOIN T t2 ON t1.Id = t2.Id"));
     }
 
     [Fact]
@@ -281,5 +281,157 @@ public class StreamingTests
 
         Assert.Throws<WalhallaException>(() =>
             engine.ExecuteStreaming("SELECT * FROM Customers c RIGHT JOIN Orders o ON c.Id = o.CustomerId"));
+    }
+
+    [Fact]
+    public void Streaming_Distinct_MatchesMaterialized()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Category STRING)");
+        engine.Execute("INSERT INTO T (Category) VALUES ('A'), ('B'), ('A'), ('C'), ('B')");
+
+        var sql = "SELECT DISTINCT Category FROM T";
+        var materialized = engine.Execute(sql);
+        using var stream = engine.ExecuteStreaming(sql);
+        var streamRows = stream.EnumerateRows().ToList();
+
+        Assert.False(stream.IsFullyMaterialized);
+        Assert.Equal(materialized.Rows.Count, streamRows.Count);
+        foreach (var expected in materialized.Rows)
+            Assert.Contains(streamRows, r => Equals(r["Category"], expected["Category"]));
+    }
+
+    [Fact]
+    public void Streaming_OrderBy_MatchesMaterialized()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("INSERT INTO T (Id, Name) VALUES (3, 'C'), (1, 'A'), (2, 'B')");
+
+        var sql = "SELECT Name FROM T ORDER BY Id";
+        var materialized = engine.Execute(sql);
+        using var stream = engine.ExecuteStreaming(sql);
+        var streamRows = stream.EnumerateRows().ToList();
+
+        Assert.False(stream.IsFullyMaterialized);
+        Assert.Equal(materialized.Rows.Count, streamRows.Count);
+        for (int i = 0; i < materialized.Rows.Count; i++)
+            Assert.Equal(materialized.Rows[i]["Name"], streamRows[i]["Name"]);
+    }
+
+    [Fact]
+    public void Streaming_OrderByDescending_MatchesMaterialized()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Value INT)");
+        engine.Execute("INSERT INTO T (Id, Value) VALUES (1, 10), (2, 30), (3, 20)");
+
+        var sql = "SELECT Id FROM T ORDER BY Value DESC";
+        var materialized = engine.Execute(sql);
+        using var stream = engine.ExecuteStreaming(sql);
+        var streamRows = stream.EnumerateRows().ToList();
+
+        Assert.Equal(materialized.Rows.Count, streamRows.Count);
+        for (int i = 0; i < materialized.Rows.Count; i++)
+            Assert.Equal(materialized.Rows[i]["Id"], streamRows[i]["Id"]);
+    }
+
+    [Fact]
+    public void Streaming_OrderBy_WithLimit()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY)");
+        for (int i = 1; i <= 20; i++)
+            engine.Execute($"INSERT INTO T (Id) VALUES ({i})");
+
+        using var stream = engine.ExecuteStreaming("SELECT Id FROM T ORDER BY Id DESC LIMIT 5");
+        var rows = stream.EnumerateRows().ToList();
+        Assert.Equal(5, rows.Count);
+        Assert.Equal(20, rows[0]["Id"]);
+    }
+
+    [Fact]
+    public void Streaming_OrderByJoin_MatchesMaterialized()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("CREATE TABLE Orders (Id INT PRIMARY KEY, CustomerId INT, TotalAmount DOUBLE)");
+
+        engine.Execute("INSERT INTO Customers (Id, Name) VALUES (1, 'A'), (2, 'B')");
+        engine.Execute("INSERT INTO Orders (Id, CustomerId, TotalAmount) VALUES (1, 2, 50.0)");
+        engine.Execute("INSERT INTO Orders (Id, CustomerId, TotalAmount) VALUES (2, 1, 100.0)");
+
+        var sql = "SELECT c.Name, o.TotalAmount FROM Customers c JOIN Orders o ON c.Id = o.CustomerId ORDER BY o.TotalAmount DESC";
+        var materialized = engine.Execute(sql);
+        using var stream = engine.ExecuteStreaming(sql);
+        var streamRows = stream.EnumerateRows().ToList();
+
+        Assert.Equal(materialized.Rows.Count, streamRows.Count);
+        for (int i = 0; i < materialized.Rows.Count; i++)
+        {
+            Assert.Equal(materialized.Rows[i]["Name"], streamRows[i]["Name"]);
+            Assert.Equal(materialized.Rows[i]["TotalAmount"], streamRows[i]["TotalAmount"]);
+        }
+    }
+
+    [Fact]
+    public void Streaming_Aggregate_Count_MatchesMaterialized()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY)");
+        for (int i = 1; i <= 10; i++)
+            engine.Execute($"INSERT INTO T (Id) VALUES ({i})");
+
+        var sql = "SELECT COUNT(*) AS Cnt FROM T";
+        var materialized = engine.Execute(sql);
+        using var stream = engine.ExecuteStreaming(sql);
+        var streamRows = stream.EnumerateRows().ToList();
+
+        Assert.False(stream.IsFullyMaterialized);
+        Assert.Single(streamRows);
+        Assert.Equal(materialized.Rows[0]["Cnt"], streamRows[0]["Cnt"]);
+    }
+
+    [Fact]
+    public void Streaming_GroupBy_MatchesMaterialized()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Category STRING, Value INT)");
+        engine.Execute("INSERT INTO T (Category, Value) VALUES ('A', 10), ('A', 20), ('B', 5), ('B', 15), ('B', 25)");
+
+        var sql = "SELECT Category, COUNT(*) AS Cnt, SUM(Value) AS Total FROM T GROUP BY Category";
+        var materialized = engine.Execute(sql);
+        using var stream = engine.ExecuteStreaming(sql);
+        var streamRows = stream.EnumerateRows().ToList();
+
+        Assert.False(stream.IsFullyMaterialized);
+        Assert.Equal(materialized.Rows.Count, streamRows.Count);
+        foreach (var expected in materialized.Rows)
+        {
+            Assert.Contains(streamRows, r =>
+                Equals(r["Category"], expected["Category"])
+                && Equals(r["Cnt"], expected["Cnt"])
+                && Equals(r["Total"], expected["Total"]));
+        }
+    }
+
+    [Fact]
+    public void Streaming_Having_MatchesMaterialized()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Category STRING, Value INT)");
+        engine.Execute("INSERT INTO T (Category, Value) VALUES ('A', 10), ('A', 20), ('B', 5), ('B', 15), ('B', 25)");
+
+        var sql = "SELECT Category, COUNT(*) AS Cnt FROM T GROUP BY Category HAVING Cnt > 2";
+        var materialized = engine.Execute(sql);
+        using var stream = engine.ExecuteStreaming(sql);
+        var streamRows = stream.EnumerateRows().ToList();
+
+        Assert.Equal(materialized.Rows.Count, streamRows.Count);
+        foreach (var expected in materialized.Rows)
+        {
+            Assert.Contains(streamRows, r =>
+                Equals(r["Category"], expected["Category"]) && Equals(r["Cnt"], expected["Cnt"]));
+        }
     }
 }

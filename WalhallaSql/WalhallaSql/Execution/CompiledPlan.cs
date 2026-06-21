@@ -37,13 +37,29 @@ internal sealed record CompiledPlan(
         && ProjectionIndices.SequenceEqual(Enumerable.Range(0, ProjectionIndices.Length));
 
     /// <summary>True when the query can be streamed row-by-row without full materialization.</summary>
-    public bool IsStreamable => (OrderByColumns == null || OrderByColumns.Count == 0)
-        && !IsDistinct
-        && (GroupByColumns == null || GroupByColumns.Count == 0)
-        && (SelectColumns == null || !SelectColumns.Any(c => c.Aggregate != null || c.WindowFunction != null))
-        && Having == null
-        && ComputedProjections == null
-        && IsJoinStreamable;
+    public bool IsStreamable => (SelectColumns == null || !SelectColumns.Any(c => c.WindowFunction != null))
+        && IsJoinStreamable
+        && !IsUnsupportedStreamingCombination;
+
+    /// <summary>
+    /// Markiert Kombinationen, die der aktuelle Streaming-Pfad noch nicht abbilden kann.
+    /// Solche Pläne fallen auf den vollmaterialisierenden Pfad zurück.
+    /// </summary>
+    private bool IsUnsupportedStreamingCombination
+    {
+        get
+        {
+            bool hasAggregates = SelectColumns?.Any(c => c.Aggregate != null) ?? false;
+            bool hasOrderBy = OrderByColumns != null && OrderByColumns.Count > 0;
+            bool hasJoin = Join != null;
+
+            // ORDER BY auf Aggregatergebnissen ist noch nicht implementiert.
+            if (hasAggregates && hasOrderBy) return true;
+            // JOIN + Aggregation erfordert kombinierte Gruppierung; noch nicht implementiert.
+            if (hasAggregates && hasJoin) return true;
+            return false;
+        }
+    }
 
     /// <summary>
     /// Joins sind streambar, solange sie keine RIGHT JOINs enthalten und keine

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using WalhallaSql.Execution;
+using WalhallaSql.Sql;
 using WalhallaSql.Storage;
 
 namespace WalhallaSql.Execution.Streaming;
@@ -200,5 +202,136 @@ internal sealed class LimitOffsetOperator : IStreamingOperator
             yielded++;
             yield return row;
         }
+    }
+}
+
+/// <summary>
+/// DISTINCT-Operator: hält ein Hash-Set bereits ausgegebener Zeilen und filtert Duplikate.
+/// Die Eingabezeile wird kopiert, weil der unterliegende Storage-Puffer wiederverwendet wird.
+/// </summary>
+internal sealed class DistinctOperator : IStreamingOperator
+{
+    private readonly IStreamingOperator _source;
+
+    public DistinctOperator(IStreamingOperator source)
+    {
+        _source = source ?? throw new ArgumentNullException(nameof(source));
+    }
+
+    public IEnumerable<StreamingRow> Execute(StreamingContext context)
+    {
+        var seen = new HashSet<object?[]>(new StreamingRowEqualityComparer());
+        foreach (var row in _source.Execute(context))
+        {
+            var copy = row.Values.ToArray();
+            if (seen.Add(copy))
+                yield return new StreamingRow(copy);
+        }
+    }
+}
+
+/// <summary>
+/// ORDER-BY-Operator: materialisiert alle Zeilen, sortiert sie und gibt sie dann gestreamt aus.
+/// Nötig, weil globale Sortierung den gesamten Eingabestrom sehen muss.
+/// </summary>
+internal sealed class OrderByOperator : IStreamingOperator
+{
+    private readonly IStreamingOperator _source;
+    private readonly Comparison<object?[]> _comparer;
+
+    public OrderByOperator(IStreamingOperator source, Comparison<object?[]> comparer)
+    {
+        _source = source ?? throw new ArgumentNullException(nameof(source));
+        _comparer = comparer ?? throw new ArgumentNullException(nameof(comparer));
+    }
+
+    public IEnumerable<StreamingRow> Execute(StreamingContext context)
+    {
+        var rows = new List<object?[]>();
+        foreach (var row in _source.Execute(context))
+            rows.Add(row.Values.ToArray());
+
+        rows.Sort(_comparer);
+
+        foreach (var r in rows)
+            yield return new StreamingRow(r);
+    }
+}
+
+/// <summary>
+/// Aggregat-Operator: GROUP BY, Aggregate und HAVING in einem Durchlauf.
+/// Die Eingabe wird in eine Liste kopiert und dann mit dem vorhandenen
+/// <see cref="AggregateExecutor"/> verarbeitet; das Ergebnis wird danach Zeile für Zeile ausgegeben.
+/// </summary>
+internal sealed class AggregateOperator : IStreamingOperator
+{
+    private readonly IStreamingOperator _source;
+    private readonly SqlSelectStatement _select;
+    private readonly SqlTableDefinition _tableDef;
+    private readonly string[] _outputNames;
+
+    public AggregateOperator(
+        IStreamingOperator source,
+        SqlSelectStatement select,
+        SqlTableDefinition tableDef,
+        string[] outputNames)
+    {
+        _source = source ?? throw new ArgumentNullException(nameof(source));
+        _select = select ?? throw new ArgumentNullException(nameof(select));
+        _tableDef = tableDef ?? throw new ArgumentNullException(nameof(tableDef));
+        _outputNames = outputNames ?? throw new ArgumentNullException(nameof(outputNames));
+    }
+
+    public IEnumerable<StreamingRow> Execute(StreamingContext context)
+    {
+        var rows = new List<object?[]>();
+        foreach (var row in _source.Execute(context))
+            rows.Add(row.Values.ToArray());
+
+        var aggregated = AggregateExecutor.ExecuteGroupBy(
+            rows, _select.GroupByColumns, _select.Columns, _tableDef, _outputNames);
+        aggregated = AggregateExecutor.ApplyHaving(aggregated, _select.Having, _outputNames);
+
+        foreach (var r in aggregated)
+            yield return new StreamingRow(r);
+    }
+}
+
+/// <summary>
+/// Equality-Comparer für <c>object?[]</c> inklusive Collation-Unterstützung für Strings.
+/// </summary>
+internal sealed class StreamingRowEqualityComparer : IEqualityComparer<object?[]>
+{
+    public bool Equals(object?[]? x, object?[]? y)
+    {
+        if (x == null || y == null) return false;
+        if (x.Length != y.Length) return false;
+        for (int i = 0; i < x.Length; i++)
+        {
+            if (!EqualsValue(x[i], y[i])) return false;
+        }
+        return true;
+    }
+
+    public int GetHashCode(object?[] obj)
+    {
+        var hash = new HashCode();
+        foreach (var v in obj)
+        {
+            if (v is string s)
+                hash.Add(WalhallaSql.Collation.CollationManager.GetHashCode(s, null));
+            else
+                hash.Add(v);
+        }
+        return hash.ToHashCode();
+    }
+
+    private static bool EqualsValue(object? x, object? y)
+    {
+        if (x == null && y == null) return true;
+        if (x == null || y == null) return false;
+        if (x is string sx && y is string sy)
+            return WalhallaSql.Collation.CollationManager.Equals(sx, sy, null);
+        return x.Equals(y);
     }
 }

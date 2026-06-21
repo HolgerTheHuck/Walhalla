@@ -5576,7 +5576,8 @@ public sealed class WalhallaEngine : IDisposable
 
         var columnTypes = BuildStreamingColumnTypes(plan);
         var schema = plan.OutputSchema;
-        return new WalhallaStreamResult(plan.OutputColumnNames, columnTypes, schema, rowEnumerator, isFullyMaterialized: true);
+        bool isFullyMaterialized = IsStreamingFullyMaterialized(plan);
+        return new WalhallaStreamResult(plan.OutputColumnNames, columnTypes, schema, rowEnumerator, isFullyMaterialized);
     }
 
     public Task<WalhallaStreamResult> ExecuteStreamingAsync(string sql, CancellationToken cancellationToken = default)
@@ -5617,7 +5618,8 @@ public sealed class WalhallaEngine : IDisposable
 
         var columnTypes = BuildStreamingColumnTypes(plan);
         var schema = plan.OutputSchema;
-        var result = new WalhallaStreamResult(plan.OutputColumnNames, columnTypes, schema, rowEnumerable, isFullyMaterialized: true);
+        bool isFullyMaterialized = IsStreamingFullyMaterialized(plan);
+        var result = new WalhallaStreamResult(plan.OutputColumnNames, columnTypes, schema, rowEnumerable, isFullyMaterialized);
         return Task.FromResult(result);
     }
 
@@ -5633,8 +5635,7 @@ public sealed class WalhallaEngine : IDisposable
     {
         IStreamingOperator current = new ScanOperator();
 
-        // Bei Joins bezieht sich plan.WhereDelegate auf die Basis-Tabelle und muss vor dem Join
-        // angewendet werden. Die ON-Prädikate werden innerhalb des JoinOperators verarbeitet.
+        // WHERE auf der Basis-Tabelle vor den Joins anwenden (sofern es nur Basisspalten referenziert).
         if (plan.WhereDelegate != null)
         {
             var where = plan.WhereDelegate;
@@ -5651,8 +5652,24 @@ public sealed class WalhallaEngine : IDisposable
             }
         }
 
-        var projectionIndices = plan.Join?.ProjectionIndices ?? plan.ProjectionIndices;
-        current = new ProjectOperator(current, projectionIndices, plan.ComputedProjections);
+        bool hasAggregates = plan.SelectColumns?.Any(c => c.Aggregate != null && c.WindowFunction == null) ?? false;
+        if (hasAggregates)
+        {
+            // Aggregation liefert direkt Ausgabezeilen; Projektion und ORDER BY sind hier noch nicht kombinierbar.
+            current = new AggregateOperator(current, select, plan.TableDefinition, plan.OutputColumnNames);
+        }
+        else
+        {
+            // ORDER BY vor der Projektion ausführen, damit auch nicht projizierte Spalten als Sortierschlüssel dienen.
+            if (select.OrderBy != null && select.OrderBy.Count > 0)
+                current = new OrderByOperator(current, BuildStreamingOrderComparer(plan, select));
+
+            var projectionIndices = plan.Join?.ProjectionIndices ?? plan.ProjectionIndices;
+            current = new ProjectOperator(current, projectionIndices, plan.ComputedProjections);
+        }
+
+        if (select.IsDistinct)
+            current = new DistinctOperator(current);
 
         if (select.Offset.HasValue || select.Limit.HasValue)
             current = new LimitOffsetOperator(current, select.Offset, select.Limit);
@@ -5660,9 +5677,94 @@ public sealed class WalhallaEngine : IDisposable
         return current;
     }
 
+    private static Comparison<object?[]> BuildStreamingOrderComparer(CompiledPlan plan, SqlSelectStatement select)
+    {
+        var orderBy = select.OrderBy!;
+        var entries = new (int Index, bool Descending)[orderBy.Count];
+
+        for (int i = 0; i < orderBy.Count; i++)
+        {
+            string name = orderBy[i].ColumnName;
+            int idx = -1;
+
+            // Zuerst über die Ausgabespalten (und deren Quellindex) auflösen.
+            var outputNames = plan.OutputColumnNames;
+            var projectionIndices = plan.Join?.ProjectionIndices ?? plan.ProjectionIndices;
+            for (int j = 0; j < outputNames.Length; j++)
+            {
+                if (string.Equals(outputNames[j], name, StringComparison.OrdinalIgnoreCase)
+                    && j < projectionIndices.Length)
+                {
+                    idx = projectionIndices[j];
+                    break;
+                }
+            }
+
+            // Fallback: direkt in der/den Quelltabelle(n) suchen.
+            if (idx < 0)
+            {
+                if (plan.Join == null)
+                {
+                    idx = FindColumnIndex(plan.TableDefinition, name);
+                }
+                else
+                {
+                    idx = FindColumnIndex(plan.Join.BaseTableDef, name);
+                    if (idx < 0)
+                    {
+                        int offset = plan.Join.BaseTableDef.Columns.Count;
+                        foreach (var step in plan.Join.Steps)
+                        {
+                            var local = FindColumnIndex(step.TableDef, name);
+                            if (local >= 0)
+                            {
+                                idx = offset + local;
+                                break;
+                            }
+                            offset += step.TableDef.Columns.Count;
+                        }
+                    }
+                }
+            }
+
+            entries[i] = (idx, orderBy[i].Descending);
+        }
+
+        return (a, b) =>
+        {
+            for (int i = 0; i < entries.Length; i++)
+            {
+                var (idx, descending) = entries[i];
+                if (idx < 0) continue;
+                var av = idx < a.Length ? a[idx] : null;
+                var bv = idx < b.Length ? b[idx] : null;
+                var cmp = CompareOrderValues(av, bv);
+                if (cmp != 0) return descending ? -cmp : cmp;
+            }
+            return 0;
+        };
+    }
+
+    private static bool IsStreamingFullyMaterialized(CompiledPlan plan)
+    {
+        bool hasAggregates = plan.SelectColumns?.Any(c => c.Aggregate != null && c.WindowFunction == null) ?? false;
+        if (hasAggregates) return false;
+        if (plan.OrderByColumns != null && plan.OrderByColumns.Count > 0) return false;
+        if (plan.IsDistinct) return false;
+        return true;
+    }
+
     private static Type[] BuildStreamingColumnTypes(CompiledPlan plan)
     {
         var columnTypes = new Type[plan.OutputColumnNames.Length];
+
+        bool hasAggregates = plan.SelectColumns?.Any(c => c.Aggregate != null && c.WindowFunction == null) ?? false;
+        if (hasAggregates)
+        {
+            for (int i = 0; i < plan.OutputColumnNames.Length; i++)
+                columnTypes[i] = InferAggregateColumnType(plan.SelectColumns![i], plan.TableDefinition);
+            return columnTypes;
+        }
 
         // Bei Joins beziehen sich Projektionsindizes auf die kombinierte Zeile;
         // die Typen müssen über die jeweilige Tabelle aufgelöst werden.
@@ -5678,6 +5780,36 @@ public sealed class WalhallaEngine : IDisposable
                 columnTypes[i] = typeof(object);
         }
         return columnTypes;
+    }
+
+    private static Type InferAggregateColumnType(SqlSelectColumn col, SqlTableDefinition tableDef)
+    {
+        if (col.Aggregate != null)
+        {
+            switch (col.Aggregate.Function)
+            {
+                case SqlAggregateFunction.Count:
+                    return typeof(long);
+                case SqlAggregateFunction.Sum:
+                case SqlAggregateFunction.Avg:
+                    return typeof(double);
+                case SqlAggregateFunction.Min:
+                case SqlAggregateFunction.Max:
+                    if (col.Aggregate.Argument != null)
+                    {
+                        var idx = FindColumnIndex(tableDef, col.Aggregate.Argument);
+                        if (idx >= 0)
+                            return MapScalarTypeToClr(tableDef.Columns[idx].Type);
+                    }
+                    return typeof(object);
+            }
+        }
+
+        var name = col.Alias ?? col.Expression;
+        var idx2 = FindColumnIndex(tableDef, name);
+        if (idx2 >= 0)
+            return MapScalarTypeToClr(tableDef.Columns[idx2].Type);
+        return typeof(object);
     }
 
     private readonly struct StreamingTypeResolver
