@@ -37,13 +37,33 @@ internal sealed record CompiledPlan(
         && ProjectionIndices.SequenceEqual(Enumerable.Range(0, ProjectionIndices.Length));
 
     /// <summary>True when the query can be streamed row-by-row without full materialization.</summary>
-    public bool IsStreamable => Join == null
-        && (OrderByColumns == null || OrderByColumns.Count == 0)
+    public bool IsStreamable => (OrderByColumns == null || OrderByColumns.Count == 0)
         && !IsDistinct
         && (GroupByColumns == null || GroupByColumns.Count == 0)
         && (SelectColumns == null || !SelectColumns.Any(c => c.Aggregate != null || c.WindowFunction != null))
         && Having == null
-        && ComputedProjections == null;
+        && ComputedProjections == null
+        && IsJoinStreamable;
+
+    /// <summary>
+    /// Joins sind streambar, solange sie keine RIGHT JOINs enthalten und keine
+    /// unbekannt großen CROSS JOINs. RIGHT JOIN erfordert, dass die rechte Seite
+    /// der äußere Scan ist; CROSS JOIN ist grundsätzlich streambar, kann aber sehr
+    /// viele Zeilen erzeugen.
+    /// </summary>
+    private bool IsJoinStreamable
+    {
+        get
+        {
+            if (Join == null) return true;
+            foreach (var step in Join.Steps)
+            {
+                if (step.Kind == SqlJoinKind.Right)
+                    return false;
+            }
+            return true;
+        }
+    }
 
     /// <summary>
     /// Maps column index (in table definition order) to output index in the result array.

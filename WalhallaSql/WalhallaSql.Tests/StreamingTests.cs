@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Xunit;
@@ -148,7 +149,9 @@ public class StreamingTests
         using var stream = await engine.ExecuteStreamingAsync(sql);
         Assert.True(stream.IsFullyMaterialized);
 
-        var streamRows = await stream.EnumerateRowsAsync().ToListAsync();
+        var streamRows = new List<IReadOnlyDictionary<string, object?>>();
+        await foreach (var row in stream.EnumerateRowsAsync())
+            streamRows.Add(row);
         var result = engine.Execute(sql);
 
         Assert.Equal(result.Rows.Count, streamRows.Count);
@@ -168,9 +171,115 @@ public class StreamingTests
             engine.Execute($"INSERT INTO T (Id, Name) VALUES ({i}, 'Row{i}')");
 
         using var stream = await engine.ExecuteStreamingAsync("SELECT * FROM T LIMIT 3 OFFSET 10");
-        var rows = await stream.EnumerateRowsAsync().ToListAsync();
+        var rows = new List<IReadOnlyDictionary<string, object?>>();
+        await foreach (var row in stream.EnumerateRowsAsync())
+            rows.Add(row);
 
         Assert.Equal(3, rows.Count);
         Assert.Equal(10, rows[0]["Id"]);
+    }
+
+    [Fact]
+    public void Streaming_InnerJoin_MatchesMaterialized()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("CREATE TABLE Orders (Id INT PRIMARY KEY, CustomerId INT, TotalAmount DOUBLE)");
+
+        for (int i = 1; i <= 5; i++)
+            engine.Execute($"INSERT INTO Customers (Id, Name) VALUES ({i}, 'Customer{i}')");
+        engine.Execute("INSERT INTO Orders (Id, CustomerId, TotalAmount) VALUES (1, 1, 100.0)");
+        engine.Execute("INSERT INTO Orders (Id, CustomerId, TotalAmount) VALUES (2, 1, 200.0)");
+        engine.Execute("INSERT INTO Orders (Id, CustomerId, TotalAmount) VALUES (3, 2, 50.0)");
+        engine.Execute("INSERT INTO Orders (Id, CustomerId, TotalAmount) VALUES (4, 4, 75.0)");
+
+        var sql = "SELECT c.Name, o.TotalAmount FROM Customers c JOIN Orders o ON c.Id = o.CustomerId";
+        using var stream = engine.ExecuteStreaming(sql);
+        var streamRows = stream.EnumerateRows().ToList();
+        var materialized = engine.Execute(sql);
+
+        Assert.Equal(materialized.Rows.Count, streamRows.Count);
+        foreach (var expected in materialized.Rows)
+        {
+            Assert.Contains(streamRows, r =>
+                Equals(r["Name"], expected["Name"]) && Equals(r["TotalAmount"], expected["TotalAmount"]));
+        }
+    }
+
+    [Fact]
+    public void Streaming_LeftJoin_MatchesMaterialized()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("CREATE TABLE Orders (Id INT PRIMARY KEY, CustomerId INT, TotalAmount DOUBLE)");
+
+        for (int i = 1; i <= 5; i++)
+            engine.Execute($"INSERT INTO Customers (Id, Name) VALUES ({i}, 'Customer{i}')");
+        engine.Execute("INSERT INTO Orders (Id, CustomerId, TotalAmount) VALUES (1, 1, 100.0)");
+        engine.Execute("INSERT INTO Orders (Id, CustomerId, TotalAmount) VALUES (2, 2, 50.0)");
+
+        var sql = "SELECT c.Name, o.TotalAmount FROM Customers c LEFT JOIN Orders o ON c.Id = o.CustomerId";
+        var materialized = engine.Execute(sql);
+        using var stream = engine.ExecuteStreaming(sql);
+        var streamRows = stream.EnumerateRows().ToList();
+
+        Assert.Equal(materialized.Rows.Count, streamRows.Count);
+        foreach (var expected in materialized.Rows)
+        {
+            Assert.Contains(streamRows, r =>
+                Equals(r["Name"], expected["Name"]) && Equals(r["TotalAmount"], expected["TotalAmount"]));
+        }
+    }
+
+    [Fact]
+    public void Streaming_CrossJoin_MatchesMaterialized()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE A (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("CREATE TABLE B (Id INT PRIMARY KEY, Label STRING)");
+        engine.Execute("INSERT INTO A (Id, Name) VALUES (1, 'A1'), (2, 'A2')");
+        engine.Execute("INSERT INTO B (Id, Label) VALUES (10, 'B1'), (20, 'B2'), (30, 'B3')");
+
+        var sql = "SELECT a.Name, b.Label FROM A a CROSS JOIN B b";
+        var materialized = engine.Execute(sql);
+        using var stream = engine.ExecuteStreaming(sql);
+        var streamRows = stream.EnumerateRows().ToList();
+
+        Assert.Equal(materialized.Rows.Count, streamRows.Count);
+        foreach (var expected in materialized.Rows)
+        {
+            Assert.Contains(streamRows, r =>
+                Equals(r["Name"], expected["Name"]) && Equals(r["Label"], expected["Label"]));
+        }
+    }
+
+    [Fact]
+    public void Streaming_Join_WithLimit()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE A (Id INT PRIMARY KEY)");
+        engine.Execute("CREATE TABLE B (Id INT PRIMARY KEY, AId INT)");
+        for (int i = 1; i <= 10; i++)
+            engine.Execute($"INSERT INTO A (Id) VALUES ({i})");
+        for (int i = 1; i <= 10; i++)
+            for (int j = 1; j <= 3; j++)
+                engine.Execute($"INSERT INTO B (Id, AId) VALUES ({i * 100 + j}, {i})");
+
+        using var stream = engine.ExecuteStreaming("SELECT a.Id, b.Id FROM A a JOIN B b ON a.Id = b.AId LIMIT 7");
+        var rows = stream.EnumerateRows().ToList();
+        Assert.Equal(7, rows.Count);
+    }
+
+    [Fact]
+    public void Streaming_RightJoin_IsNotStreamable()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("CREATE TABLE Orders (Id INT PRIMARY KEY, CustomerId INT)");
+        engine.Execute("INSERT INTO Customers (Id, Name) VALUES (1, 'A')");
+        engine.Execute("INSERT INTO Orders (Id, CustomerId) VALUES (1, 1)");
+
+        Assert.Throws<WalhallaException>(() =>
+            engine.ExecuteStreaming("SELECT * FROM Customers c RIGHT JOIN Orders o ON c.Id = o.CustomerId"));
     }
 }

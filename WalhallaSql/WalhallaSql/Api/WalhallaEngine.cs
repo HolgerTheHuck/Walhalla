@@ -5633,13 +5633,26 @@ public sealed class WalhallaEngine : IDisposable
     {
         IStreamingOperator current = new ScanOperator();
 
+        // Bei Joins bezieht sich plan.WhereDelegate auf die Basis-Tabelle und muss vor dem Join
+        // angewendet werden. Die ON-Prädikate werden innerhalb des JoinOperators verarbeitet.
         if (plan.WhereDelegate != null)
         {
             var where = plan.WhereDelegate;
             current = new FilterOperator(current, row => where(row, Array.Empty<object?>()));
         }
 
-        current = new ProjectOperator(current, plan.ProjectionIndices, plan.ComputedProjections);
+        if (plan.Join != null)
+        {
+            int leftWidth = plan.TableDefinition.Columns.Count;
+            foreach (var step in plan.Join.Steps)
+            {
+                current = new JoinStreamingOperator(current, step, leftWidth);
+                leftWidth += step.TableDef.Columns.Count;
+            }
+        }
+
+        var projectionIndices = plan.Join?.ProjectionIndices ?? plan.ProjectionIndices;
+        current = new ProjectOperator(current, projectionIndices, plan.ComputedProjections);
 
         if (select.Offset.HasValue || select.Limit.HasValue)
             current = new LimitOffsetOperator(current, select.Offset, select.Limit);
@@ -5650,15 +5663,66 @@ public sealed class WalhallaEngine : IDisposable
     private static Type[] BuildStreamingColumnTypes(CompiledPlan plan)
     {
         var columnTypes = new Type[plan.OutputColumnNames.Length];
+
+        // Bei Joins beziehen sich Projektionsindizes auf die kombinierte Zeile;
+        // die Typen müssen über die jeweilige Tabelle aufgelöst werden.
+        var typeResolver = new StreamingTypeResolver(plan);
+        var projectionIndices = plan.Join?.ProjectionIndices ?? plan.ProjectionIndices;
+
         for (int i = 0; i < plan.OutputColumnNames.Length; i++)
         {
-            var colIdx = plan.ProjectionIndices[i];
-            if (colIdx >= 0 && colIdx < plan.TableDefinition.Columns.Count)
-                columnTypes[i] = MapScalarTypeToClr(plan.TableDefinition.Columns[colIdx].Type);
+            var colIdx = projectionIndices[i];
+            if (colIdx >= 0 && colIdx < typeResolver.MaxIndex)
+                columnTypes[i] = typeResolver.Resolve(colIdx);
             else
                 columnTypes[i] = typeof(object);
         }
         return columnTypes;
+    }
+
+    private readonly struct StreamingTypeResolver
+    {
+        private readonly List<SqlTableDefinition> _defs;
+        private readonly List<int> _offsets;
+        public int MaxIndex { get; }
+
+        public StreamingTypeResolver(CompiledPlan plan)
+        {
+            if (plan.Join == null)
+            {
+                _defs = new List<SqlTableDefinition> { plan.TableDefinition };
+                _offsets = new List<int> { 0 };
+                MaxIndex = plan.TableDefinition.Columns.Count;
+                return;
+            }
+
+            _defs = new List<SqlTableDefinition> { plan.Join.BaseTableDef };
+            _offsets = new List<int> { 0 };
+            int offset = plan.Join.BaseTableDef.Columns.Count;
+            foreach (var step in plan.Join.Steps)
+            {
+                _offsets.Add(offset);
+                _defs.Add(step.TableDef);
+                offset += step.TableDef.Columns.Count;
+            }
+            MaxIndex = offset;
+        }
+
+        public Type Resolve(int idx)
+        {
+            for (int i = _offsets.Count - 1; i >= 0; i--)
+            {
+                if (idx >= _offsets[i])
+                {
+                    var localIdx = idx - _offsets[i];
+                    var def = _defs[i];
+                    if (localIdx >= 0 && localIdx < def.Columns.Count)
+                        return MapScalarTypeToClr(def.Columns[localIdx].Type);
+                    break;
+                }
+            }
+            return typeof(object);
+        }
     }
 
     private static async IAsyncEnumerable<object?[]> ProjectToArraysAsync(
