@@ -305,3 +305,17 @@ public sealed record SqlCopyStatement(
     SqlCopyDirection Direction,
     SqlCopyOptions Options,
     IReadOnlyList<string>? ColumnNames = null) : SqlStatement;
+
+// ── Cursors ────────────────────────────────────────────────────────────────────────
+
+public sealed record SqlDeclareCursorStatement(
+    string CursorName,
+    string SelectSql) : SqlStatement;
+
+public sealed record SqlOpenCursorStatement(string CursorName) : SqlStatement;
+
+public sealed record SqlFetchCursorStatement(string CursorName) : SqlStatement;
+
+public sealed record SqlCloseCursorStatement(string CursorName) : SqlStatement;
+
+public sealed record SqlDeallocateCursorStatement(string CursorName) : SqlStatement;

@@ -125,6 +125,21 @@ internal static class SqlStatementParser
         if (SqlSyntaxText.MatchesKeywordAt(normalized, 0, "ANALYZE"))
             return ParseAnalyze(normalized);
 
+        if (SqlSyntaxText.StartsWithKeyword(normalized, "DECLARE"))
+            return ParseDeclareCursorStatement(normalized);
+
+        if (SqlSyntaxText.MatchesKeywordAt(normalized, 0, "OPEN"))
+            return ParseOpenCursorStatement(normalized);
+
+        if (SqlSyntaxText.MatchesKeywordAt(normalized, 0, "FETCH"))
+            return ParseFetchCursorStatement(normalized);
+
+        if (SqlSyntaxText.MatchesKeywordAt(normalized, 0, "CLOSE"))
+            return ParseCloseCursorStatement(normalized);
+
+        if (SqlSyntaxText.StartsWithKeyword(normalized, "DEALLOCATE"))
+            return ParseDeallocateCursorStatement(normalized);
+
         if (SqlSyntaxText.StartsWithKeyword(normalized, "COPY"))
             return ParseCopy(normalized);
 
@@ -2448,6 +2463,51 @@ internal static class SqlStatementParser
         }
         return new SqlDropProcedureStatement(
             SqlSyntaxText.NormalizeIdentifier(remaining.Trim()), ifExists);
+    }
+
+    private static SqlDeclareCursorStatement ParseDeclareCursorStatement(string sql)
+    {
+        // DECLARE cursorName CURSOR FOR <select>
+        var remaining = sql["DECLARE".Length..].TrimStart();
+        var nameEnd = remaining.IndexOfAny(new[] { ' ', '\t', '\r', '\n' });
+        var cursorName = SqlSyntaxText.NormalizeIdentifier(remaining[..nameEnd].Trim());
+        remaining = remaining[nameEnd..].TrimStart();
+
+        if (!remaining.StartsWith("CURSOR", StringComparison.OrdinalIgnoreCase))
+            throw new NotSupportedException("DECLARE requires CURSOR FOR syntax.");
+        remaining = remaining["CURSOR".Length..].TrimStart();
+
+        if (!remaining.StartsWith("FOR", StringComparison.OrdinalIgnoreCase))
+            throw new NotSupportedException("DECLARE cursor requires FOR clause.");
+        remaining = remaining["FOR".Length..].TrimStart();
+
+        return new SqlDeclareCursorStatement(cursorName, remaining);
+    }
+
+    private static SqlOpenCursorStatement ParseOpenCursorStatement(string sql)
+    {
+        var remaining = sql["OPEN".Length..].TrimStart();
+        return new SqlOpenCursorStatement(SqlSyntaxText.NormalizeIdentifier(remaining));
+    }
+
+    private static SqlFetchCursorStatement ParseFetchCursorStatement(string sql)
+    {
+        var remaining = sql["FETCH".Length..].TrimStart();
+        return new SqlFetchCursorStatement(SqlSyntaxText.NormalizeIdentifier(remaining));
+    }
+
+    private static SqlCloseCursorStatement ParseCloseCursorStatement(string sql)
+    {
+        var remaining = sql["CLOSE".Length..].TrimStart();
+        return new SqlCloseCursorStatement(SqlSyntaxText.NormalizeIdentifier(remaining));
+    }
+
+    private static SqlDeallocateCursorStatement ParseDeallocateCursorStatement(string sql)
+    {
+        var remaining = sql["DEALLOCATE".Length..].TrimStart();
+        if (remaining.StartsWith("CURSOR", StringComparison.OrdinalIgnoreCase))
+            remaining = remaining["CURSOR".Length..].TrimStart();
+        return new SqlDeallocateCursorStatement(SqlSyntaxText.NormalizeIdentifier(remaining));
     }
 
     private static SqlExecStatement ParseExecStatement(string sql)

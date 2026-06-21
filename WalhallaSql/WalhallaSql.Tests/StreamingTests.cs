@@ -512,4 +512,54 @@ public class StreamingTests
         Assert.Equal(2, streamRows.Count);
         Assert.Equal("Alpha", streamRows[0]["Name"]);
     }
+
+    [Fact]
+    public void Streaming_Cursor_FetchesAllRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("INSERT INTO T (Id, Name) VALUES (1, 'Alpha'), (2, 'Beta'), (3, 'Gamma')");
+
+        engine.Execute("DECLARE c CURSOR FOR SELECT Id, Name FROM T ORDER BY Id");
+        engine.Execute("OPEN c");
+
+        var rows = new List<IReadOnlyDictionary<string, object?>>();
+        while (true)
+        {
+            var result = engine.Execute("FETCH c");
+            if (result.Rows.Count == 0)
+                break;
+            rows.Add(result.Rows[0]);
+        }
+
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(1, rows[0]["Id"]);
+        Assert.Equal("Gamma", rows[2]["Name"]);
+
+        engine.Execute("CLOSE c");
+        engine.Execute("DEALLOCATE c");
+    }
+
+    [Fact]
+    public void Streaming_Cursor_FetchWithoutOpen_Throws()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY)");
+        engine.Execute("DECLARE c CURSOR FOR SELECT Id FROM T");
+        Assert.Throws<WalhallaException>(() => engine.Execute("FETCH c"));
+    }
+
+    [Fact]
+    public void Streaming_Cursor_DeallocateClosesOpenCursor()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY)");
+        engine.Execute("INSERT INTO T (Id) VALUES (1), (2)");
+        engine.Execute("DECLARE c CURSOR FOR SELECT Id FROM T");
+        engine.Execute("OPEN c");
+        var r = engine.Execute("FETCH c");
+        Assert.Single(r.Rows);
+        engine.Execute("DEALLOCATE c");
+        Assert.Throws<WalhallaException>(() => engine.Execute("FETCH c"));
+    }
 }

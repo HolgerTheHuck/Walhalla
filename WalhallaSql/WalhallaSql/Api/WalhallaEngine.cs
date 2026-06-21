@@ -37,10 +37,12 @@ public sealed class WalhallaEngine : IDisposable
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, WalhallaResultSet>> _compiledProcedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>> _compiledStreamingProcedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<SqlTriggerDefinition>> _triggersByTable = new(StringComparer.OrdinalIgnoreCase);
-    // Guards _views, _procedures, _compiledProcedures, _triggersByTable.
+    // Guards _views, _procedures, _compiledProcedures, _triggersByTable, _cursors, _cursorDefinitions.
     // Held only while reading/mutating these dictionaries (and trigger lists), never while
     // invoking arbitrary SQL/procedure bodies (those run after snapshotting under this lock).
     private readonly object _metaSync = new();
+    private readonly Dictionary<string, SqlDeclareCursorStatement> _cursorDefinitions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CursorState> _cursors = new(StringComparer.OrdinalIgnoreCase);
     private int _disposed;
     private readonly BoundedLruCache<CompiledPlan>? _planCache;
     private long _planCacheHits;
@@ -444,6 +446,21 @@ public sealed class WalhallaEngine : IDisposable
 
             case SqlRevokeStatement revoke:
                 return ExecuteRevoke(revoke);
+
+            case SqlDeclareCursorStatement declareCursor:
+                return ExecuteDeclareCursor(declareCursor);
+
+            case SqlOpenCursorStatement openCursor:
+                return ExecuteOpenCursor(openCursor);
+
+            case SqlFetchCursorStatement fetchCursor:
+                return ExecuteFetchCursor(fetchCursor);
+
+            case SqlCloseCursorStatement closeCursor:
+                return ExecuteCloseCursor(closeCursor);
+
+            case SqlDeallocateCursorStatement deallocCursor:
+                return ExecuteDeallocateCursor(deallocCursor);
 
             default:
                 throw new NotSupportedException($"Statement type '{statement.GetType().Name}' is not supported.");
@@ -4874,6 +4891,105 @@ public sealed class WalhallaEngine : IDisposable
         var columnTypes = result.ColumnNames.Select(_ => typeof(object)).ToArray();
         var rows = AsAsyncDictionaries(result.Rows, schema);
         return WalhallaStreamResult.FromRowsAsync(result.ColumnNames, rows, columnTypes);
+    }
+
+    private sealed class CursorState
+    {
+        public required string Name { get; init; }
+        public required WalhallaStreamResult Result { get; init; }
+        public IAsyncEnumerator<IReadOnlyDictionary<string, object?>>? Enumerator { get; set; }
+        public bool IsOpen { get; set; }
+    }
+
+    private WalhallaResultSet ExecuteDeclareCursor(SqlDeclareCursorStatement stmt)
+    {
+        lock (_metaSync)
+        {
+            _cursorDefinitions[stmt.CursorName] = stmt;
+        }
+        return WalhallaResultSet.Affected(0);
+    }
+
+    private WalhallaResultSet ExecuteOpenCursor(SqlOpenCursorStatement stmt)
+    {
+        SqlDeclareCursorStatement? definition;
+        lock (_metaSync)
+        {
+            if (!_cursorDefinitions.TryGetValue(stmt.CursorName, out definition))
+                throw new WalhallaException($"Cursor '{stmt.CursorName}' is not declared.");
+        }
+
+        if (_cursors.TryGetValue(stmt.CursorName, out var existing) && existing.IsOpen)
+            throw new WalhallaException($"Cursor '{stmt.CursorName}' is already open.");
+
+        // ReSharper disable once MethodHasAsyncOverload -- synchroner Cursor-Einstieg
+        var result = ExecuteStreamingAsync(definition.SelectSql).GetAwaiter().GetResult();
+        var enumerator = result.EnumerateRowsAsync().GetAsyncEnumerator();
+
+        lock (_metaSync)
+        {
+            _cursors[stmt.CursorName] = new CursorState
+            {
+                Name = stmt.CursorName,
+                Result = result,
+                Enumerator = enumerator,
+                IsOpen = true
+            };
+        }
+        return WalhallaResultSet.Affected(0);
+    }
+
+    private WalhallaResultSet ExecuteFetchCursor(SqlFetchCursorStatement stmt)
+    {
+        CursorState? cursor;
+        lock (_metaSync)
+        {
+            if (!_cursors.TryGetValue(stmt.CursorName, out cursor) || !cursor.IsOpen)
+                throw new WalhallaException($"Cursor '{stmt.CursorName}' is not open.");
+        }
+
+        var enumerator = cursor.Enumerator ?? throw new InvalidOperationException("Cursor enumerator is missing.");
+        var moved = enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult();
+        if (!moved)
+            return WalhallaResultSet.Empty(cursor.Result.ColumnNames.ToArray());
+
+        var row = enumerator.Current;
+        var values = new object?[cursor.Result.ColumnNames.Count];
+        for (int i = 0; i < cursor.Result.ColumnNames.Count; i++)
+            row.TryGetValue(cursor.Result.ColumnNames[i], out values[i]);
+
+        var schema = cursor.Result.Schema;
+        return new WalhallaResultSet(new[] { new WalhallaRow(schema, values) }, cursor.Result.ColumnNames);
+    }
+
+    private WalhallaResultSet ExecuteCloseCursor(SqlCloseCursorStatement stmt)
+    {
+        lock (_metaSync)
+        {
+            if (!_cursors.TryGetValue(stmt.CursorName, out var cursor) || !cursor.IsOpen)
+                throw new WalhallaException($"Cursor '{stmt.CursorName}' is not open.");
+
+            cursor.Enumerator?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            cursor.Result.Dispose();
+            cursor.IsOpen = false;
+            cursor.Enumerator = null;
+        }
+        return WalhallaResultSet.Affected(0);
+    }
+
+    private WalhallaResultSet ExecuteDeallocateCursor(SqlDeallocateCursorStatement stmt)
+    {
+        lock (_metaSync)
+        {
+            if (_cursors.TryGetValue(stmt.CursorName, out var cursor) && cursor.IsOpen)
+            {
+                cursor.Enumerator?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                cursor.Result.Dispose();
+            }
+            _cursors.Remove(stmt.CursorName);
+            _cursorDefinitions.Remove(stmt.CursorName);
+        }
+        return WalhallaResultSet.Affected(0);
     }
 
     private static async IAsyncEnumerable<IReadOnlyDictionary<string, object?>> AsAsyncDictionaries(
