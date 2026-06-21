@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,7 +40,7 @@ public sealed class WalhallaStreamResult : IDisposable
     /// </summary>
     internal IAsyncEnumerable<object?[]>? RowEnumerable { get; }
 
-    internal WalhallaStreamResult(
+    public WalhallaStreamResult(
         IReadOnlyList<string> columnNames,
         IReadOnlyList<Type> columnTypes,
         ColumnSchema schema,
@@ -53,7 +54,7 @@ public sealed class WalhallaStreamResult : IDisposable
         IsFullyMaterialized = isFullyMaterialized;
     }
 
-    internal WalhallaStreamResult(
+    public WalhallaStreamResult(
         IReadOnlyList<string> columnNames,
         IReadOnlyList<Type> columnTypes,
         ColumnSchema schema,
@@ -65,6 +66,37 @@ public sealed class WalhallaStreamResult : IDisposable
         Schema = schema;
         RowEnumerable = rowEnumerable ?? throw new ArgumentNullException(nameof(rowEnumerable));
         IsFullyMaterialized = isFullyMaterialized;
+    }
+
+    /// <summary>
+    /// Baut ein Stream-Result aus einem fremden Zeilenstrom (z. B. zurückgegeben
+    /// aus einer nativen Prozedur). Spaltentypen werden auf <see cref="object"/>
+    /// gesetzt, wenn keine abgeleiteten Metadaten vorliegen.
+    /// </summary>
+    internal static WalhallaStreamResult FromRowsAsync(
+        IReadOnlyList<string> columnNames,
+        IAsyncEnumerable<IReadOnlyDictionary<string, object?>> rows,
+        IReadOnlyList<Type>? columnTypes = null)
+    {
+        var schema = new ColumnSchema(columnNames.ToArray());
+        var types = columnTypes ?? columnNames.Select(_ => typeof(object)).ToArray();
+
+        return new WalhallaStreamResult(columnNames, types, schema, ProjectToArrays(rows, schema));
+    }
+
+    private static async IAsyncEnumerable<object?[]> ProjectToArrays(
+        IAsyncEnumerable<IReadOnlyDictionary<string, object?>> rows,
+        ColumnSchema schema,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var names = schema.Names;
+        await foreach (var row in rows.WithCancellation(cancellationToken))
+        {
+            var values = new object?[names.Length];
+            for (int i = 0; i < names.Length; i++)
+                row.TryGetValue(names[i], out values[i]);
+            yield return values;
+        }
     }
 
     /// <summary>

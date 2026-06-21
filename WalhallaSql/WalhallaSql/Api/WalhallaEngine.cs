@@ -35,6 +35,7 @@ public sealed class WalhallaEngine : IDisposable
     private readonly Dictionary<string, SqlCreateViewStatement> _views = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SqlStoredProcedureDefinition> _procedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, WalhallaResultSet>> _compiledProcedures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>> _compiledStreamingProcedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<SqlTriggerDefinition>> _triggersByTable = new(StringComparer.OrdinalIgnoreCase);
     // Guards _views, _procedures, _compiledProcedures, _triggersByTable.
     // Held only while reading/mutating these dictionaries (and trigger lists), never while
@@ -4735,6 +4736,7 @@ public sealed class WalhallaEngine : IDisposable
                 stmt.ProcedureName, stmt.Parameters, stmt.Body, stmt.Language);
             _procedures[stmt.ProcedureName] = proc;
             _compiledProcedures.Remove(stmt.ProcedureName);
+            _compiledStreamingProcedures.Remove(stmt.ProcedureName);
         }
         return WalhallaResultSet.Affected(0);
     }
@@ -4747,6 +4749,7 @@ public sealed class WalhallaEngine : IDisposable
             if (!_procedures.Remove(stmt.ProcedureName) && !stmt.IfExists)
                 throw new WalhallaException($"Procedure '{stmt.ProcedureName}' not found.");
             _compiledProcedures.Remove(stmt.ProcedureName);
+            _compiledStreamingProcedures.Remove(stmt.ProcedureName);
         }
 
         _grantCatalog.RevokeAllForObject(GrantObjectType.Procedure, stmt.ProcedureName);
@@ -4772,19 +4775,80 @@ public sealed class WalhallaEngine : IDisposable
         return ExecuteProcedureBody(body);
     }
 
+    /// <summary>
+    /// Asynchrone Variante von <see cref="ExecuteExec"/>. C#-Prozeduren werden
+    /// mit ihrer Streaming-Methode ausgeführt; SQL-Prozeduren verwenden weiterhin
+    /// den synchronen Pfad und wandeln das Ergebnis in einen Stream um.
+    /// </summary>
+    public async Task<WalhallaStreamResult> ExecuteStreamingExecAsync(
+        string procedureName,
+        IReadOnlyList<SqlExecArgument> args,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureProcedurePrivilege(procedureName, GrantPrivilege.Execute);
+
+        SqlStoredProcedureDefinition? proc;
+        lock (_metaSync)
+        {
+            if (!_procedures.TryGetValue(procedureName, out proc))
+                throw new WalhallaException($"Procedure '{procedureName}' not found.");
+        }
+
+        if (string.Equals(proc.Language, "csharp", StringComparison.OrdinalIgnoreCase))
+            return await ExecuteCSharpProcedureStreamingAsync(proc, args, cancellationToken);
+
+        var body = BindProcedureBody(proc, args);
+        var result = ExecuteProcedureBody(body);
+        return WalhallaResultSetToStream(result);
+    }
+
     private WalhallaResultSet ExecuteCSharpProcedure(
         SqlStoredProcedureDefinition proc,
         IReadOnlyList<SqlExecArgument> args)
     {
-        Func<SqlNativeProcedureContext, WalhallaResultSet>? compiled;
-        lock (_metaSync)
-            _compiledProcedures.TryGetValue(proc.Name, out compiled);
+        var (compiled, _) = GetOrCompileCSharpProcedure(proc);
 
-        if (compiled == null)
+        var bound = BindCSharpArguments(proc, args);
+        var ctx = new SqlNativeProcedureContext(this, bound);
+        return compiled(ctx);
+    }
+
+    private async Task<WalhallaStreamResult> ExecuteCSharpProcedureStreamingAsync(
+        SqlStoredProcedureDefinition proc,
+        IReadOnlyList<SqlExecArgument> args,
+        CancellationToken cancellationToken = default)
+    {
+        var (_, compiledAsync) = GetOrCompileCSharpProcedure(proc);
+
+        var bound = BindCSharpArguments(proc, args);
+        var ctx = new SqlNativeProcedureContext(this, bound);
+        if (compiledAsync != null)
+            return await compiledAsync(ctx, cancellationToken);
+
+        // Fallback: synchron ausführen und in Stream wandeln.
+        var result = ExecuteCSharpProcedure(proc, args);
+        return WalhallaResultSetToStream(result);
+    }
+
+    private (Func<SqlNativeProcedureContext, WalhallaResultSet> execute,
+            Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>? streamingAsync)
+        GetOrCompileCSharpProcedure(SqlStoredProcedureDefinition proc)
+    {
+        Func<SqlNativeProcedureContext, WalhallaResultSet>? compiled;
+        Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>? compiledStreaming;
+        lock (_metaSync)
+        {
+            _compiledProcedures.TryGetValue(proc.Name, out compiled);
+            _compiledStreamingProcedures.TryGetValue(proc.Name, out compiledStreaming);
+        }
+
+        if (compiled == null || compiledStreaming == null)
         {
             try
             {
-                compiled = CSharpProcedureCompiler.Compile(proc);
+                var (execute, streaming) = CSharpProcedureCompiler.Compile(proc);
+                compiled = execute;
+                compiledStreaming = streaming;
             }
             catch (Exception ex) when (ex is not WalhallaException)
             {
@@ -4792,12 +4856,36 @@ public sealed class WalhallaEngine : IDisposable
                     $"C# stored procedure '{proc.Name}': {ex.Message}", ex);
             }
             lock (_metaSync)
+            {
                 _compiledProcedures[proc.Name] = compiled;
+                if (compiledStreaming != null)
+                    _compiledStreamingProcedures[proc.Name] = compiledStreaming;
+            }
         }
 
-        var bound = BindCSharpArguments(proc, args);
-        var ctx = new SqlNativeProcedureContext(this, bound);
-        return compiled(ctx);
+        return (compiled, compiledStreaming);
+    }
+
+    private static WalhallaStreamResult WalhallaResultSetToStream(WalhallaResultSet result)
+    {
+        var schema = result.ColumnNames.Count > 0
+            ? new ColumnSchema(result.ColumnNames.ToArray())
+            : new ColumnSchema(Array.Empty<string>());
+        var columnTypes = result.ColumnNames.Select(_ => typeof(object)).ToArray();
+        var rows = AsAsyncDictionaries(result.Rows, schema);
+        return WalhallaStreamResult.FromRowsAsync(result.ColumnNames, rows, columnTypes);
+    }
+
+    private static async IAsyncEnumerable<IReadOnlyDictionary<string, object?>> AsAsyncDictionaries(
+        IReadOnlyList<WalhallaRow> rows,
+        ColumnSchema schema,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        for (int i = 0; i < rows.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return rows[i];
+        }
     }
 
     private static IReadOnlyList<SqlExecArgument> BindCSharpArguments(

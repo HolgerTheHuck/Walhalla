@@ -3,12 +3,12 @@ using System.Collections.Generic;
 
 namespace WalhallaSql;
 
-internal sealed class ColumnSchema
+public sealed class ColumnSchema
 {
-    internal readonly string[] Names;
+    public readonly string[] Names;
     private readonly Dictionary<string, int> _ordinals;
 
-    internal ColumnSchema(string[] names)
+    public ColumnSchema(string[] names)
     {
         Names = names;
         _ordinals = new Dictionary<string, int>(names.Length, StringComparer.OrdinalIgnoreCase);

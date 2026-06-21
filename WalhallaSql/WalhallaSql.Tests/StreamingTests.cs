@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using WalhallaSql.Sql;
 using Xunit;
 
 namespace WalhallaSql.Tests;
@@ -433,5 +435,81 @@ public class StreamingTests
             Assert.Contains(streamRows, r =>
                 Equals(r["Category"], expected["Category"]) && Equals(r["Cnt"], expected["Cnt"]));
         }
+    }
+
+    [Fact]
+    public async Task Streaming_CSharpProcedure_ReturnsRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("INSERT INTO T (Id, Name) VALUES (1, 'Alpha'), (2, 'Beta')");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE GetAllRows()
+            AS CSHARP BEGIN
+                var result = ctx.Execute("SELECT * FROM T");
+                return result;
+            END
+            """);
+
+        var args = Array.Empty<SqlExecArgument>();
+        using var stream = await engine.ExecuteStreamingExecAsync("GetAllRows", args);
+        var streamRows = new List<IReadOnlyDictionary<string, object?>>();
+        await foreach (var row in stream.EnumerateRowsAsync())
+            streamRows.Add(row);
+
+        Assert.Equal(2, streamRows.Count);
+        Assert.Equal(1, streamRows[0]["Id"]);
+        Assert.Equal("Alpha", streamRows[0]["Name"]);
+    }
+
+    [Fact]
+    public async Task Streaming_CSharpProcedure_UsesNativeStreaming()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("INSERT INTO T (Id, Name) VALUES (1, 'Alpha'), (2, 'Beta'), (3, 'Gamma')");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE StreamRows()
+            AS CSHARP BEGIN
+                var list = new System.Collections.Generic.List<System.Collections.Generic.IReadOnlyDictionary<string, object?>>();
+                foreach (var r in ctx.Query("SELECT * FROM T WHERE Id > 1 ORDER BY Id"))
+                    list.Add(r);
+                return WalhallaSql.WalhallaResultSet.FromRows(list);
+            END
+            """);
+
+        var args = Array.Empty<SqlExecArgument>();
+        using var stream = await engine.ExecuteStreamingExecAsync("StreamRows", args);
+        var streamRows = new List<IReadOnlyDictionary<string, object?>>();
+        await foreach (var row in stream.EnumerateRowsAsync())
+            streamRows.Add(row);
+
+        Assert.Equal(2, streamRows.Count);
+        Assert.Equal(2, streamRows[0]["Id"]);
+        Assert.Equal("Beta", streamRows[0]["Name"]);
+    }
+
+    [Fact]
+    public async Task Streaming_SqlProcedure_MaterializesAndStreams()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("INSERT INTO T (Id, Name) VALUES (1, 'Alpha'), (2, 'Beta')");
+
+        engine.Execute(@"
+            CREATE PROCEDURE GetSqlRows
+            AS
+                SELECT * FROM T;");
+
+        var args = Array.Empty<SqlExecArgument>();
+        using var stream = await engine.ExecuteStreamingExecAsync("GetSqlRows", args);
+        var streamRows = new List<IReadOnlyDictionary<string, object?>>();
+        await foreach (var row in stream.EnumerateRowsAsync())
+            streamRows.Add(row);
+
+        Assert.Equal(2, streamRows.Count);
+        Assert.Equal("Alpha", streamRows[0]["Name"]);
     }
 }

@@ -781,6 +781,7 @@ WalhallaSql.SqlNativeProcedureContext.GetArgument(int index) -> WalhallaSql.Sql.
 WalhallaSql.SqlNativeProcedureContext.GetArgument(string! name) -> WalhallaSql.Sql.SqlExecArgument?
 WalhallaSql.SqlNativeProcedureContext.Outputs.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
 WalhallaSql.SqlNativeProcedureContext.Query(string! sql) -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>!
+WalhallaSql.SqlNativeProcedureContext.QueryStreaming(string! sql, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>!
 WalhallaSql.SqlNativeProcedureContext.SetOutput(string! name, object? value) -> void
 WalhallaSql.WalhallaEngine
 WalhallaSql.WalhallaEngine.BeginTransaction() -> WalhallaSql.WalhallaSqlTransaction!
@@ -793,6 +794,7 @@ WalhallaSql.WalhallaEngine.Execute(string! sql) -> WalhallaSql.WalhallaResultSet
 WalhallaSql.WalhallaEngine.Execute(string! sql, WalhallaSql.WalhallaSqlTransaction? transaction) -> WalhallaSql.WalhallaResultSet!
 WalhallaSql.WalhallaEngine.ExecuteStreaming(string! sql) -> WalhallaSql.WalhallaStreamResult!
 WalhallaSql.WalhallaEngine.ExecuteStreamingAsync(string! sql, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<WalhallaSql.WalhallaStreamResult!>!
+WalhallaSql.WalhallaEngine.ExecuteStreamingExecAsync(string! procedureName, System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlExecArgument!>! args, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<WalhallaSql.WalhallaStreamResult!>!
 WalhallaSql.WalhallaEngine.GetAllTables() -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlTableDefinition!>!
 WalhallaSql.WalhallaEngine.GetProcedures() -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlStoredProcedureDefinition!>!
 WalhallaSql.WalhallaEngine.GetTable(string! tableName) -> WalhallaSql.Sql.SqlTableDefinition?

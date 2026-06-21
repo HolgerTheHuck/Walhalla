@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using WalhallaSql.Sql;
@@ -12,7 +14,8 @@ namespace WalhallaSql;
 
 internal static class CSharpProcedureCompiler
 {
-    public static Func<SqlNativeProcedureContext, WalhallaResultSet> Compile(
+    public static (Func<SqlNativeProcedureContext, WalhallaResultSet> execute,
+        Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>? streamingAsync) Compile(
         SqlStoredProcedureDefinition def)
     {
         var source = GenerateSource(def);
@@ -48,8 +51,13 @@ internal static class CSharpProcedureCompiler
         var method = type.GetMethod("Execute", BindingFlags.Public | BindingFlags.Static)
             ?? throw new InvalidOperationException(
                 $"C# stored procedure '{def.Name}': method 'Execute' not found.");
+        var streamingMethod = type.GetMethod("ExecuteStreamingAsync", BindingFlags.Public | BindingFlags.Static)
+            ?? throw new InvalidOperationException(
+                $"C# stored procedure '{def.Name}': method 'ExecuteStreamingAsync' not found.");
 
-        return ctx => (WalhallaResultSet)method.Invoke(null, [ctx])!;
+        return (
+            ctx => (WalhallaResultSet)method.Invoke(null, [ctx])!,
+            (ctx, ct) => (Task<WalhallaStreamResult>)streamingMethod.Invoke(null, [ctx, ct])!);
     }
 
     private static string GenerateSource(SqlStoredProcedureDefinition def)
@@ -82,6 +90,31 @@ internal static class CSharpProcedureCompiler
         sb.AppendLine("#pragma warning disable CS0162");
         sb.AppendLine("        return WalhallaSql.WalhallaResultSet.Affected(0);");
         sb.AppendLine("#pragma warning restore CS0162");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine("    public static async System.Threading.Tasks.Task<WalhallaSql.WalhallaStreamResult> ExecuteStreamingAsync(WalhallaSql.SqlNativeProcedureContext ctx, System.Threading.CancellationToken ct = default)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        var result = Execute(ctx);");
+        sb.AppendLine("        if (result == null) return null!;");
+        sb.AppendLine("        var names = result.ColumnNames;");
+        sb.AppendLine("        var columnTypes = System.Linq.Enumerable.ToArray(names.Select(_ => typeof(object)));");
+        sb.AppendLine("        var schema = new WalhallaSql.ColumnSchema(names.ToArray());");
+        sb.AppendLine("        var rows = result.Rows;");
+        sb.AppendLine("        return new WalhallaSql.WalhallaStreamResult(names, columnTypes, schema, ProjectRows(rows, schema), true);");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine("    private static async System.Collections.Generic.IAsyncEnumerable<object?[]> ProjectRows(System.Collections.Generic.IReadOnlyList<WalhallaSql.WalhallaRow> rows, WalhallaSql.ColumnSchema schema, System.Threading.CancellationToken ct = default)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        var names = schema.Names;");
+        sb.AppendLine("        for (int i = 0; i < rows.Count; i++)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            ct.ThrowIfCancellationRequested();");
+        sb.AppendLine("            var values = new object?[names.Length];");
+        sb.AppendLine("            var row = rows[i];");
+        sb.AppendLine("            for (int j = 0; j < names.Length; j++)");
+        sb.AppendLine("                row.TryGetValue(names[j], out values[j]);");
+        sb.AppendLine("            yield return values;");
+        sb.AppendLine("        }");
         sb.AppendLine("    }");
         sb.AppendLine("}");
 

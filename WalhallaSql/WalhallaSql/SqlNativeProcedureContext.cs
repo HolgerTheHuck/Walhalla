@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Threading;
+using System.Threading.Tasks;
 using WalhallaSql.Sql;
 
 namespace WalhallaSql;
@@ -59,6 +61,30 @@ public sealed class SqlNativeProcedureContext
             rows.Add(row);
         return rows;
     }
+
+    /// <summary>
+    /// Führt ein SELECT innerhalb der Prozedur aus und gibt den Zeilenstrom
+    /// asynchron zurück, ohne das Ergebnis vollständig zu materialisieren.
+    /// </summary>
+    public IAsyncEnumerable<IReadOnlyDictionary<string, object?>> ExecuteReaderAsync(string sql, CancellationToken cancellationToken = default)
+    {
+        var trimmed = sql.TrimStart();
+        if (!trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
+            && !trimmed.StartsWith("WITH", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new WalhallaException("ExecuteReaderAsync unterstützt nur SELECT-Statements.");
+        }
+
+        var stream = _engine.ExecuteStreamingAsync(sql, cancellationToken)
+            .GetAwaiter().GetResult();
+        return stream.EnumerateRowsAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Alias für <see cref="ExecuteReaderAsync"/>.
+    /// </summary>
+    public IAsyncEnumerable<IReadOnlyDictionary<string, object?>> QueryStreaming(string sql, CancellationToken cancellationToken = default)
+        => ExecuteReaderAsync(sql, cancellationToken);
 
     private static T? ParseAs<T>(string valueExpression)
     {
