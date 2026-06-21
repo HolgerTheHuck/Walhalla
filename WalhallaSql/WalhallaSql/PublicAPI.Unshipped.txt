@@ -792,6 +792,7 @@ WalhallaSql.WalhallaEngine.DropTable(string! tableName) -> void
 WalhallaSql.WalhallaEngine.Execute(string! sql) -> WalhallaSql.WalhallaResultSet!
 WalhallaSql.WalhallaEngine.Execute(string! sql, WalhallaSql.WalhallaSqlTransaction? transaction) -> WalhallaSql.WalhallaResultSet!
 WalhallaSql.WalhallaEngine.ExecuteStreaming(string! sql) -> WalhallaSql.WalhallaStreamResult!
+WalhallaSql.WalhallaEngine.ExecuteStreamingAsync(string! sql, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<WalhallaSql.WalhallaStreamResult!>!
 WalhallaSql.WalhallaEngine.GetAllTables() -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlTableDefinition!>!
 WalhallaSql.WalhallaEngine.GetProcedures() -> System.Collections.Generic.IReadOnlyList<WalhallaSql.Sql.SqlStoredProcedureDefinition!>!
 WalhallaSql.WalhallaEngine.GetTable(string! tableName) -> WalhallaSql.Sql.SqlTableDefinition?
@@ -886,6 +887,8 @@ WalhallaSql.WalhallaStreamResult.ColumnNames.get -> System.Collections.Generic.I
 WalhallaSql.WalhallaStreamResult.ColumnTypes.get -> System.Collections.Generic.IReadOnlyList<System.Type!>!
 WalhallaSql.WalhallaStreamResult.Dispose() -> void
 WalhallaSql.WalhallaStreamResult.EnumerateRows() -> System.Collections.Generic.IEnumerable<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>!
+WalhallaSql.WalhallaStreamResult.EnumerateRowsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>!
+WalhallaSql.WalhallaStreamResult.IsFullyMaterialized.get -> bool
 WalhallaSql.Sql.SqlCopyDirection
 WalhallaSql.Sql.SqlCopyDirection.FromStdin = 0 -> WalhallaSql.Sql.SqlCopyDirection
 WalhallaSql.Sql.SqlCopyDirection.ToStdout = 1 -> WalhallaSql.Sql.SqlCopyDirection

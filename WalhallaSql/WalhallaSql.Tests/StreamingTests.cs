@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace WalhallaSql.Tests;
@@ -133,5 +134,43 @@ public class StreamingTests
         var rows = stream.EnumerateRows().ToList();
 
         Assert.Empty(rows);
+    }
+
+    [Fact]
+    public async Task Streaming_Async_MatchesMaterializedResult()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING, Value INT)");
+        for (int i = 0; i < 50; i++)
+            engine.Execute($"INSERT INTO T (Id, Name, Value) VALUES ({i}, 'Row{i}', {i * 10})");
+
+        var sql = "SELECT Name, Value FROM T WHERE Value >= 100 AND Value <= 300";
+        using var stream = await engine.ExecuteStreamingAsync(sql);
+        Assert.True(stream.IsFullyMaterialized);
+
+        var streamRows = await stream.EnumerateRowsAsync().ToListAsync();
+        var result = engine.Execute(sql);
+
+        Assert.Equal(result.Rows.Count, streamRows.Count);
+        for (int i = 0; i < result.Rows.Count; i++)
+        {
+            Assert.Equal(result.Rows[i]["Name"], streamRows[i]["Name"]);
+            Assert.Equal(result.Rows[i]["Value"], streamRows[i]["Value"]);
+        }
+    }
+
+    [Fact]
+    public async Task Streaming_Async_WithLimitOffset()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+        for (int i = 0; i < 20; i++)
+            engine.Execute($"INSERT INTO T (Id, Name) VALUES ({i}, 'Row{i}')");
+
+        using var stream = await engine.ExecuteStreamingAsync("SELECT * FROM T LIMIT 3 OFFSET 10");
+        var rows = await stream.EnumerateRowsAsync().ToListAsync();
+
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(10, rows[0]["Id"]);
     }
 }

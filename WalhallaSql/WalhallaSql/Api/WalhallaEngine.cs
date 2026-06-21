@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,6 +13,7 @@ using WalhallaSql.Collation;
 using WalhallaSql.Core;
 using WalhallaSql.Execution;
 using WalhallaSql.Execution.Join;
+using WalhallaSql.Execution.Streaming;
 using WalhallaSql.Execution.Window;
 using WalhallaSql.Parsing;
 using WalhallaSql.Sql;
@@ -5553,14 +5555,11 @@ public sealed class WalhallaEngine : IDisposable
         if (statement is not SqlSelectStatement select)
             throw new WalhallaException("Only SELECT statements support streaming execution.");
 
-        SqlCreateViewStatement? viewDef;
-        lock (_metaSync)
-            _views.TryGetValue(select.TableName, out viewDef);
-        if (viewDef != null)
-            select = viewDef.SelectStatement;
-
+        select = ResolveStreamingView(select);
         if (select.DerivedTable != null)
             throw new WalhallaException("Derived tables are not supported in streaming mode.");
+
+        EnsureTablePrivilege(select.TableName, GrantPrivilege.Select);
 
         var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
 
@@ -5568,20 +5567,88 @@ public sealed class WalhallaEngine : IDisposable
             throw new WalhallaException(
                 "Query is not streamable. Streaming requires a simple SELECT without ORDER BY, DISTINCT, GROUP BY, or JOIN.");
 
-        // Build predicate delegate (parameterless only)
-        Func<object?[], bool>? predicate = null;
-        if (plan.WhereDelegate != null && plan.ParameterCount == 0)
-        {
-            var where = plan.WhereDelegate;
-            var emptyParams = Array.Empty<object?>();
-            predicate = row => where(row, emptyParams);
-        }
-        else if (plan.WhereDelegate != null)
-        {
+        if (plan.ParameterCount != 0)
             throw new WalhallaException("Parameterized queries are not supported in streaming mode. Use a prepared statement.");
+
+        var pipeline = BuildStreamingPipeline(plan, select);
+        var context = new StreamingContext(this, _store, plan, select, Array.Empty<object?>(), _options, default);
+        var rowEnumerator = pipeline.Execute(context).Select(row => row.Values).GetEnumerator();
+
+        var columnTypes = BuildStreamingColumnTypes(plan);
+        var schema = plan.OutputSchema;
+        return new WalhallaStreamResult(plan.OutputColumnNames, columnTypes, schema, rowEnumerator, isFullyMaterialized: true);
+    }
+
+    public Task<WalhallaStreamResult> ExecuteStreamingAsync(string sql, CancellationToken cancellationToken = default)
+    {
+        var statement = SqlStatementParser.Parse(sql);
+        if (statement is not SqlSelectStatement select)
+            return Task.FromException<WalhallaStreamResult>(
+                new WalhallaException("Only SELECT statements support streaming execution."));
+
+        select = ResolveStreamingView(select);
+        if (select.DerivedTable != null)
+            return Task.FromException<WalhallaStreamResult>(
+                new WalhallaException("Derived tables are not supported in streaming mode."));
+
+        try
+        {
+            EnsureTablePrivilege(select.TableName, GrantPrivilege.Select);
+        }
+        catch (Exception ex)
+        {
+            return Task.FromException<WalhallaStreamResult>(ex);
         }
 
-        // Map column types from table metadata
+        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+
+        if (!plan.IsStreamable)
+            return Task.FromException<WalhallaStreamResult>(
+                new WalhallaException(
+                    "Query is not streamable. Streaming requires a simple SELECT without ORDER BY, DISTINCT, GROUP BY, or JOIN."));
+
+        if (plan.ParameterCount != 0)
+            return Task.FromException<WalhallaStreamResult>(
+                new WalhallaException("Parameterized queries are not supported in streaming mode. Use a prepared statement."));
+
+        var pipeline = BuildStreamingPipeline(plan, select);
+        var context = new StreamingContext(this, _store, plan, select, Array.Empty<object?>(), _options, cancellationToken);
+        var rowEnumerable = ProjectToArraysAsync(pipeline.ExecuteAsync(context, cancellationToken), cancellationToken);
+
+        var columnTypes = BuildStreamingColumnTypes(plan);
+        var schema = plan.OutputSchema;
+        var result = new WalhallaStreamResult(plan.OutputColumnNames, columnTypes, schema, rowEnumerable, isFullyMaterialized: true);
+        return Task.FromResult(result);
+    }
+
+    private SqlSelectStatement ResolveStreamingView(SqlSelectStatement select)
+    {
+        SqlCreateViewStatement? viewDef;
+        lock (_metaSync)
+            _views.TryGetValue(select.TableName, out viewDef);
+        return viewDef != null ? viewDef.SelectStatement : select;
+    }
+
+    private static IStreamingOperator BuildStreamingPipeline(CompiledPlan plan, SqlSelectStatement select)
+    {
+        IStreamingOperator current = new ScanOperator();
+
+        if (plan.WhereDelegate != null)
+        {
+            var where = plan.WhereDelegate;
+            current = new FilterOperator(current, row => where(row, Array.Empty<object?>()));
+        }
+
+        current = new ProjectOperator(current, plan.ProjectionIndices, plan.ComputedProjections);
+
+        if (select.Offset.HasValue || select.Limit.HasValue)
+            current = new LimitOffsetOperator(current, select.Offset, select.Limit);
+
+        return current;
+    }
+
+    private static Type[] BuildStreamingColumnTypes(CompiledPlan plan)
+    {
         var columnTypes = new Type[plan.OutputColumnNames.Length];
         for (int i = 0; i < plan.OutputColumnNames.Length; i++)
         {
@@ -5591,29 +5658,15 @@ public sealed class WalhallaEngine : IDisposable
             else
                 columnTypes[i] = typeof(object);
         }
+        return columnTypes;
+    }
 
-        // Get lazy enumerator from TableStore
-        IEnumerator<object?[]> rowEnumerator;
-
-        if (plan.PkRange != null)
-        {
-            var range = plan.PkRange;
-            long minRowId = range.HasLiteralBounds ? range.LiteralMin : long.MinValue;
-            long maxRowId = range.HasLiteralBounds ? range.LiteralMax : long.MaxValue;
-            if (!range.MinInclusive) minRowId++;
-            if (!range.MaxInclusive) maxRowId--;
-
-            rowEnumerator = _store.ScanRowKeyRangeLazy(plan.TableId, minRowId, maxRowId,
-                plan.TableDefinition, predicate).GetEnumerator();
-        }
-        else
-        {
-            rowEnumerator = _store.ScanWithPredicateLazy(plan.TableId, plan.TableDefinition, predicate).GetEnumerator();
-        }
-
-        var wrapped = new StreamingRowEnumerator(rowEnumerator, plan, select.Limit, select.Offset);
-        var schema = new ColumnSchema(plan.OutputColumnNames);
-        return new WalhallaStreamResult(plan.OutputColumnNames, columnTypes, schema, wrapped);
+    private static async IAsyncEnumerable<object?[]> ProjectToArraysAsync(
+        IAsyncEnumerable<StreamingRow> source,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var row in source.WithCancellation(cancellationToken))
+            yield return row.Values;
     }
 
     private static Type MapScalarTypeToClr(SqlScalarType type) => type switch
@@ -5633,63 +5686,4 @@ public sealed class WalhallaEngine : IDisposable
         SqlScalarType.Guid => typeof(Guid),
         _ => typeof(object),
     };
-
-    private sealed class StreamingRowEnumerator : IEnumerator<object?[]>
-    {
-        private readonly IEnumerator<object?[]> _inner;
-        private readonly CompiledPlan _plan;
-        private readonly int _limit;
-        private readonly int _offset;
-        private int _yielded;
-        private int _skipped;
-
-        public StreamingRowEnumerator(
-            IEnumerator<object?[]> inner, CompiledPlan plan, int? limit, int? offset)
-        {
-            _inner = inner;
-            _plan = plan;
-            _limit = limit ?? int.MaxValue;
-            _offset = offset ?? 0;
-        }
-
-        public object?[] Current { get; private set; } = Array.Empty<object?>();
-
-        object? System.Collections.IEnumerator.Current => Current;
-
-        public bool MoveNext()
-        {
-            while (_inner.MoveNext())
-            {
-                if (_skipped < _offset)
-                {
-                    _skipped++;
-                    continue;
-                }
-
-                if (_yielded >= _limit)
-                    return false;
-
-                // Always copy: the inner enumerator reuses its buffer
-                var source = _inner.Current;
-                var result = new object?[_plan.OutputColumnNames.Length];
-                var comp = _plan.ComputedProjections;
-                for (int i = 0; i < _plan.ProjectionIndices.Length; i++)
-                {
-                    if (comp != null && comp[i] != null)
-                        result[i] = comp[i]!(source);
-                    else
-                        result[i] = source[_plan.ProjectionIndices[i]];
-                }
-
-                Current = result;
-                _yielded++;
-                return true;
-            }
-
-            return false;
-        }
-
-        public void Reset() => throw new NotSupportedException();
-        public void Dispose() => _inner.Dispose();
-    }
 }
