@@ -8,6 +8,7 @@
         xmlns:oe="clr-namespace:DbUi.UI.ViewModels.ObjectExplorer"
         xmlns:conv="clr-namespace:DbUi.UI.Converters"
         xmlns:controls="clr-namespace:DbUi.UI.Controls"
+        xmlns:behaviors="clr-namespace:DbUi.UI.Behaviors"
         xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         Title="{Binding WindowTitle}"
         Width="1280" Height="800"
@@ -24,6 +25,7 @@
         <conv:BoolToTextConverter x:Key="ExecutingStatusConverter"
                                   TrueText="Executing…" FalseText="" />
         <conv:StringEqualsToVisibilityConverter x:Key="StringEqualsToVis" />
+        <conv:BinaryToHexConverter x:Key="BinaryToHexConverter" />
 
         <!-- Implicit DataTemplate: von AvalonDock's ContentPresenter via DataType gefunden,
              aber NICHT auf den OE-DockPanel angewandt (falscher DataType) -->
@@ -81,8 +83,9 @@
                                     </StackPanel>
                                 </Button>
                             </ToolBar>
-                            <DataGrid ItemsSource="{Binding ResultTable}"
-                                      AutoGenerateColumns="True"
+                            <DataGrid ItemsSource="{Binding ResultRows}"
+                                      AutoGenerateColumns="False"
+                                      behaviors:DataGridColumnsBehavior.ColumnsSource="{Binding ResultColumns}"
                                       IsReadOnly="True"
                                       CanUserAddRows="False"
                                       CanUserDeleteRows="False"
@@ -91,9 +94,22 @@
                                       VirtualizingPanel.IsVirtualizing="True"
                                       VirtualizingPanel.VirtualizationMode="Standard"
                                       MaxColumnWidth="400"
+                                      RowHeight="24"
                                       ClipboardCopyMode="IncludeHeader"
-                                      MouseDoubleClick="OnResultDataGridDoubleClick"
-                                      AutoGeneratingColumn="OnResultDataGridAutoGeneratingColumn" />
+                                      MouseDoubleClick="OnResultDataGridDoubleClick">
+                                <DataGrid.RowStyle>
+                                    <Style TargetType="DataGridRow">
+                                        <Setter Property="MinHeight" Value="24" />
+                                        <Setter Property="Height" Value="24" />
+                                    </Style>
+                                </DataGrid.RowStyle>
+                                <DataGrid.CellStyle>
+                                    <Style TargetType="DataGridCell">
+                                        <Setter Property="Padding" Value="4,0" />
+                                        <Setter Property="VerticalContentAlignment" Value="Center" />
+                                    </Style>
+                                </DataGrid.CellStyle>
+                            </DataGrid>
                         </DockPanel>
                     </TabItem>
                     <TabItem Header="Messages">

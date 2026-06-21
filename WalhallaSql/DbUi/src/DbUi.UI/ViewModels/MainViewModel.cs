@@ -256,6 +256,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         var idx = QueryTabs.IndexOf(tab);
         QueryTabs.Remove(tab);
+        _ = DisposeTabAsync(tab);
 
         if (QueryTabs.Count == 0)
         {
@@ -265,6 +266,18 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         ActiveTab = QueryTabs[Math.Min(idx, QueryTabs.Count - 1)];
+    }
+
+    private static async Task DisposeTabAsync(QueryTabViewModel tab)
+    {
+        try
+        {
+            await tab.DisposeAsync();
+        }
+        catch
+        {
+            // Aufräumen darf den UI-Thread nicht unterbrechen.
+        }
     }
 
     private async Task LoadDatabasesAsync(QueryTabViewModel tab)
@@ -319,11 +332,14 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (_activeSession is null)
             return;
 
+        foreach (var tab in QueryTabs.ToArray())
+            await tab.DisposeAsync();
+        QueryTabs.Clear();
+
         await _activeSession.DisposeAsync();
         _activeSession = null;
         IsConnected = false;
         ConnectionName = "";
-        QueryTabs.Clear();
         ActiveTab = null;
         AvailableDatabases.Clear();
         SelectedDatabase = null;

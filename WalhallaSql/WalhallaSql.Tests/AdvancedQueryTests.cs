@@ -426,6 +426,77 @@ public class AdvancedQueryTests
         Assert.Equal(1, result.Rows[0]["Id"]);
     }
 
+    // ── TOP / LIMIT Paging ───────────────────────────────────────────────
+
+    [Fact]
+    public void Top_Select_LimitsRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Val INT)");
+        engine.Execute("INSERT INTO T (Id, Val) VALUES (1, 10)");
+        engine.Execute("INSERT INTO T (Id, Val) VALUES (2, 20)");
+        engine.Execute("INSERT INTO T (Id, Val) VALUES (3, 30)");
+
+        var result = engine.Execute("SELECT TOP 2 * FROM T ORDER BY Val DESC");
+        Assert.Equal(2, result.Rows.Count);
+        Assert.Equal(30, result.Rows[0]["Val"]);
+        Assert.Equal(20, result.Rows[1]["Val"]);
+    }
+
+    [Fact]
+    public void Top_WithParentheses_LimitsRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY)");
+        for (int i = 1; i <= 5; i++)
+            engine.Execute($"INSERT INTO T (Id) VALUES ({i})");
+
+        var result = engine.Execute("SELECT TOP (3) Id FROM T");
+        Assert.Equal(3, result.Rows.Count);
+    }
+
+    [Fact]
+    public void Limit_Select_LimitsRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY)");
+        for (int i = 1; i <= 5; i++)
+            engine.Execute($"INSERT INTO T (Id) VALUES ({i})");
+
+        var result = engine.Execute("SELECT Id FROM T LIMIT 2");
+        Assert.Equal(2, result.Rows.Count);
+    }
+
+    [Fact]
+    public void Offset_Limit_PageSelect()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY)");
+        for (int i = 1; i <= 5; i++)
+            engine.Execute($"INSERT INTO T (Id) VALUES ({i})");
+
+        var result = engine.Execute("SELECT Id FROM T ORDER BY Id OFFSET 2 ROWS FETCH NEXT 2 ROWS ONLY");
+        Assert.Equal(2, result.Rows.Count);
+        Assert.Equal(3, result.Rows[0]["Id"]);
+        Assert.Equal(4, result.Rows[1]["Id"]);
+    }
+
+    [Fact]
+    public void Top_PreparedStatement_LimitsRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Val INT)");
+        for (int i = 1; i <= 10; i++)
+            engine.Execute($"INSERT INTO T (Id, Val) VALUES ({i}, {i * 10})");
+
+        var stmt = engine.Prepare("SELECT TOP 3 Val FROM T ORDER BY Val DESC");
+        var result = stmt.Execute();
+        Assert.Equal(3, result.Rows.Count);
+        Assert.Equal(100, result.Rows[0]["Val"]);
+        Assert.Equal(90, result.Rows[1]["Val"]);
+        Assert.Equal(80, result.Rows[2]["Val"]);
+    }
+
     // ── Recursive CTEs (WITH RECURSIVE) ───────────────────────────────────────
 
     [Fact]

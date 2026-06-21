@@ -1140,6 +1140,7 @@ internal sealed class TableStore : IDisposable
                     if (ByteArrayComparer.Instance.Compare(store.GetKeyAt(i), toExclusive) >= 0)
                         yield break;
                     RowCodec.DecodeToBuffer(store.GetValueAt(i), tableDef, buffer);
+                    ResolveBlobs(tableId, buffer, tableDef);
                     if (predicate == null || predicate(buffer))
                         yield return buffer;
                 }
@@ -1156,6 +1157,7 @@ internal sealed class TableStore : IDisposable
                     break;
                 var encoded = _memDict[key];
                 RowCodec.DecodeToBuffer(encoded, tableDef, buffer);
+                ResolveBlobs(tableId, buffer, tableDef);
                 if (predicate == null || predicate(buffer))
                 {
                     yield return buffer;
@@ -1168,6 +1170,7 @@ internal sealed class TableStore : IDisposable
                 if (seenKeys.Contains(kv.Key))
                     continue;
                 RowCodec.DecodeToBuffer(kv.Value, tableDef, buffer);
+                ResolveBlobs(tableId, buffer, tableDef);
                 if (predicate == null || predicate(buffer))
                     yield return buffer;
             }
@@ -1214,6 +1217,7 @@ internal sealed class TableStore : IDisposable
                     if (ByteArrayComparer.Instance.Compare(store.GetKeyAt(i), toExclusive) >= 0)
                         yield break;
                     RowCodec.DecodeToBuffer(store.GetValueAt(i), tableDef, buffer);
+                    ResolveBlobs(tableId, buffer, tableDef);
                     if (predicate == null || predicate(buffer))
                         yield return buffer;
                 }
@@ -1230,6 +1234,7 @@ internal sealed class TableStore : IDisposable
                     break;
                 var encoded = _memDict[key];
                 RowCodec.DecodeToBuffer(encoded, tableDef, buffer);
+                ResolveBlobs(tableId, buffer, tableDef);
                 if (predicate == null || predicate(buffer))
                 {
                     yield return buffer;
@@ -1242,6 +1247,7 @@ internal sealed class TableStore : IDisposable
                 if (seenKeys.Contains(kv.Key))
                     continue;
                 RowCodec.DecodeToBuffer(kv.Value, tableDef, buffer);
+                ResolveBlobs(tableId, buffer, tableDef);
                 if (predicate == null || predicate(buffer))
                     yield return buffer;
             }

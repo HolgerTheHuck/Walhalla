@@ -210,4 +210,23 @@ public sealed class ManualDbUiScenarioTests : IDisposable
         Assert.Equal(1, spResult.Rows[0]["Id"]);
         Assert.Equal("2026-06-01", spResult.Rows[0]["OrderDate"]);
     }
+
+    [Fact]
+    public void VarBinary_LargeValue_MvccBPlusTree_RoundTrip_ViaPreparedStatement()
+    {
+        using var engine = CreateEngine();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Data VARBINARY)");
+
+        var payload = new byte[5000];
+        new Random(42).NextBytes(payload);
+        var hex = Convert.ToHexString(payload);
+        engine.Execute($"INSERT INTO T (Id, Data) VALUES (1, X'{hex}')");
+
+        // DbUI nutzt PreparedStatement/ADO.NET, daher diesen Pfad explizit testen.
+        var stmt = engine.Prepare("SELECT Data FROM T WHERE Id = 1");
+        var result = stmt.Execute();
+        Assert.Single(result.Rows);
+        var bytes = Assert.IsType<byte[]>(result.Rows[0]["Data"]);
+        Assert.Equal(payload, bytes);
+    }
 }

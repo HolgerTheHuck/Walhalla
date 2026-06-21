@@ -446,7 +446,8 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         var command = BuildSqlClientCommand(useStructuredParameters: executionConnection.SqlClientSession.SupportsStructuredParameters);
         var sql = command.Sql;
         TraceCommandText(sql);
-        if (TryExecutePreparedStatement(executionConnection, command, out var preparedResult))
+        if (!behavior.HasFlag(CommandBehavior.SequentialAccess)
+            && TryExecutePreparedStatement(executionConnection, command, behavior, out var preparedResult))
         {
             var projectedColumns = TryExtractProjectedColumns(sql);
             var preparedReader = new WalhallaSqlDbDataReader(preparedResult.Rows, projectedColumns, materializeEagerly: false);
@@ -836,6 +837,7 @@ public sealed class WalhallaSqlDbCommand : DbCommand
     private bool TryExecutePreparedStatement(
         WalhallaSqlDbConnection executionConnection,
         SqlClientCommand command,
+        CommandBehavior behavior,
         [NotNullWhen(true)] out SqlExecutionResult? result)
     {
         result = null;
@@ -844,6 +846,12 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         // weil WalhallaPreparedStatement die Merge-Logik für uncommitted Writes
         // nicht selbst übernimmt. Innerhalb von Transaktionen bleibt der alte Pfad.
         if (command.HasExternalTransaction)
+            return false;
+
+        // SequentialAccess bedeutet Streaming-Modus; hier soll die Engine-
+        // Streaming-Pipeline (ExecuteStreaming) statt der materialisierten
+        // Prepared-Statement-Ausführung verwendet werden.
+        if (behavior.HasFlag(CommandBehavior.SequentialAccess))
             return false;
 
         if (!executionConnection.HasLocalEngine)
@@ -917,7 +925,7 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         var sql = command.Sql;
         TraceCommandText(sql);
 
-        if (TryExecutePreparedStatement(executionConnection, command, out var preparedResult))
+        if (TryExecutePreparedStatement(executionConnection, command, CommandBehavior.Default, out var preparedResult))
         {
             long e5Prepared = GC.GetAllocatedBytesForCurrentThread();
             TraceSqlDiagnostic($"AffectedRows={preparedResult.AffectedRows} (prepared)");

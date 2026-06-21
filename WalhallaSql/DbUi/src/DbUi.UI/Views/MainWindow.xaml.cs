@@ -1,4 +1,3 @@
-using System.Data;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -6,6 +5,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Runtime.InteropServices;
 using AvalonDock.Themes;
+using DbUi.UI.Behaviors;
 using DbUi.UI.ViewModels;
 using DbUi.UI.ViewModels.Dialogs;
 using MahApps.Metro.IconPacks;
@@ -60,17 +60,6 @@ public partial class MainWindow : Window
                 : PackIconMaterialKind.WindowMaximize;
     }
 
-    private void OnResultDataGridAutoGeneratingColumn(object? sender, DataGridAutoGeneratingColumnEventArgs e)
-    {
-        if (e.Column is DataGridTextColumn textColumn)
-        {
-            var style = new Style(typeof(TextBlock));
-            style.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
-            style.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.NoWrap));
-            textColumn.ElementStyle = style;
-        }
-    }
-
     private void OnResultDataGridDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not WpfDataGrid grid) return;
@@ -83,11 +72,12 @@ public partial class MainWindow : Window
             return;
 
         var selectedCell = grid.SelectedCells[0];
-        if (selectedCell.Item is not DataRowView rowView)
+        if (selectedCell.Item is not object?[] row)
             return;
 
         var columnName = selectedCell.Column.Header?.ToString() ?? "Value";
-        var value = rowView.Row[columnName];
+        var columnIndex = DataGridColumnsBehavior.GetColumnIndex(selectedCell.Column);
+        var value = columnIndex >= 0 && columnIndex < row.Length ? row[columnIndex] : null;
 
         var vm = new ValueInspectorViewModel(columnName, value);
         var dialog = new ValueInspectorDialog { DataContext = vm, Owner = this };

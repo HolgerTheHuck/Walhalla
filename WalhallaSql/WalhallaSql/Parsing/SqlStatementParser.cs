@@ -327,26 +327,35 @@ internal static class SqlStatementParser
         }
 
         // Check for TOP (N) or TOP N after SELECT / DISTINCT
+        int? topLimit = null;
         if (sql.Length > afterSelect + 4 && sql.AsSpan(afterSelect).TrimStart().StartsWith("TOP", StringComparison.OrdinalIgnoreCase))
         {
             var topIdx = sql.IndexOf("TOP", afterSelect, StringComparison.OrdinalIgnoreCase);
             if (topIdx >= 0)
             {
-                afterSelect = topIdx + "TOP".Length;
+                var afterTop = topIdx + "TOP".Length;
                 // Skip whitespace
-                while (afterSelect < sql.Length && char.IsWhiteSpace(sql[afterSelect])) afterSelect++;
-                // Skip optional parenthesized number: (1000)
-                if (afterSelect < sql.Length && sql[afterSelect] == '(')
+                while (afterTop < sql.Length && char.IsWhiteSpace(sql[afterTop])) afterTop++;
+                // Optional parenthesized number: (1000)
+                if (afterTop < sql.Length && sql[afterTop] == '(')
                 {
-                    var parenClose = SqlSyntaxText.FindMatchingParen(sql, afterSelect);
+                    var parenClose = SqlSyntaxText.FindMatchingParen(sql, afterTop);
                     if (parenClose > 0)
-                        afterSelect = parenClose + 1;
+                    {
+                        var topText = sql[(afterTop + 1)..parenClose].Trim();
+                        if (int.TryParse(topText, out var topVal)) topLimit = topVal;
+                        afterTop = parenClose + 1;
+                    }
                 }
                 else
                 {
-                    // Skip plain number: 1000
-                    while (afterSelect < sql.Length && char.IsDigit(sql[afterSelect])) afterSelect++;
+                    // Plain number: 1000
+                    var start = afterTop;
+                    while (afterTop < sql.Length && char.IsDigit(sql[afterTop])) afterTop++;
+                    var topText = sql[start..afterTop].Trim();
+                    if (int.TryParse(topText, out var topVal)) topLimit = topVal;
                 }
+                afterSelect = afterTop;
             }
         }
 
@@ -491,9 +500,11 @@ internal static class SqlStatementParser
                 afterWhere = FindOrderByEnd(sql, afterWhere, col);
         }
 
-        // Parse optional paging
-        int? limit = null, offset = null;
-        ParsePaging(sql, afterWhere, out limit, out offset);
+        // Parse optional paging (LIMIT/OFFSET/FETCH). TOP hat Vorrang, falls vorhanden.
+        int? limit = topLimit, offset = null;
+        ParsePaging(sql, afterWhere, out var parsedLimit, out offset);
+        if (parsedLimit.HasValue && !topLimit.HasValue)
+            limit = parsedLimit;
 
         return new SqlSelectStatement(tableName, alias, columns, where, parameters, joins, groupByColumns, having,
             orderBy, limit, offset, isDistinct, derivedTable);

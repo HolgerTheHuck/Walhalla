@@ -1,10 +1,13 @@
-﻿using System.Data;
+﻿using System.Collections.ObjectModel;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Windows;
+using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DbUi.Core.Catalog;
+using DbUi.Core.Collections;
 using DbUi.Core.Providers;
 using DbUi.Core.Queries;
 using DbUi.Core.Workspace;
@@ -13,10 +16,11 @@ using WalhallaSql.Sql;
 
 namespace DbUi.UI.ViewModels;
 
-public sealed partial class QueryTabViewModel : ObservableObject
+public sealed partial class QueryTabViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly IWorkspaceSession _session;
     private CancellationTokenSource? _cts;
+    private IDisposable? _streamingRows;
 
     public Action? RequestClose { get; set; }
 
@@ -45,13 +49,19 @@ public sealed partial class QueryTabViewModel : ObservableObject
     [ObservableProperty] private string _editorSelectedText = "";
     [ObservableProperty] private int _editorCaretOffset;
     [ObservableProperty] private string _messagesText = "";
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ExportToCsvCommand))]
     [NotifyCanExecuteChangedFor(nameof(ExportToJsonCommand))]
-    private DataTable? _resultTable;
+    [NotifyPropertyChangedFor(nameof(HasResults))]
+    private ObservableCollection<object?[]>? _resultRows;
+
+    [ObservableProperty] private IReadOnlyList<QueryColumn>? _resultColumns;
 
     [ObservableProperty] private bool _isExecuting;
     [ObservableProperty] private int _selectedResultTabIndex;
+
+    public bool HasResults => ResultRows is { Count: > 0 };
 
     [RelayCommand]
     public async Task ExecuteQueryAsync()
@@ -66,6 +76,7 @@ public sealed partial class QueryTabViewModel : ObservableObject
 
         _cts?.Cancel();
         _cts = new CancellationTokenSource();
+        CleanupStreamingRows();
         IsExecuting = true;
         AppendMessage("Executing…");
         try
@@ -78,26 +89,56 @@ public sealed partial class QueryTabViewModel : ObservableObject
             if (result.HasError)
             {
                 AppendMessage($"Error: {result.ErrorMessage}");
-                ResultTable = null;
+                SetResult(null, null);
                 SelectedResultTabIndex = 1;
             }
             else
             {
-                ResultTable = BuildDataTable(result);
-                AppendMessage($"({result.Rows.Count} row(s) returned in {result.Elapsed.TotalMilliseconds:F0}ms)");
+                var rows = result.Rows as ObservableCollection<object?[]> ?? new ObservableCollection<object?[]>(result.Rows);
+                if (rows is StreamingRowCollection streaming)
+                {
+                    _streamingRows = streaming;
+                    BindingOperations.EnableCollectionSynchronization(streaming, streaming.SyncRoot);
+                    streaming.BatchLoaded += OnStreamingBatchLoaded;
+                }
+
+                SetResult(rows, result.Columns);
+                var countText = result.IsStreaming ? "streaming" : $"{result.Rows.Count}";
+                AppendMessage($"({countText} row(s) returned in {result.Elapsed.TotalMilliseconds:F0}ms)");
                 SelectedResultTabIndex = result.Rows.Count > 0 ? 0 : 1;
             }
         }
         catch (Exception ex)
         {
             AppendMessage($"Error: {ex.Message}");
-            ResultTable = null;
+            SetResult(null, null);
             SelectedResultTabIndex = 1;
         }
         finally
         {
             IsExecuting = false;
         }
+    }
+
+    private void SetResult(ObservableCollection<object?[]>? rows, IReadOnlyList<QueryColumn>? columns)
+    {
+        ResultRows = rows;
+        ResultColumns = columns;
+    }
+
+    private void OnStreamingBatchLoaded(object? sender, BatchLoadedEventArgs e)
+    {
+        if (sender is StreamingRowCollection streaming)
+        {
+            var message = $"{streaming.TotalLoaded} rows loaded…";
+            if (System.Windows.Application.Current?.Dispatcher is { } dispatcher)
+                dispatcher.InvokeAsync(() => AppendMessage(message));
+            else
+                AppendMessage(message);
+        }
+
+        ExportToCsvCommand.NotifyCanExecuteChanged();
+        ExportToJsonCommand.NotifyCanExecuteChanged();
     }
 
     private string ResolveQueryToExecute()
@@ -119,12 +160,12 @@ public sealed partial class QueryTabViewModel : ObservableObject
     [RelayCommand]
     private void Close() => RequestClose?.Invoke();
 
-    private bool HasResults => ResultTable is { Rows.Count: > 0 };
-
     [RelayCommand(CanExecute = nameof(HasResults))]
     private void ExportToCsv()
     {
-        if (ResultTable is null) return;
+        if (ResultRows is null || ResultColumns is null) return;
+        MaterializeIfStreaming();
+
         var dlg = new Microsoft.Win32.SaveFileDialog
         {
             Title = "Export to CSV",
@@ -133,14 +174,16 @@ public sealed partial class QueryTabViewModel : ObservableObject
             FileName = $"{Title}.csv"
         };
         if (dlg.ShowDialog() != true) return;
-        File.WriteAllText(dlg.FileName, BuildCsv(ResultTable), Encoding.UTF8);
-        AppendMessage($"Exported {ResultTable.Rows.Count} row(s) to {dlg.FileName}");
+        File.WriteAllText(dlg.FileName, BuildCsv(ResultRows, ResultColumns), Encoding.UTF8);
+        AppendMessage($"Exported {ResultRows.Count} row(s) to {dlg.FileName}");
     }
 
     [RelayCommand(CanExecute = nameof(HasResults))]
     private void ExportToJson()
     {
-        if (ResultTable is null) return;
+        if (ResultRows is null || ResultColumns is null) return;
+        MaterializeIfStreaming();
+
         var dlg = new Microsoft.Win32.SaveFileDialog
         {
             Title = "Export to JSON",
@@ -149,18 +192,26 @@ public sealed partial class QueryTabViewModel : ObservableObject
             FileName = $"{Title}.json"
         };
         if (dlg.ShowDialog() != true) return;
-        File.WriteAllText(dlg.FileName, BuildJson(ResultTable), Encoding.UTF8);
-        AppendMessage($"Exported {ResultTable.Rows.Count} row(s) to {dlg.FileName}");
+        File.WriteAllText(dlg.FileName, BuildJson(ResultRows, ResultColumns), Encoding.UTF8);
+        AppendMessage($"Exported {ResultRows.Count} row(s) to {dlg.FileName}");
     }
 
-    private static string BuildCsv(DataTable dt)
+    private void MaterializeIfStreaming()
+    {
+        if (ResultRows is StreamingRowCollection streaming && !streaming.IsComplete)
+        {
+            AppendMessage("Materializing remaining rows for export…");
+            streaming.MaterializeRemaining();
+        }
+    }
+
+    private static string BuildCsv(IReadOnlyList<object?[]> rows, IReadOnlyList<QueryColumn> columns)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(string.Join(",", dt.Columns.Cast<DataColumn>()
-            .Select(c => CsvQuote(c.ColumnName))));
-        foreach (DataRow row in dt.Rows)
-            sb.AppendLine(string.Join(",", row.ItemArray
-                .Select(v => CsvQuote(v?.ToString() ?? ""))));
+        sb.AppendLine(string.Join(",", columns.Select(c => CsvQuote(c.Name))));
+        foreach (var row in rows)
+            sb.AppendLine(string.Join(",", columns.Select((c, i) =>
+                CsvQuote(FormatExportValue(row[i])?.ToString() ?? ""))));
         return sb.ToString();
     }
 
@@ -171,33 +222,59 @@ public sealed partial class QueryTabViewModel : ObservableObject
         return value;
     }
 
-    private static string BuildJson(DataTable dt)
+    private static string BuildJson(IReadOnlyList<object?[]> rows, IReadOnlyList<QueryColumn> columns)
     {
-        var rows = dt.Rows.Cast<DataRow>().Select(row =>
-            dt.Columns.Cast<DataColumn>().ToDictionary(
-                c => c.ColumnName,
-                c => row[c] == DBNull.Value ? null : row[c]));
-        return JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true });
+        var list = new List<Dictionary<string, object?>>(rows.Count);
+        foreach (var row in rows)
+        {
+            var dict = new Dictionary<string, object?>(columns.Count);
+            for (int i = 0; i < columns.Count; i++)
+                dict[columns[i].Name] = row[i] is null ? null : FormatExportValue(row[i]);
+            list.Add(dict);
+        }
+        return JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = true });
     }
 
     public void AppendMessage(string text) =>
         MessagesText += $"{text}{Environment.NewLine}";
 
-    private static DataTable? BuildDataTable(QueryResult result)
+    private void CleanupStreamingRows()
     {
-        if (result.Columns.Count == 0) return null;
+        if (_streamingRows is StreamingRowCollection streaming)
+            streaming.BatchLoaded -= OnStreamingBatchLoaded;
+        _streamingRows?.Dispose();
+        _streamingRows = null;
+    }
 
-        var dt = new DataTable();
-        foreach (var col in result.Columns)
-            dt.Columns.Add(col.Name, col.DataType);
+    public async ValueTask DisposeAsync()
+    {
+        CleanupStreamingRows();
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
 
-        foreach (var row in result.Rows)
-        {
-            var dr = dt.NewRow();
-            for (int i = 0; i < row.Length; i++)
-                dr[i] = row[i] ?? DBNull.Value;
-            dt.Rows.Add(dr);
-        }
-        return dt;
+    /// <summary>
+    /// Formatiert einen Zellwert fuer CSV/JSON-Export. Byte-Arrays werden als Hex-String
+    /// exportiert, damit der Export nicht "System.Byte[]" enthaelt.
+    /// </summary>
+    private static object FormatExportValue(object? value)
+    {
+        if (value is null or DBNull) return string.Empty;
+        if (value is byte[] bytes) return FormatHexPreview(bytes);
+        return value;
+    }
+
+    /// <summary>
+    /// Erzeugt eine kompakte Hex-Vorschau fuer ein Byte-Array.
+    /// SSMS-Stil: 0x1A2B3C... (1234 bytes)
+    /// </summary>
+    private static string FormatHexPreview(byte[] bytes)
+    {
+        if (bytes.Length == 0) return "0x";
+        const int MaxPreviewBytes = 8;
+        var hex = Convert.ToHexString(bytes.AsSpan(0, Math.Min(bytes.Length, MaxPreviewBytes)));
+        return bytes.Length <= MaxPreviewBytes
+            ? $"0x{hex}"
+            : $"0x{hex}... ({bytes.Length} bytes)";
     }
 }

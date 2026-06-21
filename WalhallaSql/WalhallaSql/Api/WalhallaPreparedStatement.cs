@@ -32,9 +32,9 @@ public sealed class WalhallaPreparedStatement
         // the decoded array as the result, so pooling would be a leak.
         _decoder = plan.IsFullProjection || plan.ComputedProjections != null
             ? plan.IsFullProjection && plan.ComputedProjections == null
-                ? encoded => RowCodec.DecodeToArray(encoded, plan.TableDefinition)
-                : encoded => RowCodec.DecodeToPooledArray(encoded, plan.TableDefinition)
-            : encoded => RowCodec.DecodeColumns(encoded, plan.TableDefinition, plan.ProjectionIndices);
+                ? WithResolvedBlobs(encoded => RowCodec.DecodeToArray(encoded, plan.TableDefinition), plan.TableId, plan.TableDefinition)
+                : WithResolvedBlobs(encoded => RowCodec.DecodeToPooledArray(encoded, plan.TableDefinition), plan.TableId, plan.TableDefinition)
+            : WithResolvedBlobs(encoded => RowCodec.DecodeColumns(encoded, plan.TableDefinition, plan.ProjectionIndices), plan.TableId, plan.TableDefinition, plan.ProjectionIndices);
         _decoderUsesPool = plan.ComputedProjections != null;
     }
 
@@ -79,6 +79,7 @@ public sealed class WalhallaPreparedStatement
                 return WalhallaResultSet.Empty(_plan.OutputColumnNames);
 
             var row = RowCodec.DecodeToArray(encoded, _plan.TableDefinition);
+            _store.ResolveBlobs(_plan.TableId, row, _plan.TableDefinition);
             var projected = ProjectRow(row, _plan);
             var pkRow = new WalhallaRow(_plan.OutputSchema, projected);
             return WalhallaResultSet.Single(_plan.OutputColumnNames, pkRow);
@@ -116,32 +117,37 @@ public sealed class WalhallaPreparedStatement
                 var rows = new List<WalhallaRow>();
 
                 RowDecoder decoder = _plan.IsFullProjection
-                    ? encoded => RowCodec.DecodeToArray(encoded, _plan.TableDefinition)
-                    : encoded =>
+                    ? WithResolvedBlobs(encoded => RowCodec.DecodeToArray(encoded, _plan.TableDefinition), _plan.TableId, _plan.TableDefinition)
+                    : WithResolvedBlobs(encoded =>
                     {
                         var output = new object?[_plan.ProjectionIndices.Length];
                         RowCodec.DecodeColumnsToRowBuffer(encoded, _plan.TableDefinition, output, _plan.DecodeMapping);
                         return output;
-                    };
+                    }, _plan.TableId, _plan.TableDefinition, _plan.ProjectionIndices);
 
                 Func<object?[], bool>? wherePredicate = _plan.WhereDelegate != null
                     ? row => _plan.WhereDelegate(row, _boundParams)
                     : null;
 
+                // Für Streaming ohne LIMIT/OFFSET reicht ein beliebiges Limit.
                 _store.ScanRowKeyRange(_plan.TableId, minRowId, maxRowId,
                     decoder, wherePredicate, results: null,
-                    onRow: row => rows.Add(new WalhallaRow(schema, row)));
+                    onRow: row => rows.Add(new WalhallaRow(schema, row)),
+                    limit: int.MaxValue);
 
                 return new WalhallaResultSet(rows, _plan.OutputColumnNames);
             }
 
             var fullRows = new List<object?[]>();
+            var limit = _plan.Limit ?? int.MaxValue;
             _store.ScanRowKeyRange(_plan.TableId, minRowId, maxRowId,
-                encoded => RowCodec.DecodeToArray(encoded, _plan.TableDefinition), null, fullRows);
+                WithResolvedBlobs(encoded => RowCodec.DecodeToArray(encoded, _plan.TableDefinition), _plan.TableId, _plan.TableDefinition), null, fullRows, limit: limit);
 
             if (_plan.WhereDelegate != null)
                 fullRows.RemoveAll(r => !_plan.WhereDelegate(r, _boundParams));
 
+            // Paging nachträglich anwenden, falls Scan-Limit die Sortierung/DISTINCT vorher
+            // berücksichtigen muss (z.B. ORDER BY + LIMIT).
             return ApplyPostProcessing(fullRows, _plan);
         }
 
@@ -169,7 +175,7 @@ public sealed class WalhallaPreparedStatement
 
                 if (whereDelegate != null)
                 {
-                    var fullRow = RowCodec.DecodeToPooledArray(encoded, _plan.TableDefinition);
+                    var fullRow = WithResolvedBlobs(encoded => RowCodec.DecodeToPooledArray(encoded, _plan.TableDefinition), _plan.TableId, _plan.TableDefinition)(encoded);
                     if (whereDelegate(fullRow, _boundParams))
                         fullRows.Add(fullRow);
                     else
@@ -177,7 +183,15 @@ public sealed class WalhallaPreparedStatement
                 }
                 else
                 {
-                    fullRows.Add(RowCodec.DecodeToArray(encoded, _plan.TableDefinition));
+                    fullRows.Add(WithResolvedBlobs(encoded => RowCodec.DecodeToArray(encoded, _plan.TableDefinition), _plan.TableId, _plan.TableDefinition)(encoded));
+                }
+
+                // Bei reinem LIMIT ohne ORDER BY/DISTINCT reicht früherer Abbruch.
+                if (_plan.Limit.HasValue && _plan.Offset == null
+                    && _plan.OrderByColumns == null && !_plan.IsDistinct
+                    && fullRows.Count >= _plan.Limit.Value)
+                {
+                    break;
                 }
             }
 
@@ -212,12 +226,21 @@ public sealed class WalhallaPreparedStatement
         var usesPooledRows = needsFullRows || _decoderUsesPool;
 
         RowDecoder scanDecoder = needsFullRows || _decoderUsesPool
-            ? encoded => RowCodec.DecodeToPooledArray(encoded, _plan.TableDefinition)
+            ? WithResolvedBlobs(encoded => RowCodec.DecodeToPooledArray(encoded, _plan.TableDefinition), _plan.TableId, _plan.TableDefinition)
             : _decoder;
+
+        // Scan-Limit nur sinnvoll, wenn kein ORDER BY/DISTINCT/Offset: LIMIT wirkt erst
+        // nach Sortierung/Dedup.
+        var scanLimit = _plan.Limit.HasValue
+            && _plan.Offset == null
+            && _plan.OrderByColumns == null
+            && !_plan.IsDistinct
+            ? _plan.Limit.Value
+            : int.MaxValue;
 
         _store.ScanWithPredicateFirst(_plan.TableId, _plan.TableDefinition,
             _plan.PredicateColumnIndices ?? Array.Empty<int>(),
-            scanDecoder, predicate, results, int.MaxValue);
+            scanDecoder, predicate, results, scanLimit);
 
         return ApplyPostProcessing(results, _plan, usesPooledRows);
     }
@@ -269,7 +292,9 @@ public sealed class WalhallaPreparedStatement
         // Read base table rows, pushing the base-table WHERE predicate into the scan
         // so rows that do not match are never fully decoded or stored.
         var baseRows = new List<object?[]>();
-        RowDecoder baseDecoder = encoded => RowCodec.DecodeToArray(encoded, joinPlan.BaseTableDef);
+        RowDecoder baseDecoder = WithResolvedBlobs(
+            encoded => RowCodec.DecodeToArray(encoded, joinPlan.BaseTableDef),
+            joinPlan.BaseTableId, joinPlan.BaseTableDef);
         var where = _plan.WhereDelegate;
         if (where != null && _plan.PredicateColumnIndices is { Length: > 0 })
         {
@@ -290,7 +315,9 @@ public sealed class WalhallaPreparedStatement
 
         foreach (var step in joinPlan.Steps)
         {
-            RowDecoder rightDecoder = encoded => RowCodec.DecodeToArray(encoded, step.TableDef);
+            RowDecoder rightDecoder = WithResolvedBlobs(
+                encoded => RowCodec.DecodeToArray(encoded, step.TableDef),
+                step.TableId, step.TableDef);
 
             // Index-Join-Pfade brauchen keinen vollständigen Scan der rechten Tabelle.
             List<object?[]> rightRows;
@@ -421,7 +448,9 @@ public sealed class WalhallaPreparedStatement
 
         // Scan all rows with WHERE filter.
         var rows = new List<object?[]>();
-        RowDecoder decoder = encoded => RowCodec.DecodeToArray(encoded, _plan.TableDefinition);
+        RowDecoder decoder = WithResolvedBlobs(
+            encoded => RowCodec.DecodeToArray(encoded, _plan.TableDefinition),
+            _plan.TableId, _plan.TableDefinition);
 
         Func<object?[], bool>? predicate = null;
         if (_plan.WhereDelegate != null)
@@ -442,6 +471,12 @@ public sealed class WalhallaPreparedStatement
 
         // Apply HAVING filter.
         aggregated = AggregateExecutor.ApplyHaving(aggregated, _plan.Having, _plan.OutputColumnNames);
+
+        // Paging auf aggregiertem Ergebnis anwenden.
+        if (_plan.Offset.HasValue)
+            aggregated = aggregated.Skip(_plan.Offset.Value).ToList();
+        if (_plan.Limit.HasValue)
+            aggregated = aggregated.Take(_plan.Limit.Value).ToList();
 
         // Build result set.
         var resultRows = aggregated.ConvertAll(r => new WalhallaRow(_plan.OutputSchema, r));
@@ -482,6 +517,18 @@ public sealed class WalhallaPreparedStatement
             return x.Equals(y);
         }
     }
+
+    /// <summary>
+    /// Wraps a raw row decoder so that any out-of-line <see cref="BlobRef"/u003e values
+    /// are resolved to <see cref="PendingBlobValue"/u003e by the sidecar file.
+    /// </summary>
+    private RowDecoder WithResolvedBlobs(RowDecoder decoder, int tableId, SqlTableDefinition def, int[]? projectionIndices = null) =>
+        encoded =>
+        {
+            var row = decoder(encoded);
+            _store.ResolveBlobs(tableId, row, def, projectionIndices);
+            return row;
+        };
 
     private static object?[] ProjectRow(object?[] row, CompiledPlan plan)
     {
