@@ -4,3 +4,4 @@
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("Walhalla.Storage.Tests")]
+[assembly: InternalsVisibleTo("Walhalla.Benchmarks")]

@@ -126,6 +126,11 @@ public class WalhallaSqlPgWireBenchmark : IDisposable
     public void Setup()
     {
         _engine = WalhallaEngine.InMemory();
+
+        // Benutzer anlegen, bevor der PgWire-Server startet, damit Npgsql
+        // sich authentifizieren kann.
+        _engine.AuthIdCatalog.CreateRole("test", "test");
+
         _server = new PgWireServer(new WalhallaSqlPgWireBackend(_engine), "127.0.0.1", 0);
         _server.StartAsync().GetAwaiter().GetResult();
 
