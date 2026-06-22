@@ -99,12 +99,28 @@ internal sealed class ScanOperator : IStreamingOperator
             if (!range.MinInclusive) minRowId++;
             if (!range.MaxInclusive) maxRowId--;
 
-            source = context.Store.ScanRowKeyRangeLazy(plan.TableId, minRowId, maxRowId,
-                plan.TableDefinition, predicate);
+            if (context.Snapshot != null)
+            {
+                source = context.Store.ScanRowKeyRangeLazy(plan.TableId, minRowId, maxRowId,
+                    plan.TableDefinition, predicate, context.Snapshot);
+            }
+            else
+            {
+                source = context.Store.ScanRowKeyRangeLazy(plan.TableId, minRowId, maxRowId,
+                    plan.TableDefinition, predicate);
+            }
         }
         else
         {
-            source = context.Store.ScanWithPredicateLazy(plan.TableId, plan.TableDefinition, predicate);
+            if (context.Snapshot != null)
+            {
+                source = context.Store.ScanWithPredicateLazy(plan.TableId, plan.TableDefinition,
+                    predicate, context.Snapshot);
+            }
+            else
+            {
+                source = context.Store.ScanWithPredicateLazy(plan.TableId, plan.TableDefinition, predicate);
+            }
         }
 
         return source.Select(row => new StreamingRow(row));

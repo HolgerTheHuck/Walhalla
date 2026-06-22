@@ -4,6 +4,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Walhalla.Storage.Contract;
 
 namespace WalhallaSql;
 
@@ -40,18 +41,26 @@ public sealed class WalhallaStreamResult : IDisposable
     /// </summary>
     internal IAsyncEnumerable<object?[]>? RowEnumerable { get; }
 
+    /// <summary>
+    /// Optionaler MVCC-Lese-Snapshot, der für die Lebensdauer des Streams aktiv bleibt
+    /// und bei <see cref="Dispose()"/> freigegeben wird.
+    /// </summary>
+    internal IReadSnapshot? Snapshot { get; set; }
+
     public WalhallaStreamResult(
         IReadOnlyList<string> columnNames,
         IReadOnlyList<Type> columnTypes,
         ColumnSchema schema,
         IEnumerator<object?[]> rowEnumerator,
-        bool isFullyMaterialized = false)
+        bool isFullyMaterialized = false,
+        IReadSnapshot? snapshot = null)
     {
         ColumnNames = columnNames ?? throw new ArgumentNullException(nameof(columnNames));
         ColumnTypes = columnTypes ?? throw new ArgumentNullException(nameof(columnTypes));
         Schema = schema;
         RowEnumerator = rowEnumerator ?? throw new ArgumentNullException(nameof(rowEnumerator));
         IsFullyMaterialized = isFullyMaterialized;
+        Snapshot = snapshot;
     }
 
     public WalhallaStreamResult(
@@ -59,13 +68,15 @@ public sealed class WalhallaStreamResult : IDisposable
         IReadOnlyList<Type> columnTypes,
         ColumnSchema schema,
         IAsyncEnumerable<object?[]> rowEnumerable,
-        bool isFullyMaterialized = false)
+        bool isFullyMaterialized = false,
+        IReadSnapshot? snapshot = null)
     {
         ColumnNames = columnNames ?? throw new ArgumentNullException(nameof(columnNames));
         ColumnTypes = columnTypes ?? throw new ArgumentNullException(nameof(columnTypes));
         Schema = schema;
         RowEnumerable = rowEnumerable ?? throw new ArgumentNullException(nameof(rowEnumerable));
         IsFullyMaterialized = isFullyMaterialized;
+        Snapshot = snapshot;
     }
 
     /// <summary>
@@ -156,5 +167,7 @@ public sealed class WalhallaStreamResult : IDisposable
     {
         RowEnumerator?.Dispose();
         // RowEnumerable is disposed by its own IAsyncEnumerator; nothing to do here.
+        Snapshot?.Dispose();
+        Snapshot = null;
     }
 }

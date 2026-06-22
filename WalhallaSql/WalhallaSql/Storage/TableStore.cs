@@ -1254,6 +1254,66 @@ internal sealed class TableStore : IDisposable
         }
     }
 
+    /// <summary>
+    /// Snapshot-basierter voller Tabellenscan für MVCC-Storage.
+    /// Liefert eine zum Startzeitpunkt des Snapshots konsistente Sicht,
+    /// ohne Schreibtransaktionen zu blockieren.
+    /// </summary>
+    public IEnumerable<object?[]> ScanWithPredicateLazy(
+        int tableId,
+        SqlTableDefinition tableDef,
+        Func<object?[], bool>? predicate,
+        IReadSnapshot snapshot)
+    {
+        var prefix = BuildTablePrefix((uint)tableId);
+        var toExclusive = BuildTablePrefix((uint)(tableId + 1));
+        var buffer = new object?[tableDef.Columns.Count];
+
+        foreach (var kv in snapshot.Scan(prefix, toExclusive))
+        {
+            // Sicherheitshalber prüfen, dass der Snapshot-Scan keine fremden Keys liefert.
+            var (parsedTableId, _) = ParseRowKey(kv.Key);
+            if (parsedTableId != tableId)
+                continue;
+
+            RowCodec.DecodeToBuffer(kv.Value, tableDef, buffer);
+            ResolveBlobs(tableId, buffer, tableDef);
+            if (predicate == null || predicate(buffer))
+                yield return buffer;
+        }
+    }
+
+    /// <summary>
+    /// Snapshot-basierter PK-Bereichsscan für MVCC-Storage.
+    /// </summary>
+    public IEnumerable<object?[]> ScanRowKeyRangeLazy(
+        int tableId,
+        long minRowId, long maxRowId,
+        SqlTableDefinition tableDef,
+        Func<object?[], bool>? predicate,
+        IReadSnapshot snapshot)
+    {
+        var fromInclusive = (minRowId == long.MinValue)
+            ? BuildTablePrefix((uint)tableId)
+            : BuildRowKey(tableId, minRowId);
+        var toExclusive = (maxRowId == long.MaxValue)
+            ? BuildTablePrefix((uint)(tableId + 1))
+            : BuildRowKey(tableId, maxRowId + 1);
+        var buffer = new object?[tableDef.Columns.Count];
+
+        foreach (var kv in snapshot.Scan(fromInclusive, toExclusive))
+        {
+            var (parsedTableId, parsedRowId) = ParseRowKey(kv.Key);
+            if (parsedTableId != tableId || parsedRowId < minRowId || parsedRowId > maxRowId)
+                continue;
+
+            RowCodec.DecodeToBuffer(kv.Value, tableDef, buffer);
+            ResolveBlobs(tableId, buffer, tableDef);
+            if (predicate == null || predicate(buffer))
+                yield return buffer;
+        }
+    }
+
     /// <summary>Scans all rows for a table, providing the stored rowId along with the decoded row.</summary>
     public void ScanWithRowIds(
         int tableId,
@@ -1622,6 +1682,18 @@ internal sealed class TableStore : IDisposable
             var tx = store.BeginTransaction(level);
             return new StorageTransactionAdapter(tx);
         }
+        return null;
+    }
+
+    /// <summary>
+    /// Erzeugt einen stabilen Lese-Snapshot für MVCC-Storage.
+    /// Für andere Storage-Backends wird null zurückgegeben; der Aufrufer fällt dann
+    /// auf den lock-basierten Scan zurück.
+    /// </summary>
+    public IReadSnapshot? BeginReadSnapshot()
+    {
+        if (_dataStore is MvccBPlusTreeStore store)
+            return store.BeginReadSnapshot();
         return null;
     }
 

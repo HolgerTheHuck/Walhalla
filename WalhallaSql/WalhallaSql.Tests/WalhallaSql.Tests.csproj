@@ -19,8 +19,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\VectorStore\Walhalla.Storage\Walhalla.Storage.csproj" />
     <ProjectReference Include="..\WalhallaSql\WalhallaSql.csproj" />
+    <ProjectReference Include="..\WalhallaSql.AdoNet\WalhallaSql.AdoNet.csproj" />
     <ProjectReference Include="..\WalhallaSql.PgWire\WalhallaSql.PgWire.csproj" />
     <ProjectReference Include="..\WalhallaSql.PgWire.Abstractions\WalhallaSql.PgWire.Abstractions.csproj" />
+    <ProjectReference Include="..\DbUi\src\DbUi.Core\DbUi.Core.csproj" />
   </ItemGroup>
 
 </Project>

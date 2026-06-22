@@ -1098,6 +1098,9 @@ public sealed class PgWireServer : IAsyncDisposable
             : null;
 
         // Inherit MetadataDescribed from statement so repeated executions don't send a second RowDescription
+        if (session.Portals.TryGetValue(portalName, out var existingPortal))
+            existingPortal.ResetCursorState();
+
         session.Portals[portalName] = new PgBoundPortal(literalSql, isQuery, prepared.MetadataDescribed, prepared)
         {
             ParameterizedSql = parameterizedSql,
@@ -1264,7 +1267,6 @@ public sealed class PgWireServer : IAsyncDisposable
         var reader = new PgPayloadReader(payload);
         var portalName = NormalizeName(reader.ReadCString());
         var maxRows = reader.ReadInt32();
-        _ = maxRows;
 
         if (!session.Portals.TryGetValue(portalName, out var portal))
             throw new InvalidOperationException($"Portal '{portalName}' not found.");
@@ -1342,9 +1344,20 @@ public sealed class PgWireServer : IAsyncDisposable
 
             if (portal.IsQuery)
             {
-                using var dbReader = portal.PreparedStatement != null && session.Transaction == null
-                    ? ExecutePreparedReader(portal)
-                    : command.ExecuteReader();
+                if (portal.IsComplete)
+                {
+                    await SendCommandCompleteAsync(stream, "SELECT 0");
+                    return;
+                }
+
+                if (portal.ActiveReader == null)
+                {
+                    portal.ActiveReader = portal.PreparedStatement != null
+                        ? ExecutePreparedReader(portal)
+                        : command.ExecuteReader();
+                }
+
+                var dbReader = portal.ActiveReader;
 
                 if (TryExpandSingleJsonColumnResult(dbReader, out var expandedFields, out var expandedRows))
                 {
@@ -1355,6 +1368,7 @@ public sealed class PgWireServer : IAsyncDisposable
                         await SendDataRowAsync(stream, expandedRow);
 
                     await SendCommandCompleteAsync(stream, $"SELECT {expandedRows.Count}");
+                    portal.IsComplete = true;
                     MarkPortalDescribed(portal);
                     return;
                 }
@@ -1396,9 +1410,9 @@ public sealed class PgWireServer : IAsyncDisposable
                     await SendRowDescriptionAsync(stream, resultFields, portal.ResultFormatCodes);
                 }
 
-                // Stream rows: read and send one at a time without buffering
-                var rowCount = 0;
-                while (dbReader.Read())
+                // Stream rows: read and send one at a time without buffering.
+                int rowsThisBatch = 0;
+                while ((maxRows == 0 || rowsThisBatch < maxRows) && dbReader.Read())
                 {
                     var raw = new object?[fieldCount];
                     for (var i = 0; i < fieldCount; i++)
@@ -1412,10 +1426,19 @@ public sealed class PgWireServer : IAsyncDisposable
                     }
 
                     await SendDataRowAsync(stream, raw, resultFields, portal.ResultFormatCodes);
-                    rowCount++;
+                    rowsThisBatch++;
+                    portal.RowsSent++;
                 }
 
-                await SendCommandCompleteAsync(stream, $"SELECT {rowCount}");
+                if (maxRows > 0 && rowsThisBatch == maxRows)
+                {
+                    portal.IsSuspended = true;
+                    await SendPortalSuspendedAsync(stream);
+                    return;
+                }
+
+                portal.IsComplete = true;
+                await SendCommandCompleteAsync(stream, $"SELECT {portal.RowsSent}");
                 MarkPortalDescribed(portal);
                 return;
             }
@@ -1427,6 +1450,7 @@ public sealed class PgWireServer : IAsyncDisposable
         }
         catch (Exception ex) when (portal.IsQuery && IsCannotInferCollectionError(ex))
         {
+            portal.ResetCursorState();
             if (!portal.MetadataDescribed)
                 await SendRowDescriptionAsync(stream, Array.Empty<(string Name, Type ClrType)>(), portal.ResultFormatCodes);
             await SendCommandCompleteAsync(stream, "SELECT 0");
@@ -1454,6 +1478,8 @@ public sealed class PgWireServer : IAsyncDisposable
 
         if (targetType == 'P')
         {
+            if (session.Portals.TryGetValue(name, out var portal))
+                portal.ResetCursorState();
             session.Portals.Remove(name);
             return;
         }
@@ -1923,20 +1949,29 @@ public sealed class PgWireServer : IAsyncDisposable
     private static IPgWireBackendReader ExecutePreparedReader(PgBoundPortal portal)
     {
         var prepared = portal.PreparedStatement!;
-        prepared.ClearBindings();
+        BindParametersToPreparedStatement(prepared, portal.ParameterValues);
 
-        var values = portal.ParameterValues;
-        if (values != null)
+        try
         {
-            for (var i = 0; i < values.Length; i++)
-            {
-                var value = values[i];
-                if (value != null)
-                    prepared.Bind(i, value);
-            }
+            return new WalhallaSqlPgWireBackend.WalhallaBackendReader(prepared.ExecuteStreaming());
         }
+        catch (WalhallaException ex) when (ex.Message.Contains("not streamable", StringComparison.OrdinalIgnoreCase))
+        {
+            return new WalhallaSqlPgWireBackend.WalhallaBackendReader(prepared.Execute());
+        }
+    }
 
-        return new WalhallaSqlPgWireBackend.WalhallaBackendReader(prepared.Execute());
+    private static void BindParametersToPreparedStatement(WalhallaPreparedStatement prepared, object?[]? values)
+    {
+        prepared.ClearBindings();
+        if (values == null) return;
+
+        for (var i = 0; i < values.Length; i++)
+        {
+            var value = values[i];
+            if (value != null)
+                prepared.Bind(i, value);
+        }
     }
 
     private static string ToSqlLiteral(string input)
@@ -3873,6 +3908,7 @@ public sealed class PgWireServer : IAsyncDisposable
     private static Task SendBindCompleteAsync(Stream stream)   => WriteMessageAsync(stream, (byte)'2', Array.Empty<byte>());
     private static Task SendCloseCompleteAsync(Stream stream)  => WriteMessageAsync(stream, (byte)'3', Array.Empty<byte>());
     private static Task SendNoDataAsync(Stream stream)         => WriteMessageAsync(stream, (byte)'n', Array.Empty<byte>());
+    private static Task SendPortalSuspendedAsync(Stream stream) => WriteMessageAsync(stream, (byte)'s', Array.Empty<byte>());
 
     private static async Task SendParameterDescriptionAsync(Stream stream, IReadOnlyList<int> parameterTypeOids)
     {
@@ -4467,6 +4503,27 @@ internal sealed class PgBoundPortal
 
     /// <summary>Engine-side prepared statement reused across Execute calls for this portal.</summary>
     public WalhallaPreparedStatement? PreparedStatement { get; set; }
+
+    /// <summary>Active reader for this portal while it is suspended or being consumed.</summary>
+    public IPgWireBackendReader? ActiveReader { get; set; }
+
+    /// <summary>Number of rows already sent from this portal.</summary>
+    public int RowsSent { get; set; }
+
+    /// <summary>True when a fetch-count limited Execute left rows unread.</summary>
+    public bool IsSuspended { get; set; }
+
+    /// <summary>True when the portal has been fully consumed.</summary>
+    public bool IsComplete { get; set; }
+
+    public void ResetCursorState()
+    {
+        ActiveReader?.Dispose();
+        ActiveReader = null;
+        RowsSent = 0;
+        IsSuspended = false;
+        IsComplete = false;
+    }
 }
 
 internal sealed record PgVirtualQueryResult(

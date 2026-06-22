@@ -503,7 +503,7 @@ public sealed class WalhallaEngine : IDisposable
                 paramOrdinals[select.Parameters[i]] = i;
         }
 
-        return new WalhallaPreparedStatement(plan, paramOrdinals, _store);
+        return new WalhallaPreparedStatement(plan, select, paramOrdinals, this, _store);
     }
 
     public void CreateTable(SqlTableDefinition table)
@@ -5774,14 +5774,20 @@ public sealed class WalhallaEngine : IDisposable
         if (plan.ParameterCount != 0)
             throw new WalhallaException("Parameterized queries are not supported in streaming mode. Use a prepared statement.");
 
+        return ExecuteStreaming(plan, select, Array.Empty<object?>());
+    }
+
+    internal WalhallaStreamResult ExecuteStreaming(CompiledPlan plan, SqlSelectStatement select, object?[] parameters)
+    {
+        var snapshot = _store.BeginReadSnapshot();
         var pipeline = BuildStreamingPipeline(plan, select);
-        var context = new StreamingContext(this, _store, plan, select, Array.Empty<object?>(), _options, default);
+        var context = new StreamingContext(this, _store, plan, select, parameters, _options, default, snapshot);
         var rowEnumerator = pipeline.Execute(context).Select(row => row.Values).GetEnumerator();
 
         var columnTypes = BuildStreamingColumnTypes(plan);
         var schema = plan.OutputSchema;
         bool isFullyMaterialized = IsStreamingFullyMaterialized(plan);
-        return new WalhallaStreamResult(plan.OutputColumnNames, columnTypes, schema, rowEnumerator, isFullyMaterialized);
+        return new WalhallaStreamResult(plan.OutputColumnNames, columnTypes, schema, rowEnumerator, isFullyMaterialized, snapshot);
     }
 
     public Task<WalhallaStreamResult> ExecuteStreamingAsync(string sql, CancellationToken cancellationToken = default)
@@ -5816,14 +5822,24 @@ public sealed class WalhallaEngine : IDisposable
             return Task.FromException<WalhallaStreamResult>(
                 new WalhallaException("Parameterized queries are not supported in streaming mode. Use a prepared statement."));
 
+        return ExecuteStreamingAsync(plan, select, Array.Empty<object?>(), cancellationToken);
+    }
+
+    internal Task<WalhallaStreamResult> ExecuteStreamingAsync(
+        CompiledPlan plan,
+        SqlSelectStatement select,
+        object?[] parameters,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = _store.BeginReadSnapshot();
         var pipeline = BuildStreamingPipeline(plan, select);
-        var context = new StreamingContext(this, _store, plan, select, Array.Empty<object?>(), _options, cancellationToken);
+        var context = new StreamingContext(this, _store, plan, select, parameters, _options, cancellationToken, snapshot);
         var rowEnumerable = ProjectToArraysAsync(pipeline.ExecuteAsync(context, cancellationToken), cancellationToken);
 
         var columnTypes = BuildStreamingColumnTypes(plan);
         var schema = plan.OutputSchema;
         bool isFullyMaterialized = IsStreamingFullyMaterialized(plan);
-        var result = new WalhallaStreamResult(plan.OutputColumnNames, columnTypes, schema, rowEnumerable, isFullyMaterialized);
+        var result = new WalhallaStreamResult(plan.OutputColumnNames, columnTypes, schema, rowEnumerable, isFullyMaterialized, snapshot);
         return Task.FromResult(result);
     }
 
@@ -5838,13 +5854,6 @@ public sealed class WalhallaEngine : IDisposable
     private static IStreamingOperator BuildStreamingPipeline(CompiledPlan plan, SqlSelectStatement select)
     {
         IStreamingOperator current = new ScanOperator();
-
-        // WHERE auf der Basis-Tabelle vor den Joins anwenden (sofern es nur Basisspalten referenziert).
-        if (plan.WhereDelegate != null)
-        {
-            var where = plan.WhereDelegate;
-            current = new FilterOperator(current, row => where(row, Array.Empty<object?>()));
-        }
 
         if (plan.Join != null)
         {

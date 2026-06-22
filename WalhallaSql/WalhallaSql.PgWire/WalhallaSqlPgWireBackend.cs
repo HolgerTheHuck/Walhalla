@@ -351,6 +351,7 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
     internal sealed class WalhallaBackendReader : IPgWireBackendReader
     {
         private readonly WalhallaResultSet? _result;
+        private readonly WalhallaStreamResult? _streamResult;
         private readonly IEnumerator<IReadOnlyDictionary<string, object?>>? _streamingEnumerator;
         private IReadOnlyDictionary<string, object?> _currentRow = null!;
         private readonly string[] _columnNames;
@@ -384,6 +385,7 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
         public WalhallaBackendReader(WalhallaStreamResult streamResult)
         {
             _result = null;
+            _streamResult = streamResult;
             _columnNames = streamResult.ColumnNames.ToArray();
             _fieldTypes = streamResult.ColumnTypes.ToArray();
             _streamingEnumerator = streamResult.EnumerateRows().GetEnumerator();
@@ -429,6 +431,7 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
         public void Dispose()
         {
             _streamingEnumerator?.Dispose();
+            _streamResult?.Dispose();
         }
     }
 

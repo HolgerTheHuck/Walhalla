@@ -82,6 +82,16 @@
                                         <TextBlock Text="JSON" />
                                     </StackPanel>
                                 </Button>
+                                <Separator />
+                                <Button Command="{Binding MaterializeAllCommand}"
+                                        ToolTip="Load all remaining rows from the stream" Padding="5,1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <iconPacks:PackIconMaterial Kind="Download"
+                                            Width="13" Height="13" VerticalAlignment="Center"
+                                            Margin="0,0,4,0" />
+                                        <TextBlock Text="Load All" />
+                                    </StackPanel>
+                                </Button>
                             </ToolBar>
                             <DataGrid ItemsSource="{Binding ResultRows}"
                                       AutoGenerateColumns="False"
@@ -281,6 +291,9 @@
         <StatusBar DockPanel.Dock="Bottom">
             <StatusBarItem>
                 <TextBlock Text="{Binding ConnectionName, FallbackValue='Not connected'}" />
+            </StatusBarItem>
+            <StatusBarItem>
+                <TextBlock Text="{Binding ActiveTab.StatusText, FallbackValue=''}" />
             </StatusBarItem>
             <StatusBarItem HorizontalAlignment="Right">
                 <TextBlock Text="{Binding ActiveTab.IsExecuting,

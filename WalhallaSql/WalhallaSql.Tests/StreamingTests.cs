@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DbUi.Core.Collections;
+using WalhallaSql.AdoNet;
 using WalhallaSql.Sql;
 using Xunit;
 
@@ -179,6 +183,34 @@ public class StreamingTests
 
         Assert.Equal(3, rows.Count);
         Assert.Equal(10, rows[0]["Id"]);
+    }
+
+    [Fact]
+    public async Task Streaming_Prepared_Async_BindsParameters()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING, Value INT)");
+        for (int i = 0; i < 50; i++)
+            engine.Execute($"INSERT INTO T (Id, Name, Value) VALUES ({i}, 'Row{i}', {i * 10})");
+
+        var prepared = engine.Prepare("SELECT Name, Value FROM T WHERE Value > @min AND Value < @max ORDER BY Value");
+        prepared.Bind("@min", 200);
+        prepared.Bind("@max", 500);
+
+        using var stream = await prepared.ExecuteStreamingAsync();
+        Assert.False(stream.IsFullyMaterialized);
+
+        var rows = new List<IReadOnlyDictionary<string, object?>>();
+        await foreach (var row in stream.EnumerateRowsAsync())
+            rows.Add(row);
+
+        var materialized = engine.Execute("SELECT Name, Value FROM T WHERE Value > 200 AND Value < 500 ORDER BY Value");
+        Assert.Equal(materialized.Rows.Count, rows.Count);
+        for (int i = 0; i < materialized.Rows.Count; i++)
+        {
+            Assert.Equal(materialized.Rows[i]["Name"], rows[i]["Name"]);
+            Assert.Equal(materialized.Rows[i]["Value"], rows[i]["Value"]);
+        }
     }
 
     [Fact]
@@ -561,5 +593,250 @@ public class StreamingTests
         Assert.Single(r.Rows);
         engine.Execute("DEALLOCATE c");
         Assert.Throws<WalhallaException>(() => engine.Execute("FETCH c"));
+    }
+
+    [Fact]
+    public void Streaming_Isolation_MvccSnapshotStableUnderConcurrentWrites()
+    {
+        // Phase 9: Ein Stream muss eine zum Startzeitpunkt konsistente Sicht halten,
+        // auch wenn parallel neue Zeilen eingefügt oder gelöscht werden.
+        var rootPath = Path.Combine(Path.GetTempPath(), $"walhalla_stream_iso_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(rootPath);
+        try
+        {
+            using var engine = WalhallaEngine.Open(rootPath);
+            engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+            for (int i = 1; i <= 5; i++)
+                engine.Execute($"INSERT INTO T (Id, Name) VALUES ({i}, 'Row{i}')");
+
+            using var stream = engine.ExecuteStreaming("SELECT Id, Name FROM T ORDER BY Id");
+
+            // Parallel modifizieren: neue Zeile einfügen und bestehende löschen.
+            var t1 = Task.Run(() => engine.Execute("INSERT INTO T (Id, Name) VALUES (99, 'NewRow')"));
+            var t2 = Task.Run(() => engine.Execute("DELETE FROM T WHERE Id = 5"));
+            Task.WaitAll(t1, t2);
+
+            var rows = stream.EnumerateRows().ToList();
+
+            // Der Stream muss die ursprünglichen 5 Zeilen sehen (inklusive gelöschter Id 5),
+            // nicht die nachträglich eingefügte Zeile.
+            Assert.Equal(5, rows.Count);
+            Assert.Contains(rows, r => (int)r["Id"] == 5);
+            Assert.DoesNotContain(rows, r => (int)r["Id"] == 99);
+        }
+        finally
+        {
+            try { Directory.Delete(rootPath, recursive: true); }
+            catch { /* best-effort cleanup */ }
+        }
+    }
+
+    [Fact]
+    public async Task Streaming_Isolation_AsyncMvccSnapshotStableUnderConcurrentWrites()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), $"walhalla_stream_iso_async_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(rootPath);
+        try
+        {
+            using var engine = WalhallaEngine.Open(rootPath);
+            engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+            for (int i = 1; i <= 5; i++)
+                engine.Execute($"INSERT INTO T (Id, Name) VALUES ({i}, 'Row{i}')");
+
+            using var stream = await engine.ExecuteStreamingAsync("SELECT Id, Name FROM T ORDER BY Id");
+
+            var t1 = Task.Run(() => engine.Execute("INSERT INTO T (Id, Name) VALUES (99, 'NewRow')"));
+            var t2 = Task.Run(() => engine.Execute("DELETE FROM T WHERE Id = 5"));
+            await Task.WhenAll(t1, t2);
+
+            var rows = new List<IReadOnlyDictionary<string, object?>>();
+            await foreach (var row in stream.EnumerateRowsAsync())
+                rows.Add(row);
+
+            Assert.Equal(5, rows.Count);
+            Assert.Contains(rows, r => (int)r["Id"] == 5);
+            Assert.DoesNotContain(rows, r => (int)r["Id"] == 99);
+        }
+        finally
+        {
+            try { Directory.Delete(rootPath, recursive: true); }
+            catch { /* best-effort cleanup */ }
+        }
+    }
+
+    [Fact]
+    public void Streaming_LargeTable_ReturnsAllRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+        for (int i = 0; i < 2000; i++)
+            engine.Execute($"INSERT INTO T (Id, Name) VALUES ({i}, 'Row{i}')");
+
+        using var stream = engine.ExecuteStreaming("SELECT * FROM T");
+        var rows = stream.EnumerateRows().ToList();
+
+        Assert.Equal(2000, rows.Count);
+    }
+
+    [Fact]
+    public void Streaming_AdoNetReader_ReturnsAllRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+        for (int i = 0; i < 2000; i++)
+            engine.Execute($"INSERT INTO T (Id, Name) VALUES ({i}, 'Row{i}')");
+
+        using var connection = new WalhallaSqlDbConnection(engine);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT * FROM T";
+        using var reader = command.ExecuteReader(CommandBehavior.SequentialAccess);
+
+        var rows = new List<object?[]>();
+        while (reader.Read())
+        {
+            var values = new object[reader.FieldCount];
+            reader.GetValues(values);
+            rows.Add(values);
+        }
+
+        Assert.Equal(2000, rows.Count);
+    }
+
+    [Fact]
+    public async Task Streaming_AdoNetAsyncReader_ReturnsAllRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+        for (int i = 0; i < 2000; i++)
+            engine.Execute($"INSERT INTO T (Id, Name) VALUES ({i}, 'Row{i}')");
+
+        using var connection = new WalhallaSqlDbConnection(engine);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT * FROM T";
+
+        var rows = new List<object?[]>();
+        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SequentialAccess);
+        while (await reader.ReadAsync())
+        {
+            var values = new object[reader.FieldCount];
+            reader.GetValues(values);
+            rows.Add(values);
+        }
+
+        Assert.Equal(2000, rows.Count);
+    }
+
+    [Fact]
+    public void Streaming_LargeTable_OnDisk_ReturnsAllRows()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), $"walhalla_stream_disk_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(rootPath);
+        try
+        {
+            using var engine = WalhallaEngine.Open(rootPath);
+            engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+
+            const int rowCount = 10_000;
+            const int chunkSize = 1000;
+            for (int chunk = 0; chunk < rowCount / chunkSize; chunk++)
+            {
+                var batch = new List<string>(chunkSize);
+                int start = chunk * chunkSize;
+                int end = Math.Min(start + chunkSize, rowCount);
+                for (int i = start; i < end; i++)
+                    batch.Add($"({i}, 'Row{i}')");
+                engine.Execute($"INSERT INTO T (Id, Name) VALUES {string.Join(", ", batch)}");
+            }
+
+            using var stream = engine.ExecuteStreaming("SELECT * FROM T");
+            var rows = stream.EnumerateRows().ToList();
+
+            Assert.Equal(rowCount, rows.Count);
+        }
+        finally
+        {
+            try { Directory.Delete(rootPath, recursive: true); }
+            catch { /* best-effort cleanup */ }
+        }
+    }
+
+    [Fact]
+    public void Streaming_AdoNetReader_OnDisk_ReturnsAllRows()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), $"walhalla_stream_disk_ado_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(rootPath);
+        try
+        {
+            using var engine = WalhallaEngine.Open(rootPath);
+            engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+
+            const int rowCount = 10_000;
+            const int chunkSize = 1000;
+            for (int chunk = 0; chunk < rowCount / chunkSize; chunk++)
+            {
+                var batch = new List<string>(chunkSize);
+                int start = chunk * chunkSize;
+                int end = Math.Min(start + chunkSize, rowCount);
+                for (int i = start; i < end; i++)
+                    batch.Add($"({i}, 'Row{i}')");
+                engine.Execute($"INSERT INTO T (Id, Name) VALUES {string.Join(", ", batch)}");
+            }
+
+            using var connection = new WalhallaSqlDbConnection(engine);
+            connection.Open();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT * FROM T";
+            using var reader = command.ExecuteReader(CommandBehavior.SequentialAccess);
+
+            var rows = new List<object?[]>();
+            while (reader.Read())
+            {
+                var rowValues = new object[reader.FieldCount];
+                reader.GetValues(rowValues);
+                rows.Add(rowValues);
+            }
+
+            Assert.Equal(rowCount, rows.Count);
+        }
+        finally
+        {
+            try { Directory.Delete(rootPath, recursive: true); }
+            catch { /* best-effort cleanup */ }
+        }
+    }
+
+    [Fact]
+    public async Task StreamingRowCollection_LargeResult_ReturnsAllRows()
+    {
+        const int rowCount = 5_000;
+        const int batchSize = 1_000;
+
+        async IAsyncEnumerable<IReadOnlyList<object?[]>> Source()
+        {
+            var batch = new List<object?[]>(batchSize);
+            for (int i = 0; i < rowCount; i++)
+            {
+                batch.Add(new object?[] { i, $"Row{i}" });
+                if (batch.Count == batchSize)
+                {
+                    yield return batch;
+                    batch = new List<object?[]>(batchSize);
+                }
+            }
+            if (batch.Count > 0)
+                yield return batch;
+        }
+
+        using var collection = new StreamingRowCollection(Source());
+        await collection.WaitForRowsAsync(rowCount);
+        collection.MaterializeRemaining();
+
+        Assert.Equal(rowCount, collection.Count);
+        Assert.Null(collection.ErrorMessage);
     }
 }

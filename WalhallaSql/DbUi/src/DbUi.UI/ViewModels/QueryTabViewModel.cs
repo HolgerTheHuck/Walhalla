@@ -54,14 +54,22 @@ public sealed partial class QueryTabViewModel : ObservableObject, IAsyncDisposab
     [NotifyCanExecuteChangedFor(nameof(ExportToCsvCommand))]
     [NotifyCanExecuteChangedFor(nameof(ExportToJsonCommand))]
     [NotifyPropertyChangedFor(nameof(HasResults))]
+    [NotifyPropertyChangedFor(nameof(CanMaterializeAll))]
+    [NotifyCanExecuteChangedFor(nameof(MaterializeAllCommand))]
     private ObservableCollection<object?[]>? _resultRows;
 
     [ObservableProperty] private IReadOnlyList<QueryColumn>? _resultColumns;
 
-    [ObservableProperty] private bool _isExecuting;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CancelQueryCommand))]
+    private bool _isExecuting;
+
     [ObservableProperty] private int _selectedResultTabIndex;
 
+    [ObservableProperty] private string _statusText = "";
+
     public bool HasResults => ResultRows is { Count: > 0 };
+    public bool CanMaterializeAll => ResultRows is StreamingRowCollection { IsComplete: false };
 
     [RelayCommand]
     public async Task ExecuteQueryAsync()
@@ -78,6 +86,7 @@ public sealed partial class QueryTabViewModel : ObservableObject, IAsyncDisposab
         _cts = new CancellationTokenSource();
         CleanupStreamingRows();
         IsExecuting = true;
+        StatusText = "Executing…";
         AppendMessage("Executing…");
         try
         {
@@ -89,29 +98,51 @@ public sealed partial class QueryTabViewModel : ObservableObject, IAsyncDisposab
             if (result.HasError)
             {
                 AppendMessage($"Error: {result.ErrorMessage}");
-                SetResult(null, null);
+                SetResult(null);
+                ResultColumns = null;
                 SelectedResultTabIndex = 1;
             }
             else
             {
                 var rows = result.Rows as ObservableCollection<object?[]> ?? new ObservableCollection<object?[]>(result.Rows);
-                if (rows is StreamingRowCollection streaming)
+                StreamingRowCollection? streaming = rows as StreamingRowCollection;
+                if (streaming != null)
                 {
                     _streamingRows = streaming;
+                    // EnableCollectionSynchronization muss erfolgen, bevor das Grid an
+                    // ResultRows gebunden wird. ExecuteQueryAsync laeuft auf dem UI-Thread
+                    // (F5 / Execute-Button), daher ist kein Invoke noetig.
                     BindingOperations.EnableCollectionSynchronization(streaming, streaming.SyncRoot);
                     streaming.BatchLoaded += OnStreamingBatchLoaded;
+                    streaming.ColumnsReady += OnColumnsReady;
                 }
 
-                SetResult(rows, result.Columns);
-                var countText = result.IsStreaming ? "streaming" : $"{result.Rows.Count}";
-                AppendMessage($"({countText} row(s) returned in {result.Elapsed.TotalMilliseconds:F0}ms)");
+                // Bei Streaming setzen wir die Spalten explizit, bevor die Zeilen gebunden
+                // werden, damit das DataGrid AutoGenerateColumns=False sofort ein Schema hat.
+                if (streaming != null && streaming.Columns != null)
+                    ResultColumns = streaming.Columns;
+                else
+                    ResultColumns = result.Columns;
+
+                SetResult(rows);
+                if (result.IsStreaming)
+                    StatusText = $"Streaming — {rows.Count:N0} rows loaded";
+                else
+                    StatusText = $"{result.Rows.Count:N0} row(s)";
+                AppendMessage($"({StatusText} in {result.Elapsed.TotalMilliseconds:F0}ms)");
                 SelectedResultTabIndex = result.Rows.Count > 0 ? 0 : 1;
+
+                // Bei leerem Ergebnis gleich die Meldung anzeigen, sonst kommt sie
+                // ueber den BatchLoaded-Handler.
+                if (!result.IsStreaming)
+                    AppendMessage(StatusText);
             }
         }
         catch (Exception ex)
         {
             AppendMessage($"Error: {ex.Message}");
-            SetResult(null, null);
+            SetResult(null);
+            ResultColumns = null;
             SelectedResultTabIndex = 1;
         }
         finally
@@ -120,26 +151,78 @@ public sealed partial class QueryTabViewModel : ObservableObject, IAsyncDisposab
         }
     }
 
-    private void SetResult(ObservableCollection<object?[]>? rows, IReadOnlyList<QueryColumn>? columns)
+    private void SetResult(ObservableCollection<object?[]>? rows)
     {
         ResultRows = rows;
-        ResultColumns = columns;
+        if (rows is null)
+            StatusText = "";
+        else if (rows is not StreamingRowCollection)
+            StatusText = $"{rows.Count:N0} row(s)";
     }
 
     private void OnStreamingBatchLoaded(object? sender, BatchLoadedEventArgs e)
     {
-        if (sender is StreamingRowCollection streaming)
+        // Alle UI-Updates muessen auf den Dispatcher, weil der Event vom
+        // Hintergrund-Loader-Thread kommt.
+        RunOnUiDispatcher(() =>
         {
-            var message = $"{streaming.TotalLoaded} rows loaded…";
-            if (System.Windows.Application.Current?.Dispatcher is { } dispatcher)
-                dispatcher.InvokeAsync(() => AppendMessage(message));
-            else
-                AppendMessage(message);
-        }
+            if (sender is StreamingRowCollection streaming)
+            {
+                if (e.IsComplete && !string.IsNullOrEmpty(streaming.ErrorMessage))
+                {
+                    StatusText = $"Fehler nach {streaming.TotalLoaded:N0} row(s)";
+                    AppendMessage($"Streaming-Fehler: {streaming.ErrorMessage}");
+                    return;
+                }
 
-        ExportToCsvCommand.NotifyCanExecuteChanged();
-        ExportToJsonCommand.NotifyCanExecuteChanged();
+                if (e.IsComplete)
+                {
+                    StatusText = $"{streaming.TotalLoaded:N0} row(s)";
+                    AppendMessage(StatusText);
+                }
+                else
+                {
+                    StatusText = $"Streaming — {streaming.TotalLoaded:N0} rows loaded…";
+                    // Nur bei Meilensteinen oder wenn der Stream noch sehr jung ist
+                    // eine Message ausgeben, sonst flutet der Messages-Tab.
+                    if (ShouldLogProgress(streaming.TotalLoaded))
+                        AppendMessage($"{streaming.TotalLoaded:N0} rows loaded…");
+                }
+            }
+
+            ExportToCsvCommand.NotifyCanExecuteChanged();
+            ExportToJsonCommand.NotifyCanExecuteChanged();
+            MaterializeAllCommand.NotifyCanExecuteChanged();
+        });
     }
+
+    private static bool ShouldLogProgress(long totalLoaded)
+    {
+        // Erster Meilenstein, dann alle 10.000 Zeilen.
+        if (totalLoaded <= 1000) return true;
+        return totalLoaded % 10_000 == 0;
+    }
+
+    private void OnColumnsReady(object? sender, ColumnsReadyEventArgs e)
+    {
+        RunOnUiDispatcher(() => ResultColumns = e.Columns);
+    }
+
+    private static void RunOnUiDispatcher(Action action)
+    {
+        if (System.Windows.Application.Current?.Dispatcher is { } dispatcher)
+        {
+            if (dispatcher.CheckAccess())
+                action();
+            else
+                dispatcher.InvokeAsync(action);
+        }
+        else
+        {
+            action();
+        }
+    }
+
 
     private string ResolveQueryToExecute()
     {
@@ -154,8 +237,20 @@ public sealed partial class QueryTabViewModel : ObservableObject, IAsyncDisposab
         return SqlScriptSplitter.GetStatementAtOffset(QueryText, EditorCaretOffset);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(IsExecuting))]
     private void CancelQuery() => _cts?.Cancel();
+
+    [RelayCommand(CanExecute = nameof(CanMaterializeAll))]
+    private void MaterializeAll()
+    {
+        if (ResultRows is StreamingRowCollection streaming && !streaming.IsComplete)
+        {
+            AppendMessage("Materializing remaining rows…");
+            streaming.MaterializeRemaining();
+            StatusText = $"{streaming.TotalLoaded:N0} row(s)";
+            AppendMessage($"Materialized {streaming.TotalLoaded:N0} row(s).");
+        }
+    }
 
     [RelayCommand]
     private void Close() => RequestClose?.Invoke();
@@ -241,7 +336,10 @@ public sealed partial class QueryTabViewModel : ObservableObject, IAsyncDisposab
     private void CleanupStreamingRows()
     {
         if (_streamingRows is StreamingRowCollection streaming)
+        {
             streaming.BatchLoaded -= OnStreamingBatchLoaded;
+            streaming.ColumnsReady -= OnColumnsReady;
+        }
         _streamingRows?.Dispose();
         _streamingRows = null;
     }

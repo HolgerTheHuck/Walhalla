@@ -859,6 +859,8 @@ WalhallaSql.WalhallaPreparedStatement.Bind(int index, object? value) -> void
 WalhallaSql.WalhallaPreparedStatement.Bind(string! name, object? value) -> void
 WalhallaSql.WalhallaPreparedStatement.ClearBindings() -> void
 WalhallaSql.WalhallaPreparedStatement.Execute() -> WalhallaSql.WalhallaResultSet!
+WalhallaSql.WalhallaPreparedStatement.ExecuteStreaming() -> WalhallaSql.WalhallaStreamResult!
+WalhallaSql.WalhallaPreparedStatement.ExecuteStreamingAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<WalhallaSql.WalhallaStreamResult!>!
 WalhallaSql.WalhallaResultSet
 WalhallaSql.WalhallaResultSet.AffectedRows.get -> int
 WalhallaSql.WalhallaResultSet.ColumnNames.get -> System.Collections.Generic.IReadOnlyList<string!>!

@@ -1,12 +1,15 @@
 using System.Collections;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using DbUi.Core.Providers;
 
 namespace DbUi.Core.Collections;
 
 /// <summary>
 /// Thread-sichere ObservableCollection, die Zeilen fortlaufend aus einem
-/// <see cref="IAsyncEnumerable{T}"/u003e laedt. Sie ist fuer
+/// <see cref="IAsyncEnumerable{T}"/> laedt. Sie ist fuer
 /// <code>BindingOperations.EnableCollectionSynchronization</code> in WPF
 /// vorgesehen, damit der Hintergrund-Loader direkt hinzufuegen kann, ohne
 /// jeden Batch auf den UI-Dispatcher zu marshallen.
@@ -16,10 +19,14 @@ namespace DbUi.Core.Collections;
 /// Stattdessen erscheinen die ersten Zeilen sofort; weitere Seiten werden
 /// im Hintergrund nachgeladen, bis der Stream endet oder ein konfigurierbares
 /// Limit erreicht ist.
+///
+/// Der Stream kann optional Spalteninformationen als erstes Element liefern.
+/// Das ist notwendig, wenn der Reader erst auf dem Loader-Thread geoefnet
+/// wird (z. B. weil der zugrunde liegende Enumerator thread-affine Locks haelt).
 /// </summary>
 public sealed class StreamingRowCollection : ObservableCollection<object?[]>, IReadOnlyList<object?[]>, IDisposable
 {
-    private readonly IAsyncEnumerable<IReadOnlyList<object?[]>> _source;
+    private readonly IAsyncEnumerable<(IReadOnlyList<QueryColumn>? Columns, IReadOnlyList<object?[]> Rows)> _source;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _loader;
     private readonly long? _maxRows;
@@ -27,8 +34,22 @@ public sealed class StreamingRowCollection : ObservableCollection<object?[]>, IR
     private long _totalLoaded;
     private bool _disposed;
 
+    /// <summary>
+    /// Konstruktor fuer Streams, die nur Zeilen liefern (altes Verhalten).
+    /// </summary>
     public StreamingRowCollection(
         IAsyncEnumerable<IReadOnlyList<object?[]>> source,
+        long? maxRows = null)
+        : this(WrapWithoutColumns(source), maxRows)
+    {
+    }
+
+    /// <summary>
+    /// Konstruktor fuer Streams, die Spalten als erstes Element und danach
+    /// Zeilen-Batches liefern.
+    /// </summary>
+    public StreamingRowCollection(
+        IAsyncEnumerable<(IReadOnlyList<QueryColumn>? Columns, IReadOnlyList<object?[]> Rows)> source,
         long? maxRows = null)
     {
         _source = source ?? throw new ArgumentNullException(nameof(source));
@@ -54,10 +75,21 @@ public sealed class StreamingRowCollection : ObservableCollection<object?[]>, IR
     public bool IsComplete { get; private set; }
 
     /// <summary>
+    /// Vom Stream gelieferte Spalteninformationen. Kann <c>null</c> sein, wenn
+    /// der Stream keine Spalten liefert oder sie noch nicht gelesen wurden.
+    /// </summary>
+    public IReadOnlyList<QueryColumn>? Columns { get; private set; }
+
+    /// <summary>
     /// Wird fuer jede geladene Seite ausgeloest. UI kann damit "X rows loaded"
     /// aktualisieren.
     /// </summary>
     public event EventHandler<BatchLoadedEventArgs>? BatchLoaded;
+
+    /// <summary>
+    /// Wird ausgeloest, sobald der Stream Spalteninformationen liefert.
+    /// </summary>
+    public event EventHandler<ColumnsReadyEventArgs>? ColumnsReady;
 
     /// <summary>
     /// Optionale Fehlermeldung, falls der Stream mit einer Exception abbricht.
@@ -89,6 +121,28 @@ public sealed class StreamingRowCollection : ObservableCollection<object?[]>, IR
         lock (_sync) base.MoveItem(oldIndex, newIndex);
     }
 
+    /// <summary>
+    /// Fuegt mehrere Zeilen hinzu. WPFs <c>ListCollectionView</c> unterstuetzt
+    /// keine Range-Add-Aktionen (<c>NotifyCollectionChangedAction.Add</c> mit
+    /// mehreren Items) – das fuehrt zu "Bereichsaktionen werden nicht unterstuetzt".
+    /// Daher wird stattdessen <c>Reset</c> ausgeloest; das DataGrid virtualisiert
+    /// dann neu.
+    /// <para>
+    /// Wird unter dem <code>_sync</code>-Lock aufgerufen.
+    /// </para>
+    /// </summary>
+    private void AddRange(IList<object?[]> rows)
+    {
+        if (rows.Count == 0) return;
+
+        foreach (var row in rows)
+            Items.Add(row);
+
+        OnPropertyChanged(new PropertyChangedEventArgs("Count"));
+        OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+    }
+
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
         try
@@ -97,29 +151,35 @@ public sealed class StreamingRowCollection : ObservableCollection<object?[]>, IR
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (batch == null || batch.Count == 0)
+                if (batch.Columns != null)
+                {
+                    Columns = batch.Columns;
+                    ColumnsReady?.Invoke(this, new ColumnsReadyEventArgs(batch.Columns));
+                }
+
+                var rows = batch.Rows;
+                if (rows == null || rows.Count == 0)
                     continue;
 
-                var rows = batch.ToList();
-                if (_maxRows.HasValue && _totalLoaded + rows.Count > _maxRows.Value)
+                var rowList = rows.ToList();
+                if (_maxRows.HasValue && _totalLoaded + rowList.Count > _maxRows.Value)
                 {
                     var take = (int)(_maxRows.Value - _totalLoaded);
                     if (take > 0)
-                        rows = rows.Take(take).ToList();
+                        rowList = rowList.Take(take).ToList();
                     else
-                        rows = [];
+                        rowList = [];
                 }
 
-                if (rows.Count == 0)
+                if (rowList.Count == 0)
                     continue;
 
                 lock (_sync)
                 {
-                    foreach (var row in rows)
-                        Add(row);
+                    AddRange(rowList);
                 }
 
-                _totalLoaded += rows.Count;
+                _totalLoaded += rowList.Count;
                 BatchLoaded?.Invoke(this, new BatchLoadedEventArgs(_totalLoaded, false));
 
                 if (_maxRows.HasValue && _totalLoaded >= _maxRows.Value)
@@ -135,7 +195,7 @@ public sealed class StreamingRowCollection : ObservableCollection<object?[]>, IR
         }
         catch (Exception ex)
         {
-            ErrorMessage = ex.Message;
+            ErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
         }
         finally
         {
@@ -145,7 +205,7 @@ public sealed class StreamingRowCollection : ObservableCollection<object?[]>, IR
     }
 
     /// <summary>
-    /// Wartet, bis mindestens <paramref name="minCount"/u003e Zeilen geladen sind
+    /// Wartet, bis mindestens <paramref name="minCount"/> Zeilen geladen sind
     /// oder der Stream endet. Fuer Preloading/Tests.
     /// </summary>
     public async Task WaitForRowsAsync(int minCount, CancellationToken cancellationToken = default)
@@ -171,6 +231,14 @@ public sealed class StreamingRowCollection : ObservableCollection<object?[]>, IR
         try { _loader.Wait(TimeSpan.FromSeconds(5)); } catch { /* ignored */ }
         _cts.Dispose();
     }
+
+    private static async IAsyncEnumerable<(IReadOnlyList<QueryColumn>? Columns, IReadOnlyList<object?[]> Rows)> WrapWithoutColumns(
+        IAsyncEnumerable<IReadOnlyList<object?[]>> source,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var rows in source.WithCancellation(cancellationToken).ConfigureAwait(false))
+            yield return (null, rows);
+    }
 }
 
 public sealed class BatchLoadedEventArgs : EventArgs
@@ -182,5 +250,15 @@ public sealed class BatchLoadedEventArgs : EventArgs
     {
         TotalLoaded = totalLoaded;
         IsComplete = isComplete;
+    }
+}
+
+public sealed class ColumnsReadyEventArgs : EventArgs
+{
+    public IReadOnlyList<QueryColumn> Columns { get; }
+
+    public ColumnsReadyEventArgs(IReadOnlyList<QueryColumn> columns)
+    {
+        Columns = columns ?? throw new ArgumentNullException(nameof(columns));
     }
 }

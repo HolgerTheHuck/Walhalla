@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using WalhallaSql.Collation;
 using WalhallaSql.Execution;
 using WalhallaSql.Execution.Join;
@@ -12,20 +14,26 @@ namespace WalhallaSql;
 public sealed class WalhallaPreparedStatement
 {
     private readonly CompiledPlan _plan;
+    private readonly SqlSelectStatement _select;
     private readonly object?[] _boundParams;
     private readonly IReadOnlyDictionary<string, int> _paramOrdinals;
+    private readonly WalhallaEngine _engine;
     private readonly TableStore _store;
     private readonly RowDecoder _decoder;
     private readonly bool _decoderUsesPool;
 
     internal WalhallaPreparedStatement(
         CompiledPlan plan,
+        SqlSelectStatement select,
         IReadOnlyDictionary<string, int> paramOrdinals,
+        WalhallaEngine engine,
         TableStore store)
     {
         _plan = plan;
+        _select = select;
         _boundParams = new object?[plan.ParameterCount];
         _paramOrdinals = paramOrdinals;
+        _engine = engine;
         _store = store;
 
         // Only pool when projection will make copies. Full projection reuses
@@ -543,6 +551,35 @@ public sealed class WalhallaPreparedStatement
                 result[i] = row[plan.ProjectionIndices[i]];
         }
         return result;
+    }
+
+    /// <summary>
+    /// Führt das vorbereitete Statement als synchronen Stream aus.
+    /// Gebundene Parameter werden an den Streaming-Kontext weitergegeben,
+    /// sodass WHERE-Prädikate und Bereichsscan-Grenzen korrekt aufgelöst werden.
+    /// </summary>
+    public WalhallaStreamResult ExecuteStreaming()
+    {
+        if (!_plan.IsStreamable)
+            throw new WalhallaException("Prepared query is not streamable.");
+
+        return _engine.ExecuteStreaming(_plan, _select, _boundParams);
+    }
+
+    /// <summary>
+    /// Führt das vorbereitete Statement als asynchronen Stream aus.
+    /// Gebundene Parameter werden an den Streaming-Kontext weitergegeben,
+    /// sodass WHERE-Prädikate und Bereichsscan-Grenzen korrekt aufgelöst werden.
+    /// </summary>
+    public Task<WalhallaStreamResult> ExecuteStreamingAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_plan.IsStreamable)
+        {
+            return Task.FromException<WalhallaStreamResult>(
+                new WalhallaException("Prepared query is not streamable."));
+        }
+
+        return _engine.ExecuteStreamingAsync(_plan, _select, _boundParams, cancellationToken);
     }
 
     internal object?[] GetBoundParameters() => _boundParams;

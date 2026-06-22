@@ -35,6 +35,12 @@ internal sealed class StreamingContext
     public WalhallaOptions Options { get; }
     public CancellationToken CancellationToken { get; }
 
+    /// <summary>
+    /// Optionaler MVCC-Lese-Snapshot. Wenn gesetzt, verwendet der Scan-Operator
+    /// snapshot-konsistente Scans statt lock-basierter Iteration.
+    /// </summary>
+    public Walhalla.Storage.Contract.IReadSnapshot? Snapshot { get; }
+
     public StreamingContext(
         WalhallaEngine engine,
         Storage.TableStore store,
@@ -42,7 +48,8 @@ internal sealed class StreamingContext
         Sql.SqlSelectStatement select,
         object?[] parameters,
         WalhallaOptions options,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Walhalla.Storage.Contract.IReadSnapshot? snapshot = null)
     {
         Engine = engine ?? throw new ArgumentNullException(nameof(engine));
         Store = store ?? throw new ArgumentNullException(nameof(store));
@@ -51,6 +58,7 @@ internal sealed class StreamingContext
         Parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));
         Options = options ?? throw new ArgumentNullException(nameof(options));
         CancellationToken = cancellationToken;
+        Snapshot = snapshot;
     }
 }
 
