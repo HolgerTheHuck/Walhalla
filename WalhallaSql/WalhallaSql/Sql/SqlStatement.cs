@@ -161,12 +161,17 @@ public enum SqlTriggerEvent { Insert, Update, Delete }
 
 public enum SqlTriggerTiming { Before, After, InsteadOf }
 
+public enum SqlParameterDirection { In, Out, InOut }
+
 public sealed record SqlProcedureParameter(
     string Name,
     SqlScalarType Type,
     bool IsOutput = false,
     bool IsNullable = true,
-    object? DefaultValue = null);
+    object? DefaultValue = null)
+{
+    public SqlParameterDirection Direction { get; init; } = IsOutput ? SqlParameterDirection.Out : SqlParameterDirection.In;
+}
 
 public sealed record SqlStoredProcedureDefinition(
     string Name,

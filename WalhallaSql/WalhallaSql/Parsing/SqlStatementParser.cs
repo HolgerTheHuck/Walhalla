@@ -2394,9 +2394,14 @@ internal static class SqlStatementParser
         if (remaining.StartsWith("AS", StringComparison.OrdinalIgnoreCase))
             remaining = remaining[2..].TrimStart();
 
-        // Check for CSHARP language
+        // Language clause: either LANGUAGE <lang> or the legacy CSHARP shorthand
         var language = "sql";
-        if (remaining.StartsWith("CSHARP", StringComparison.OrdinalIgnoreCase))
+        if (remaining.StartsWith("LANGUAGE", StringComparison.OrdinalIgnoreCase))
+        {
+            remaining = remaining["LANGUAGE".Length..].TrimStart();
+            (language, remaining) = ReadLanguageToken(remaining);
+        }
+        else if (remaining.StartsWith("CSHARP", StringComparison.OrdinalIgnoreCase))
         {
             remaining = remaining["CSHARP".Length..].TrimStart();
             language = "csharp";
@@ -2409,7 +2414,9 @@ internal static class SqlStatementParser
             }
         }
 
-        var body = ExtractBeginEndBody(remaining, language.StartsWith("csharp", StringComparison.OrdinalIgnoreCase));
+        var body = ExtractProcedureBody(remaining, language, out var trailingLanguage);
+        if (trailingLanguage is not null)
+            language = trailingLanguage;
 
         // RemoveTrailingSemicolon (line 16) strips the final ; from the outer SQL,
         // but for CSHARP bodies without BEGIN/END that ; is C# syntax, not SQL punctuation.
@@ -2428,35 +2435,101 @@ internal static class SqlStatementParser
             var trimmed = part.Trim();
             if (string.IsNullOrWhiteSpace(trimmed)) continue;
 
-            // @name TYPE [= default] [OUTPUT]
-            var spaceIdx = trimmed.IndexOf(' ');
-            if (spaceIdx < 0) continue;
-            var paramName = SqlSyntaxText.NormalizeIdentifier(trimmed[..spaceIdx].Trim());
+            // Syntax: [IN|OUT|INOUT] @name TYPE [= default] [OUT|INOUT|OUTPUT]
+            var working = trimmed;
+            var direction = SqlParameterDirection.In;
+            if (TryConsumeDirection(ref working, out var leadingDir))
+                direction = leadingDir;
 
-            var afterName = trimmed[spaceIdx..].TrimStart();
+            var spaceIdx = working.IndexOf(' ');
+            if (spaceIdx < 0) continue;
+            var paramName = SqlSyntaxText.NormalizeIdentifier(working[..spaceIdx].Trim());
+
+            var afterName = working[spaceIdx..].TrimStart();
             var typeEndIdx = afterName.IndexOfAny(new[] { ' ', '\t', '=' });
             var typeStr = typeEndIdx >= 0 ? afterName[..typeEndIdx] : afterName;
             var type = ParseSqlType(typeStr.TrimEnd(')', ' ', '\t'));
 
-            var isOutput = trimmed.ToUpperInvariant().Contains("OUTPUT");
-            object? defaultValue = null;
+            var tail = typeEndIdx >= 0 ? afterName[typeEndIdx..].TrimStart() : string.Empty;
 
-            var eqIdx = trimmed.IndexOf('=');
-            if (eqIdx >= 0)
+            // Trailing direction overrides leading direction
+            if (TryConsumeDirection(ref tail, out var trailingDir))
+                direction = trailingDir;
+
+            object? defaultValue = null;
+            if (tail.StartsWith("=", StringComparison.Ordinal))
             {
-                var valText = trimmed[(eqIdx + 1)..].Trim();
-                // Remove OUTPUT if trailing
-                var outIdx = valText.LastIndexOf("OUTPUT", StringComparison.OrdinalIgnoreCase);
-                if (outIdx >= 0) valText = valText[..outIdx].Trim();
-                if (valText.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+                var valText = tail[1..].Trim();
+                // Direction may also appear after the default literal, e.g. "= 1 OUT"
+                var (cleanVal, defaultDir) = StripTrailingDirection(valText);
+                if (defaultDir.HasValue)
+                    direction = defaultDir.Value;
+                if (cleanVal.Equals("NULL", StringComparison.OrdinalIgnoreCase))
                     defaultValue = null;
                 else
-                    defaultValue = ParseProcedureDefaultLiteral(valText, type);
+                    defaultValue = ParseProcedureDefaultLiteral(cleanVal, type);
             }
 
-            result.Add(new SqlProcedureParameter(paramName, type, isOutput, true, defaultValue));
+            var isOutput = direction != SqlParameterDirection.In;
+            result.Add(new SqlProcedureParameter(paramName, type, isOutput, true, defaultValue) { Direction = direction });
         }
         return result;
+    }
+
+    private static (string text, SqlParameterDirection? direction) StripTrailingDirection(string text)
+    {
+        var trimmed = text.TrimEnd();
+        foreach (var (keyword, dir) in new[]
+        {
+            ("INOUT", SqlParameterDirection.InOut),
+            ("OUTPUT", SqlParameterDirection.Out),
+            ("OUT", SqlParameterDirection.Out),
+            ("IN", SqlParameterDirection.In)
+        })
+        {
+            if (trimmed.EndsWith(keyword, StringComparison.OrdinalIgnoreCase))
+            {
+                var prefix = trimmed[..^keyword.Length];
+                // Ensure the keyword is a separate token
+                if (prefix.Length == 0 || (!char.IsLetterOrDigit(prefix[^1]) && prefix[^1] != '_'))
+                    return (prefix.TrimEnd(), dir);
+            }
+        }
+        return (trimmed, null);
+    }
+
+    private static bool TryConsumeDirection(ref string text, out SqlParameterDirection direction)
+    {
+        direction = SqlParameterDirection.In;
+        if (text.StartsWith("INOUT", StringComparison.OrdinalIgnoreCase) &&
+            (text.Length == 5 || !char.IsLetter(text[5])))
+        {
+            direction = SqlParameterDirection.InOut;
+            text = text[5..].TrimStart();
+            return true;
+        }
+        if (text.StartsWith("OUT", StringComparison.OrdinalIgnoreCase) &&
+            (text.Length == 3 || !char.IsLetter(text[3])))
+        {
+            direction = SqlParameterDirection.Out;
+            text = text[3..].TrimStart();
+            return true;
+        }
+        if (text.StartsWith("OUTPUT", StringComparison.OrdinalIgnoreCase) &&
+            (text.Length == 6 || !char.IsLetter(text[6])))
+        {
+            direction = SqlParameterDirection.Out;
+            text = text[6..].TrimStart();
+            return true;
+        }
+        if (text.StartsWith("IN", StringComparison.OrdinalIgnoreCase) &&
+            (text.Length == 2 || !char.IsLetter(text[2])))
+        {
+            direction = SqlParameterDirection.In;
+            text = text[2..].TrimStart();
+            return true;
+        }
+        return false;
     }
 
     private static SqlDropProcedureStatement ParseDropProcedureStatement(string sql)
@@ -2795,6 +2868,55 @@ internal static class SqlStatementParser
             return beginEnd.Trim();
         }
         return trimmed;
+    }
+
+    private static (string language, string remaining) ReadLanguageToken(string remaining)
+    {
+        var trimmed = remaining.TrimStart();
+        var end = trimmed.IndexOfAny(new[] { ' ', '\t', '\r', '\n' });
+        var language = end >= 0 ? trimmed[..end] : trimmed;
+        return (language.ToLowerInvariant(), end >= 0 ? trimmed[end..].TrimStart() : string.Empty);
+    }
+
+    private static string? ExtractDollarQuotedBody(string sql, out string remaining)
+    {
+        remaining = string.Empty;
+        var trimmed = sql.TrimStart();
+        if (trimmed.Length < 2 || trimmed[0] != '$') return null;
+
+        var tagEnd = trimmed.IndexOf('$', 1);
+        if (tagEnd < 0) return null;
+        var tag = trimmed[1..tagEnd];
+        if (!string.IsNullOrEmpty(tag) && !tag.All(c => char.IsLetterOrDigit(c) || c == '_'))
+            return null;
+
+        var close = $"${tag}$";
+        var searchStart = tagEnd + 1;
+        var closeIdx = trimmed.IndexOf(close, searchStart, StringComparison.Ordinal);
+        if (closeIdx < 0) return null;
+
+        var body = trimmed[searchStart..closeIdx];
+        remaining = trimmed[(closeIdx + close.Length)..].TrimStart();
+        return body;
+    }
+
+    private static string ExtractProcedureBody(string sql, string language, out string? trailingLanguage)
+    {
+        trailingLanguage = null;
+        if (sql.TrimStart().StartsWith("$"))
+        {
+            var body = ExtractDollarQuotedBody(sql, out var afterBody);
+            if (body is not null)
+            {
+                if (afterBody.StartsWith("LANGUAGE", StringComparison.OrdinalIgnoreCase))
+                {
+                    afterBody = afterBody["LANGUAGE".Length..].TrimStart();
+                    (trailingLanguage, afterBody) = ReadLanguageToken(afterBody);
+                }
+                return body.Trim();
+            }
+        }
+        return ExtractBeginEndBody(sql, language.StartsWith("csharp", StringComparison.OrdinalIgnoreCase));
     }
 
     private static object? ParseProcedureDefaultLiteral(string text, SqlScalarType type)

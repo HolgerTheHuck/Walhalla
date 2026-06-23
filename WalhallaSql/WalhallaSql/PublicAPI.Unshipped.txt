@@ -338,9 +338,15 @@ WalhallaSql.Sql.SqlOrderByColumn.Descending.init -> void
 WalhallaSql.Sql.SqlOrderByColumn.Collation.get -> string?
 WalhallaSql.Sql.SqlOrderByColumn.Collation.init -> void
 WalhallaSql.Sql.SqlOrderByColumn.SqlOrderByColumn(string! ColumnName, bool Descending = false, string? Collation = null) -> void
+WalhallaSql.Sql.SqlParameterDirection
+WalhallaSql.Sql.SqlParameterDirection.In = 0 -> WalhallaSql.Sql.SqlParameterDirection
+WalhallaSql.Sql.SqlParameterDirection.InOut = 2 -> WalhallaSql.Sql.SqlParameterDirection
+WalhallaSql.Sql.SqlParameterDirection.Out = 1 -> WalhallaSql.Sql.SqlParameterDirection
 WalhallaSql.Sql.SqlProcedureParameter
 WalhallaSql.Sql.SqlProcedureParameter.DefaultValue.get -> object?
 WalhallaSql.Sql.SqlProcedureParameter.DefaultValue.init -> void
+WalhallaSql.Sql.SqlProcedureParameter.Direction.get -> WalhallaSql.Sql.SqlParameterDirection
+WalhallaSql.Sql.SqlProcedureParameter.Direction.init -> void
 WalhallaSql.Sql.SqlProcedureParameter.IsNullable.get -> bool
 WalhallaSql.Sql.SqlProcedureParameter.IsNullable.init -> void
 WalhallaSql.Sql.SqlProcedureParameter.IsOutput.get -> bool
