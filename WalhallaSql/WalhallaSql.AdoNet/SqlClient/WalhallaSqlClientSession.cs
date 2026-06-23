@@ -204,6 +204,9 @@ public sealed class WalhallaSqlClientSession : ISqlClientSession
             rows = dictRows;
         }
 
-        return new SqlExecutionResult(resultSet.AffectedRows, rows);
+        return new SqlExecutionResult(resultSet.AffectedRows, rows)
+        {
+            OutputParameters = resultSet.OutputParameters.Count > 0 ? resultSet.OutputParameters : null
+        };
     }
 }

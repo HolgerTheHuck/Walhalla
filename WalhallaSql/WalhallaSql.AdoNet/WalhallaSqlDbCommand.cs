@@ -1228,6 +1228,16 @@ public sealed class WalhallaSqlDbCommand : DbCommand
                 if (!parameterMap.TryGetValue(parameterName, out var parameter))
                     throw new InvalidOperationException($"Missing value for SQL parameter '{current}{parameterName}'.");
 
+                // Prozedurargument-Name links des '=' (z. B. EXEC Proc @id = @id)
+                // muss erhalten bleiben; nur der Wert-Parameter rechts des '=' wird
+                // durch einen strukturierten Parameter ersetzt.
+                if (IsFollowedByAssignment(commandText, nameEnd))
+                {
+                    builder.Append(current).Append(parameterName);
+                    index = nameEnd - 1;
+                    continue;
+                }
+
                 var normalizedName = NormalizeParameterName(parameter.ParameterName);
                 if (!generatedNames.TryGetValue(normalizedName, out var generatedName))
                 {
@@ -1820,30 +1830,46 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         SqlExecutionResult result,
         IReadOnlyList<OutputParameterMapping> mappings)
     {
-        if (mappings.Count == 0)
-            return;
+        var parameters = _parameters.OfType<DbParameter>().ToList();
+        var parameterMap = BuildNamedParameterMap(parameters);
 
-        var parameterMap = BuildNamedParameterMap(_parameters.OfType<DbParameter>().ToList());
-        var firstRow = result.Rows?.FirstOrDefault();
-
-        foreach (var mapping in mappings)
+        // 1) SELECT @p = column AS p-Aliase aus der ersten Ergebniszeile zurückschreiben.
+        if (mappings.Count > 0)
         {
-            if (!parameterMap.TryGetValue(mapping.ParameterName, out var parameter))
-                continue;
-
-            object? value;
-            if (firstRow == null)
+            var firstRow = result.Rows?.FirstOrDefault();
+            foreach (var mapping in mappings)
             {
-                value = DBNull.Value;
-            }
-            else if (!firstRow.TryGetValue(mapping.ColumnAlias, out value))
-            {
-                value = firstRow
-                    .FirstOrDefault(pair => string.Equals(pair.Key, mapping.ColumnAlias, StringComparison.OrdinalIgnoreCase))
-                    .Value;
-            }
+                if (!parameterMap.TryGetValue(mapping.ParameterName, out var parameter))
+                    continue;
 
-            parameter.Value = value ?? DBNull.Value;
+                object? value;
+                if (firstRow == null)
+                {
+                    value = DBNull.Value;
+                }
+                else if (!firstRow.TryGetValue(mapping.ColumnAlias, out value))
+                {
+                    value = firstRow
+                        .FirstOrDefault(pair => string.Equals(pair.Key, mapping.ColumnAlias, StringComparison.OrdinalIgnoreCase))
+                        .Value;
+                }
+
+                parameter.Value = value ?? DBNull.Value;
+            }
+        }
+
+        // 2) Output-Parameter aus Stored-Procedure-Ausführung (C#-SP via ctx.SetOutput)
+        // in die passenden DbParameter zurückschreiben.
+        if (result.OutputParameters != null && result.OutputParameters.Count > 0)
+        {
+            foreach (var (name, value) in result.OutputParameters)
+            {
+                var normalized = NormalizeParameterName(name);
+                if (parameterMap.TryGetValue(normalized, out var parameter))
+                {
+                    parameter.Value = value ?? DBNull.Value;
+                }
+            }
         }
     }
 
@@ -2089,6 +2115,13 @@ public sealed class WalhallaSqlDbCommand : DbCommand
     private static bool IsParameterNamePart(char value)
     {
         return char.IsLetterOrDigit(value) || value == '_';
+    }
+
+    private static bool IsFollowedByAssignment(string sql, int index)
+    {
+        while (index < sql.Length && char.IsWhiteSpace(sql[index]))
+            index++;
+        return index < sql.Length && sql[index] == '=';
     }
 
     private static string ToLiteral(object? value)

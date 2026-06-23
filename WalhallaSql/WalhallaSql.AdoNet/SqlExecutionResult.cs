@@ -25,6 +25,12 @@ public sealed record SqlExecutionResult(
 
     internal string? CommandText { get; init; }
 
+    /// <summary>
+    /// Output-Parameter, die von einer Stored-Procedure-Ausführung zurückgegeben wurden
+    /// (z. B. via C#-SP <c>ctx.SetOutput(name, value)</c>).
+    /// </summary>
+    public IReadOnlyDictionary<string, object?>? OutputParameters { get; init; }
+
     public static SqlExecutionResult FromRows(IReadOnlyList<IReadOnlyDictionary<string, object?>> rows)
         => new(rows.Count, rows);
 }

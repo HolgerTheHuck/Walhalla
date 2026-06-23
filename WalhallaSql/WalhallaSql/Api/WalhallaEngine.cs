@@ -4909,7 +4909,16 @@ public sealed class WalhallaEngine : IDisposable
 
         var bound = BindCSharpArguments(proc, args);
         var ctx = new SqlNativeProcedureContext(this, bound);
-        return compiled(ctx);
+        var result = compiled(ctx);
+
+        // Output-Parameter, die die Prozedur via ctx.SetOutput gesetzt hat,
+        // werden in das ResultSet übernommen, damit ADO.NET sie zurückschreiben kann.
+        if (ctx.Outputs.Count > 0)
+        {
+            return result.WithOutputParameters(ctx.Outputs);
+        }
+
+        return result;
     }
 
     private async Task<WalhallaStreamResult> ExecuteCSharpProcedureStreamingAsync(

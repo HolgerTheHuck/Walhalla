@@ -4,3 +4,5 @@ WalhallaSql.AdoNet.SqlClient.ISqlClientSession.Reset() -> void
 WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.ExecutePrepared(WalhallaSql.WalhallaPreparedStatement! statement, WalhallaSql.WalhallaSqlTransaction? transaction, System.Collections.Generic.IReadOnlyList<WalhallaSql.AdoNet.SqlClient.SqlClientParameter!>! parameters) -> WalhallaSql.AdoNet.SqlExecutionResult!
 WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.Reset() -> void
 WalhallaSql.AdoNet.SqlClient.WalhallaSqlClientSession.SupportsStructuredParameters.get -> bool
+WalhallaSql.AdoNet.SqlExecutionResult.OutputParameters.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>?
+WalhallaSql.AdoNet.SqlExecutionResult.OutputParameters.init -> void

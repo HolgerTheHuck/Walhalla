@@ -2545,21 +2545,34 @@ internal static class SqlStatementParser
             {
                 var part = p.Trim();
                 if (string.IsNullOrWhiteSpace(part)) continue;
-                var eqIdx = part.IndexOf('=');
+
+                // Trailing OUTPUT/OUT-Kennzeichnung entfernen (MSSQL/Postgres-Interop).
+                var stripped = StripOutputSuffix(part);
+
+                var eqIdx = stripped.IndexOf('=');
                 if (eqIdx >= 0)
                 {
-                    var pName = SqlSyntaxText.NormalizeIdentifier(part[..eqIdx].Trim());
-                    var valExpr = part[(eqIdx + 1)..].Trim();
+                    var pName = SqlSyntaxText.NormalizeIdentifier(stripped[..eqIdx].Trim());
+                    var valExpr = stripped[(eqIdx + 1)..].Trim();
                     arguments.Add(new SqlExecArgument(pName, valExpr));
                 }
                 else
                 {
-                    arguments.Add(new SqlExecArgument(null, part));
+                    arguments.Add(new SqlExecArgument(null, stripped));
                 }
             }
         }
 
         return new SqlExecStatement(procName, arguments);
+    }
+
+    private static string StripOutputSuffix(string part)
+    {
+        if (part.EndsWith("OUTPUT", StringComparison.OrdinalIgnoreCase))
+            return part[..^"OUTPUT".Length].TrimEnd();
+        if (part.EndsWith("OUT", StringComparison.OrdinalIgnoreCase))
+            return part[..^"OUT".Length].TrimEnd();
+        return part;
     }
 
     private static SqlCreateTriggerStatement ParseCreateTriggerStatement(string sql)

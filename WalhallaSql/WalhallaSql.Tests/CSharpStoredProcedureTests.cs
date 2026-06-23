@@ -122,6 +122,28 @@ public sealed class CSharpStoredProcedureTests
     }
 
     [Fact]
+    public void CSharp_SP_output_parameter_is_returned()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("INSERT INTO Customers (Id, Name) VALUES (1, 'Dyn')");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE GetCustomerName(@id INT, @name STRING OUTPUT)
+            AS CSHARP BEGIN
+                var n = ctx.Query($"SELECT Name FROM Customers WHERE Id = {id}").FirstOrDefault()["Name"];
+                ctx.SetOutput("name", $"{n}|id={id}");
+            END
+            """);
+
+        var result = engine.Execute("EXEC GetCustomerName @id = 1, @name = NULL OUTPUT");
+
+        Assert.Single(result.OutputParameters);
+        Assert.Equal("Dyn|id=1", result.OutputParameters["name"]);
+    }
+
+    [Fact]
     public void CSharp_SP_nullable_parameter_defaults_to_null()
     {
         using var engine = WalhallaEngine.InMemory();

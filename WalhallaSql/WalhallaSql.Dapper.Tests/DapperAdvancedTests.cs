@@ -350,24 +350,52 @@ public class DapperAdvancedTests : IDisposable
     }
 
     [Fact]
-    public void DynamicParameters_OutputAndReturnValue()
+    public void DynamicParameters_OutputFromCSharpProcedure()
     {
         _connection.Execute(
             "INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (@id, @name, @createdAt, @rating, @externalId)",
             new { id = 1, name = "Dyn", createdAt = DateTime.UtcNow, rating = (double?)null, externalId = (Guid?)null });
 
+        _connection.Execute("""
+            CREATE OR REPLACE PROCEDURE GetCustomerName(@id INT, @name STRING OUTPUT)
+            AS CSHARP BEGIN
+                var n = ctx.Query($"SELECT Name FROM Customers WHERE Id = {id}").FirstOrDefault()["Name"];
+                ctx.SetOutput("name", n);
+            END
+            """);
+
         var parameters = new DynamicParameters();
         parameters.Add("id", 1);
         parameters.Add("name", dbType: DbType.String, direction: ParameterDirection.Output, size: 100);
-        parameters.Add("count", dbType: DbType.Int32, direction: ParameterDirection.ReturnValue);
 
-        // ReturnValue wird von WalhallaSql nicht als Stored-Procedure-Rückgabe
-        // unterstützt, daher fokussiert sich der Test auf den Output-Parameter.
-        _connection.Execute(
-            "SELECT @name = Name FROM Customers WHERE Id = @id",
-            parameters);
+        _connection.Execute("EXEC GetCustomerName @id = @id, @name = @name OUTPUT", parameters);
 
         Assert.Equal("Dyn", parameters.Get<string>("name"));
+    }
+
+    [Fact]
+    public void DynamicParameters_InputOutputFromCSharpProcedure()
+    {
+        _connection.Execute(
+            "INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (@id, @name, @createdAt, @rating, @externalId)",
+            new { id = 2, name = "Initial", createdAt = DateTime.UtcNow, rating = (double?)null, externalId = (Guid?)null });
+
+        _connection.Execute("""
+            CREATE OR REPLACE PROCEDURE UpdateCustomerName(@id INT, @name STRING OUTPUT)
+            AS CSHARP BEGIN
+                ctx.Execute($"UPDATE Customers SET Name = 'Updated' WHERE Id = {id}");
+                var n = ctx.Query($"SELECT Name FROM Customers WHERE Id = {id}").FirstOrDefault()["Name"];
+                ctx.SetOutput("name", n);
+            END
+            """);
+
+        var parameters = new DynamicParameters();
+        parameters.Add("id", 2);
+        parameters.Add("name", "Ignored", dbType: DbType.String, direction: ParameterDirection.InputOutput, size: 100);
+
+        _connection.Execute("EXEC UpdateCustomerName @id = @id, @name = @name OUTPUT", parameters);
+
+        Assert.Equal("Updated", parameters.Get<string>("name"));
     }
 
     [Fact]
@@ -376,10 +404,9 @@ public class DapperAdvancedTests : IDisposable
         var parameters = new DynamicParameters();
         parameters.Add("count", dbType: DbType.Int32, direction: ParameterDirection.ReturnValue);
 
-        // WalhallaSql hat keine Stored-Procedure-Rückgabe. Dapper bindet den
+        // WalhallaSql kennt kein MSSQL-ReturnValue-Konzept. Dapper bindet den
         // ReturnValue-Parameter als '@p_count = COUNT(*)', was die Projektion
-        // zerstört. Der Test dokumentiert, dass dies aktuell eine Exception
-        // auslöst (bekannte Limitierung).
+        // zerstört. Der Test dokumentiert diese bekannte Limitierung.
         Assert.ThrowsAny<Exception>(() =>
             _connection.Execute(
                 "SELECT @count = COUNT(*) FROM Customers",
