@@ -16,6 +16,38 @@ namespace WalhallaSql.Tests;
 public class DmlPreparedStatementTests
 {
     [Fact]
+    public void Engine_PrepareBindExecuteBindExecute_InsertTwoRows()
+    {
+        using var scope = CreateEngine();
+        var engine = scope.Engine;
+        engine.Execute("CREATE TABLE Batch (Id INT, Name VARCHAR(100))");
+
+        // prepare
+        var prepared = engine.Prepare("INSERT INTO Batch (Id, Name) VALUES (@id, @name)");
+
+        // bind
+        prepared.Bind("id", 1);
+        prepared.Bind("name", "alpha");
+
+        // execute
+        Assert.Equal(1, prepared.Execute().AffectedRows);
+
+        // rebind
+        prepared.Bind("id", 2);
+        prepared.Bind("name", "beta");
+
+        // execute again
+        Assert.Equal(1, prepared.Execute().AffectedRows);
+
+        var rows = engine.Execute("SELECT Id, Name FROM Batch ORDER BY Id").Rows;
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(1, rows[0]["Id"]);
+        Assert.Equal("alpha", rows[0]["Name"]);
+        Assert.Equal(2, rows[1]["Id"]);
+        Assert.Equal("beta", rows[1]["Name"]);
+    }
+
+    [Fact]
     public void Engine_InsertPrepared_MultipleBindsInsertsAllRows()
     {
         using var scope = CreateEngine();
@@ -129,6 +161,48 @@ public class DmlPreparedStatementTests
 
         var rows = engine.Execute("SELECT Id FROM TxItems").Rows;
         Assert.Empty(rows);
+    }
+
+    [Fact]
+    public void AdoNet_PrepareBindExecuteBindExecute_InsertTwoRows()
+    {
+        using var scope = CreateEngine();
+        using var connection = CreateConnection(scope.Engine);
+
+        using var createCmd = connection.CreateCommand();
+        createCmd.CommandText = "CREATE TABLE AdoBatch (Id INT, Name VARCHAR(100))";
+        createCmd.ExecuteNonQuery();
+
+        // prepare
+        using var insertCmd = connection.CreateCommand();
+        insertCmd.CommandText = "INSERT INTO AdoBatch (Id, Name) VALUES (@id, @name)";
+        insertCmd.Parameters.Add(new WalhallaSqlDbParameter { ParameterName = "@id", DbType = DbType.Int32 });
+        insertCmd.Parameters.Add(new WalhallaSqlDbParameter { ParameterName = "@name", DbType = DbType.String });
+
+        // bind
+        insertCmd.Parameters["@id"].Value = 1;
+        insertCmd.Parameters["@name"].Value = "alpha";
+
+        // execute
+        Assert.Equal(1, insertCmd.ExecuteNonQuery());
+
+        // rebind
+        insertCmd.Parameters["@id"].Value = 2;
+        insertCmd.Parameters["@name"].Value = "beta";
+
+        // execute again
+        Assert.Equal(1, insertCmd.ExecuteNonQuery());
+
+        using var selectCmd = connection.CreateCommand();
+        selectCmd.CommandText = "SELECT Id, Name FROM AdoBatch ORDER BY Id";
+        using var reader = selectCmd.ExecuteReader();
+        Assert.True(reader.Read());
+        Assert.Equal(1, reader.GetInt32(0));
+        Assert.Equal("alpha", reader.GetString(1));
+        Assert.True(reader.Read());
+        Assert.Equal(2, reader.GetInt32(0));
+        Assert.Equal("beta", reader.GetString(1));
+        Assert.False(reader.Read());
     }
 
     [Fact]
