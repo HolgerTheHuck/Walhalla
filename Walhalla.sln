@@ -1,10 +1,9 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Walhalla.Storage", "VectorStore\Walhalla.Storage\Walhalla.Storage.csproj", "{D2C35D75-ECE1-92D5-4A76-E6C6E3B5F490}"
-EndProject
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Walhalla.Indexes", "VectorStore\Walhalla.Indexes\Walhalla.Indexes.csproj", "{12345678-1234-1234-1234-123456789ABC}"
 EndProject
@@ -21,7 +20,6 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Walhalla.VectorStore.Embeddings", "VectorStore\Walhalla.VectorStore.Embeddings\Walhalla.VectorStore.Embeddings.csproj", "{5389B720-7446-4D1C-BB4D-5ABB83D30638}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Walhalla.VectorStore.Embeddings.Onnx", "VectorStore\Walhalla.VectorStore.Embeddings.Onnx\Walhalla.VectorStore.Embeddings.Onnx.csproj", "{8BF20B39-86E6-466F-9132-065C3A7E2B4D}"
-EndProject
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WalhallaSql", "WalhallaSql\WalhallaSql\WalhallaSql.csproj", "{146CBE5B-3084-4342-9F50-3D095F0B4A8D}"
 EndProject
@@ -56,6 +54,10 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "VectorStore", "VectorStore", "{EF34E0B4-D410-A639-F2BE-239C5FB1B299}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Walhalla.Storage.Tests", "VectorStore\Walhalla.Storage.Tests\Walhalla.Storage.Tests.csproj", "{C4B05189-55EB-43DE-80CA-F1D948CAB4A9}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "WalhallaSql", "WalhallaSql", "{72F4EE4E-7014-9AED-A104-FFD0F84312E9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WalhallaSql.Dapper.Tests", "WalhallaSql\WalhallaSql.Dapper.Tests\WalhallaSql.Dapper.Tests.csproj", "{82B5AEA2-B86B-4C20-9747-BD369BD436CA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -367,12 +369,25 @@ Global
 		{C4B05189-55EB-43DE-80CA-F1D948CAB4A9}.Release|x64.Build.0 = Release|Any CPU
 		{C4B05189-55EB-43DE-80CA-F1D948CAB4A9}.Release|x86.ActiveCfg = Release|Any CPU
 		{C4B05189-55EB-43DE-80CA-F1D948CAB4A9}.Release|x86.Build.0 = Release|Any CPU
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA}.Debug|x64.Build.0 = Debug|Any CPU
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA}.Debug|x86.Build.0 = Debug|Any CPU
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA}.Release|x64.ActiveCfg = Release|Any CPU
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA}.Release|x64.Build.0 = Release|Any CPU
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA}.Release|x86.ActiveCfg = Release|Any CPU
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{C4B05189-55EB-43DE-80CA-F1D948CAB4A9} = {EF34E0B4-D410-A639-F2BE-239C5FB1B299}
+		{82B5AEA2-B86B-4C20-9747-BD369BD436CA} = {72F4EE4E-7014-9AED-A104-FFD0F84312E9}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {095D9400-79ED-419E-BCF4-828CAC04B7E0}
