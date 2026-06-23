@@ -94,7 +94,8 @@ internal static class SqlStatementParser
             return ParseDropProcedureStatement(normalized);
 
         if (SqlSyntaxText.StartsWithKeyword(normalized, "EXEC")
-            || SqlSyntaxText.StartsWithKeyword(normalized, "EXECUTE"))
+            || SqlSyntaxText.StartsWithKeyword(normalized, "EXECUTE")
+            || SqlSyntaxText.StartsWithKeyword(normalized, "CALL"))
             return ParseExecStatement(normalized);
 
         if (SqlSyntaxText.StartsWithKeyword(normalized, "CREATE TRIGGER")
@@ -2414,6 +2415,11 @@ internal static class SqlStatementParser
             }
         }
 
+        // Sprachangabe kann ein optionales AS vor dem eigentlichen Body enthalten,
+        // z. B. "LANGUAGE plw AS $$ ... $$".
+        if (remaining.StartsWith("AS", StringComparison.OrdinalIgnoreCase))
+            remaining = remaining[2..].TrimStart();
+
         var body = ExtractProcedureBody(remaining, language, out var trailingLanguage);
         if (trailingLanguage is not null)
             language = trailingLanguage;
@@ -2596,6 +2602,8 @@ internal static class SqlStatementParser
         string prefix;
         if (trimmed.StartsWith("EXECUTE", StringComparison.OrdinalIgnoreCase))
             prefix = "EXECUTE";
+        else if (trimmed.StartsWith("CALL", StringComparison.OrdinalIgnoreCase))
+            prefix = "CALL";
         else
             prefix = "EXEC";
 

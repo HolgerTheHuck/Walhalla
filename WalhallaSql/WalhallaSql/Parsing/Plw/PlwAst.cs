@@ -75,17 +75,15 @@ internal sealed record PlwForQueryLoop(
     PlwNode Body) : PlwNode;
 
 /// <summary>
-/// EXIT [label] [WHEN condition]
+/// EXIT [WHEN condition]
 /// </summary>
 internal sealed record PlwExit(
-    string? Label,
     PlwExpression? WhenCondition) : PlwNode;
 
 /// <summary>
-/// CONTINUE [label] [WHEN condition]
+/// CONTINUE [WHEN condition]
 /// </summary>
 internal sealed record PlwContinue(
-    string? Label,
     PlwExpression? WhenCondition) : PlwNode;
 
 /// <summary>
@@ -114,10 +112,11 @@ internal sealed record PlwSelectInto(
     IReadOnlyList<PlwExpression> Targets) : PlwNode;
 
 /// <summary>
-/// EXECUTE sql_string [USING expr1, expr2 ...]
+/// EXECUTE sql_string [INTO target1, target2 ...] [USING expr1, expr2 ...]
 /// </summary>
 internal sealed record PlwExecute(
     PlwExpression SqlExpression,
+    IReadOnlyList<PlwExpression> IntoTargets,
     IReadOnlyList<PlwExpression> UsingArguments) : PlwNode;
 
 /// <summary>

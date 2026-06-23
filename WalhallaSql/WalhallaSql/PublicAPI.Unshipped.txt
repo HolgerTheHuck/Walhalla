@@ -855,6 +855,14 @@ WalhallaSql.WalhallaOptions.PageCacheCapacity.get -> int
 WalhallaSql.WalhallaOptions.PageCacheCapacity.set -> void
 WalhallaSql.WalhallaOptions.PlanCacheCapacity.get -> int
 WalhallaSql.WalhallaOptions.PlanCacheCapacity.set -> void
+WalhallaSql.WalhallaOptions.PlwMaxAllocatedBytesPerCall.get -> long
+WalhallaSql.WalhallaOptions.PlwMaxAllocatedBytesPerCall.set -> void
+WalhallaSql.WalhallaOptions.PlwMaxCallDepth.get -> int
+WalhallaSql.WalhallaOptions.PlwMaxCallDepth.set -> void
+WalhallaSql.WalhallaOptions.PlwMaxInstructions.get -> long
+WalhallaSql.WalhallaOptions.PlwMaxInstructions.set -> void
+WalhallaSql.WalhallaOptions.PlwTimeout.get -> System.TimeSpan?
+WalhallaSql.WalhallaOptions.PlwTimeout.set -> void
 WalhallaSql.WalhallaOptions.RecursiveCteMaxIterations.get -> int
 WalhallaSql.WalhallaOptions.RecursiveCteMaxIterations.set -> void
 WalhallaSql.WalhallaOptions.RootPath.get -> string!

@@ -243,19 +243,19 @@ internal static class PlwTokenizer
             reader.Advance();
 
         if (reader.IsAtEnd)
-            throw new FormatException($"Unvollständiges Dollar-Quote bei Position {tagStart}.");
+            throw new FormatException($"Unvollstaendiges Dollar-Quote bei Zeile {reader.Line}, Spalte {reader.Column}.");
 
         var tag = reader.Source[tagStart..reader.Position];
         reader.Advance(); // überspringe abschließendes '$' des Tags
 
         if (!string.IsNullOrEmpty(tag) && !tag.All(c => char.IsLetterOrDigit(c) || c == '_'))
-            throw new FormatException($"Ungültiges Dollar-Quote-Tag '{tag}' bei Position {tagStart}.");
+            throw new FormatException($"Ungueltiges Dollar-Quote-Tag '{tag}' bei Zeile {reader.Line}, Spalte {reader.Column}.");
 
         var close = $"${tag}$";
         var contentStart = reader.Position;
         var closeIdx = reader.Source.IndexOf(close, contentStart, StringComparison.Ordinal);
         if (closeIdx < 0)
-            throw new FormatException($"Schließendes Dollar-Quote '{close}' nicht gefunden.");
+            throw new FormatException($"Schliessendes Dollar-Quote '{close}' nicht gefunden (gestartet bei Zeile {reader.Line}, Spalte {reader.Column}).");
 
         var content = reader.Source[contentStart..closeIdx];
         reader.Position = closeIdx + close.Length;
@@ -388,7 +388,7 @@ internal static class PlwTokenizer
             }
             reader.Advance();
         }
-        throw new FormatException("Blockkommentar '/*' wurde nicht geschlossen.");
+        throw new FormatException($"Blockkommentar '/*' wurde nicht geschlossen (Zeile {reader.Line}, Spalte {reader.Column}).");
     }
 
     private static PlwTokenKind MapKeyword(string text)

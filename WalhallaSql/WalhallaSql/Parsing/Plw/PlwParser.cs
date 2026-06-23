@@ -243,23 +243,45 @@ internal static class PlwParser
             reader.Advance();
         }
         reader.Expect(PlwTokenKind.In);
-        if (reader.Current.Kind == PlwTokenKind.Identifier || reader.Current.Kind == PlwTokenKind.Number)
+        if (LooksLikeIntegerLoop(reader))
         {
             var first = ParseExpression(ref reader);
-            if (reader.Current.Kind == PlwTokenKind.DoubleDot)
-            {
-                reader.Advance();
-                var second = ParseExpression(ref reader);
-                reader.Expect(PlwTokenKind.Loop);
-                var body = ParseLoopBody(ref reader);
-                return new PlwForIntegerLoop(variable, first, second, body, reverse);
-            }
+            reader.Expect(PlwTokenKind.DoubleDot);
+            var second = ParseExpression(ref reader);
+            reader.Expect(PlwTokenKind.Loop);
+            var body = ParseLoopBody(ref reader);
+            return new PlwForIntegerLoop(variable, first, second, body, reverse);
         }
+
         // FOR rec IN query LOOP
         var query = ParseSqlFragment(ref reader, PlwTokenKind.Loop);
         reader.Expect(PlwTokenKind.Loop);
         var loopBody = ParseLoopBody(ref reader);
         return new PlwForQueryLoop(variable, query, loopBody);
+    }
+
+    private static bool LooksLikeIntegerLoop(TokenReader reader)
+    {
+        var depth = 0;
+        for (var i = reader.Position; i < reader.Tokens.Count; i++)
+        {
+            var token = reader.Tokens[i];
+            if (token.Kind == PlwTokenKind.LeftParen)
+            {
+                depth++;
+                continue;
+            }
+            if (token.Kind == PlwTokenKind.RightParen)
+            {
+                depth = Math.Max(0, depth - 1);
+                continue;
+            }
+            if (depth == 0 && token.Kind == PlwTokenKind.DoubleDot)
+                return true;
+            if (token.Kind == PlwTokenKind.Loop || token.Kind == PlwTokenKind.End || token.Kind == PlwTokenKind.Eof)
+                return false;
+        }
+        return false;
     }
 
     private static PlwNode ParseLoopBody(ref TokenReader reader)
@@ -280,39 +302,27 @@ internal static class PlwParser
     private static PlwNode ParseExit(ref TokenReader reader)
     {
         reader.Advance(); // EXIT
-        string? label = null;
         PlwExpression? when = null;
-        if (reader.Current.Kind == PlwTokenKind.Identifier)
-        {
-            label = reader.Current.Text;
-            reader.Advance();
-        }
         if (reader.Current.Kind == PlwTokenKind.Identifier && reader.Current.Text.Equals("WHEN", StringComparison.OrdinalIgnoreCase))
         {
             reader.Advance();
             when = ParseExpression(ref reader);
         }
         SkipOptionalSemicolon(ref reader);
-        return new PlwExit(label, when);
+        return new PlwExit(when);
     }
 
     private static PlwNode ParseContinue(ref TokenReader reader)
     {
         reader.Advance(); // CONTINUE
-        string? label = null;
         PlwExpression? when = null;
-        if (reader.Current.Kind == PlwTokenKind.Identifier)
-        {
-            label = reader.Current.Text;
-            reader.Advance();
-        }
         if (reader.Current.Kind == PlwTokenKind.Identifier && reader.Current.Text.Equals("WHEN", StringComparison.OrdinalIgnoreCase))
         {
             reader.Advance();
             when = ParseExpression(ref reader);
         }
         SkipOptionalSemicolon(ref reader);
-        return new PlwContinue(label, when);
+        return new PlwContinue(when);
     }
 
     private static PlwNode ParseReturn(ref TokenReader reader)
@@ -371,6 +381,16 @@ internal static class PlwParser
     {
         reader.Advance(); // EXECUTE
         var sqlExpr = ParseExpression(ref reader);
+        var intoTargets = new List<PlwExpression>();
+        if (reader.Current.Kind == PlwTokenKind.Into)
+        {
+            reader.Advance();
+            do
+            {
+                intoTargets.Add(new PlwIdentifierExpression(reader.Expect(PlwTokenKind.Identifier).Text));
+            }
+            while (reader.Current.Kind == PlwTokenKind.Comma && reader.AdvanceComma());
+        }
         var args = new List<PlwExpression>();
         if (reader.Current.Kind == PlwTokenKind.Using)
         {
@@ -382,7 +402,7 @@ internal static class PlwParser
             while (reader.Current.Kind == PlwTokenKind.Comma && reader.AdvanceComma());
         }
         SkipOptionalSemicolon(ref reader);
-        return new PlwExecute(sqlExpr, args);
+        return new PlwExecute(sqlExpr, intoTargets, args);
     }
 
     private static PlwNode ParseCursorStatement(ref TokenReader reader)

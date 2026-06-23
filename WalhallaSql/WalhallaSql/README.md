@@ -66,6 +66,7 @@ var engine = new WalhallaEngine(new WalhallaOptions
 
 - **Prepared statements**: `engine.PrepareStatement("SELECT ...")` for repeated execution.
 - **Stored procedures**: `engine.CreateProcedure(...)` for native C# procedures callable via SQL.
+- **PLW procedures**: `LANGUAGE plw` for Postgres-compatible procedural logic. See [PLW README](../PLW-README.md).
 - **Triggers**: `CREATE TRIGGER` with `BEFORE`/`AFTER`/`INSTEAD OF` support.
 - **Statistics**: `ANALYZE TABLE` collects histograms for the cost-based query planner.
 - **Collation**: ICU-based collations for locale-aware sorting and comparison.
@@ -73,5 +74,7 @@ var engine = new WalhallaEngine(new WalhallaOptions
 ## Documentation
 
 - [Migration Guide — SQLite → WalhallaSql](../docs/migration/from-sqlite.md)
+- [PLW README](../PLW-README.md)
+- [PLW Examples — ADO.NET, Dapper, PgWire](../docs/plw/ado-net-and-pgwire-examples.md)
 - [Performance Reports](../docs/perf/)
 - [API Surface v1](../docs/api/v1-surface.md)

@@ -173,6 +173,67 @@ public class WalhallaSqlPgWireSmokeTests
         Assert.Contains(parameters, p => p.RoutineName == "GetOrderCount" && p.ParameterName == "minId");
     }
 
+    [Fact]
+    public async Task Procedure_Plw_ReturnQuery_ViaCall_ReturnsRows()
+    {
+        await using var scope = await WalhallaSqlPgWireTestScope.CreateAsync();
+        await using var conn = await scope.OpenConnectionAsync();
+
+        await Execute(conn, "CREATE TABLE Items (Id INT PRIMARY KEY, Name STRING, Value INT)");
+        await Execute(conn, "INSERT INTO Items (Id, Name, Value) VALUES (1, 'Alpha', 10)");
+        await Execute(conn, "INSERT INTO Items (Id, Name, Value) VALUES (2, 'Beta', 20)");
+        await Execute(conn, "INSERT INTO Items (Id, Name, Value) VALUES (3, 'Gamma', 5)");
+
+        await Execute(conn, """
+            CREATE OR REPLACE PROCEDURE GetItemsAbove(IN @minValue INT)
+            LANGUAGE plw AS $$
+            BEGIN
+                RETURN QUERY SELECT Id, Name FROM Items WHERE Value >= minValue ORDER BY Id;
+            END;
+            $$;
+            """);
+
+        await using var cmd = new NpgsqlCommand("CALL GetItemsAbove(10)", conn);
+        await using var reader = await cmd.ExecuteReaderAsync();
+
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1, reader.GetInt32(0));
+        Assert.Equal("Alpha", reader.GetString(1));
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(2, reader.GetInt32(0));
+        Assert.Equal("Beta", reader.GetString(1));
+        Assert.False(await reader.ReadAsync());
+    }
+
+    [Fact]
+    public async Task Procedure_Plw_OutputParameters_ViaCall_ReturnsValues()
+    {
+        await using var scope = await WalhallaSqlPgWireTestScope.CreateAsync();
+        await using var conn = await scope.OpenConnectionAsync();
+
+        await Execute(conn, """
+            CREATE OR REPLACE PROCEDURE AddNumbers(
+                IN @a INT,
+                IN @b INT,
+                OUT @sum INT,
+                OUT @product INT)
+            LANGUAGE plw AS $$
+            BEGIN
+                sum := a + b;
+                product := a * b;
+            END;
+            $$;
+            """);
+
+        await using var cmd = new NpgsqlCommand("EXEC AddNumbers @a = 3, @b = 4", conn);
+        await using var reader = await cmd.ExecuteReaderAsync();
+
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(7, reader.GetInt32(0));
+        Assert.Equal(12, reader.GetInt32(1));
+        Assert.False(await reader.ReadAsync());
+    }
+
     private static async Task Execute(NpgsqlConnection conn, string sql)
     {
         await using var cmd = new NpgsqlCommand(sql, conn);

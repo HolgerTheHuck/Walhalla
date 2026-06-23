@@ -1,5 +1,9 @@
 # Design: Walhalla Procedural Language (PLW)
 
+> Benutzerdokumentation: [`PLW-README.md`](../PLW-README.md) ·
+> [Migration von PL/pgSQL](./plw/from-plpgsql.md) ·
+> [Client-Beispiele](./plw/ado-net-and-pgwire-examples.md)
+
 ## Ziel
 
 PLW ist eine Postgres-orientierte Prozedursprache für WalhallaSql. Sie soll im Client/Server-Betrieb über PgWire die Stärken von PL/pgSQL übernehmen, ohne die Sicherheits- und Laufzeitrisiken von in-prozess C#-Stored-Procedures.
@@ -277,10 +281,15 @@ RAISE EXCEPTION 'Customer not found';
 ## Open Questions
 
 1. Soll PLW auch Functions (`CREATE FUNCTION ... RETURNS ...`) unterstützen oder zuerst nur Procedures?
+   - **Stand v1:** Prozeduren mit `RETURN QUERY` decken den Funktions-Anwendungsfall ab. Reine `CREATE FUNCTION ... RETURNS TABLE` kann später ergänzt werden.
 2. Sollen Trigger-Funktionen (`CREATE FUNCTION ... RETURNS TRIGGER`) direkt mit PLW möglich sein?
+   - **Stand v1:** Trigger werden nicht unterstützt; geplant für eine spätere Version.
 3. Soll `quote_ident`/`quote_literal` als Built-in zur Verfügung stehen?
+   - **Stand v1:** Noch nicht implementiert. Dynamisches SQL arbeitet vorerst mit Positionsparametern (`EXECUTE ... USING $1`).
 4. Wie wird das Parsing von `SELECT INTO` vom regulären SELECT-Parser getrennt?
+   - **Stand v1:** Der PLW-Parser erkennt `SELECT ... INTO ...` vor der Weitergabe an den SQL-Executor und behandelt es als Zuweisungsanweisung.
 5. Soll `EXECUTE` einen eigenen Parser-Aufruf bekommen oder über einen internen SQL-Parser laufen?
+   - **Stand v1:** `EXECUTE` wird zur Laufzeit durch den internen SQL-Parser ausgeführt, wobei Variablen über `USING` gebunden werden.
 
 ## Nicht-Ziele für v1
 

@@ -60,8 +60,11 @@ await server.StartAsync();
 - Transaction status (`I`/`T`/`E`)
 - SSL negotiation (denied — use TLS terminator or WebSocket WSS)
 - Virtual catalog queries (`pg_catalog`, `information_schema`) for tool compatibility
+- Stored procedures: `CALL` for `LANGUAGE plw` procedures with `RETURN QUERY` or `OUT` parameters
 
 ## Documentation
 
 - [PgWire Host Sample](../WalhallaSql.PgWire.Host)
+- [PLW README](../PLW-README.md)
+- [PLW PgWire Examples](../docs/plw/ado-net-and-pgwire-examples.md)
 - [API Surface v1](../docs/api/v1-surface.md)

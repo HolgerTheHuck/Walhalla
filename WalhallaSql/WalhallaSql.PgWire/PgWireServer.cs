@@ -630,7 +630,7 @@ public sealed class PgWireServer : IAsyncDisposable
                     if (session.Transaction != null)
                         command.Transaction = session.Transaction;
 
-                    if (LooksLikeSelect(trimmed))
+                    if (ReturnsRows(trimmed))
                     {
                         using var reader = command.ExecuteReader();
 
@@ -664,7 +664,14 @@ public sealed class PgWireServer : IAsyncDisposable
                             fields[i] = (name, clrType);
                         }
 
-                        await SendRowDescriptionAsync(stream, fields);
+                        // Prozeduraufrufe mit reinen Output-Parametern und ohne Rows
+                        // liefern direkt ein einzelnes Result-Set mit den Outputs.
+                        var isProcedureCall = IsProcedureCall(FirstKeyword(trimmed));
+                        var hasOutputs = reader.OutputParameters.Count > 0;
+                        var outputOnlyProcedure = isProcedureCall && hasOutputs && fieldCount == 0;
+
+                        if (!outputOnlyProcedure)
+                            await SendRowDescriptionAsync(stream, fields);
 
                         // Stream rows: read and send one at a time without buffering
                         var rowCount = 0;
@@ -677,7 +684,24 @@ public sealed class PgWireServer : IAsyncDisposable
                             rowCount++;
                         }
 
-                        await SendCommandCompleteAsync(stream, $"SELECT {rowCount}");
+                        // Prozeduraufrufe ohne Rows, aber mit Output-Parametern:
+                        // die Output-Werte als einzelne Zeile zurueckgeben.
+                        if (isProcedureCall && hasOutputs && rowCount == 0)
+                        {
+                            var outputFields = reader.OutputParameters
+                                .Select(p => (p.Key, p.Value?.GetType() ?? typeof(string)))
+                                .ToArray();
+                            var outputValues = reader.OutputParameters
+                                .Select(p => p.Value)
+                                .ToArray();
+                            await SendRowDescriptionAsync(stream, outputFields);
+                            await SendDataRowAsync(stream, outputValues, outputFields);
+                            await SendCommandCompleteAsync(stream, "CALL 1");
+                        }
+                        else
+                        {
+                            await SendCommandCompleteAsync(stream, $"SELECT {rowCount}");
+                        }
                     }
                     else
                     {
@@ -1132,6 +1156,20 @@ public sealed class PgWireServer : IAsyncDisposable
                     return;
                 }
 
+                // Prozeduraufrufe: Schema durch kurze Ausfuehrung ermitteln (Output-Parameter
+                // priorisieren). Bei Fehler faellt der Server auf die normale Ausfuehrung zurueck.
+                if (IsProcedureCall(FirstKeyword(statement.Sql)))
+                {
+                    var procedureFields = backend.TryDescribeProcedure(statement.Sql);
+                    if (procedureFields != null && procedureFields.Count > 0)
+                    {
+                        statement.DescribedFields = procedureFields;
+                        await SendRowDescriptionAsync(stream, statement.DescribedFields);
+                        statement.MetadataDescribed = true;
+                        return;
+                    }
+                }
+
                     var statementKnownTables = DiscoverTableDefinitions(backend, session);
                     var statementDescribeSql = RewriteSelectStarWithKnownColumns(statement.Sql, statementKnownTables);
 
@@ -1193,6 +1231,20 @@ public sealed class PgWireServer : IAsyncDisposable
                 {
                     await SendNoDataAsync(stream);
                     return;
+                }
+
+                // Prozeduraufrufe: Schema durch kurze Ausfuehrung ermitteln (Output-Parameter
+                // priorisieren). Bei Fehler faellt der Server auf die normale Ausfuehrung zurueck.
+                if (IsProcedureCall(FirstKeyword(portal.Sql)))
+                {
+                    var procedureFields = backend.TryDescribeProcedure(portal.Sql);
+                    if (procedureFields != null && procedureFields.Count > 0)
+                    {
+                        portal.DescribedFields = procedureFields;
+                        await SendRowDescriptionAsync(stream, portal.DescribedFields, portal.ResultFormatCodes);
+                        MarkPortalDescribed(portal);
+                        return;
+                    }
                 }
 
                 if (IsSetOrShow(describeSql) && describeSql.TrimStart().StartsWith("SHOW", StringComparison.OrdinalIgnoreCase))
@@ -1399,11 +1451,15 @@ public sealed class PgWireServer : IAsyncDisposable
                     rowFields[i] = (name, clrType);
                 }
 
+                var isProcedureCall = IsProcedureCall(FirstKeyword(trimmedSql));
+                var hasOutputs = dbReader.OutputParameters.Count > 0;
+                var outputOnlyProcedure = isProcedureCall && hasOutputs && fieldCount == 0;
+
                 var resultFields = portal.MetadataDescribed && portal.DescribedFields is { Count: > 0 }
                     ? portal.DescribedFields
                     : rowFields;
 
-                if (!portal.MetadataDescribed)
+                if (!portal.MetadataDescribed && !outputOnlyProcedure)
                 {
                     portal.DescribedFields = rowFields;
                     resultFields = portal.DescribedFields;
@@ -1437,8 +1493,27 @@ public sealed class PgWireServer : IAsyncDisposable
                     return;
                 }
 
+                // Prozeduraufrufe ohne Rows, aber mit Output-Parametern:
+                // die Output-Werte als einzelne Zeile zurueckgeben.
+                if (isProcedureCall && hasOutputs && rowsThisBatch == 0)
+                {
+                    var outputFields = dbReader.OutputParameters
+                        .Select(p => (p.Key, p.Value?.GetType() ?? typeof(string)))
+                        .ToArray();
+                    var outputValues = dbReader.OutputParameters
+                        .Select(p => p.Value)
+                        .ToArray();
+                    if (!portal.MetadataDescribed)
+                        await SendRowDescriptionAsync(stream, outputFields, portal.ResultFormatCodes);
+                    await SendDataRowAsync(stream, outputValues, outputFields, portal.ResultFormatCodes);
+                    await SendCommandCompleteAsync(stream, "CALL 1");
+                }
+                else
+                {
+                    await SendCommandCompleteAsync(stream, $"SELECT {portal.RowsSent}");
+                }
+
                 portal.IsComplete = true;
-                await SendCommandCompleteAsync(stream, $"SELECT {portal.RowsSent}");
                 MarkPortalDescribed(portal);
                 return;
             }
@@ -1657,8 +1732,12 @@ public sealed class PgWireServer : IAsyncDisposable
     private static bool ReturnsRows(string sql)
     {
         var keyword = FirstKeyword(sql);
-        return keyword is "SELECT" or "WITH" or "SHOW" or "VALUES" or "TABLE";
+        return keyword is "SELECT" or "WITH" or "SHOW" or "VALUES" or "TABLE"
+            || IsProcedureCall(keyword);
     }
+
+    private static bool IsProcedureCall(string keyword)
+        => keyword is "EXEC" or "EXECUTE" or "CALL";
 
     private static bool IsBegin(string sql)
     {

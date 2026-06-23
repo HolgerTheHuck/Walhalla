@@ -13,9 +13,11 @@ using WalhallaSql.Collation;
 using WalhallaSql.Core;
 using WalhallaSql.Execution;
 using WalhallaSql.Execution.Join;
+using WalhallaSql.Execution.Plw;
 using WalhallaSql.Execution.Streaming;
 using WalhallaSql.Execution.Window;
 using WalhallaSql.Parsing;
+using WalhallaSql.Parsing.Plw;
 using WalhallaSql.Sql;
 using WalhallaSql.Statistics;
 using WalhallaSql.Storage;
@@ -37,6 +39,7 @@ public sealed class WalhallaEngine : IDisposable
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, WalhallaResultSet>> _compiledProcedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>> _compiledStreamingProcedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, CancellationToken, IAsyncEnumerable<WalhallaRow>>> _compiledStreamingRowProcedures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PlwProgram> _plwPrograms = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<SqlTriggerDefinition>> _triggersByTable = new(StringComparer.OrdinalIgnoreCase);
     // Guards _views, _procedures, _compiledProcedures, _triggersByTable, _cursors, _cursorDefinitions.
     // Held only while reading/mutating these dictionaries (and trigger lists), never while
@@ -4816,6 +4819,7 @@ public sealed class WalhallaEngine : IDisposable
             _compiledProcedures.Remove(stmt.ProcedureName);
             _compiledStreamingProcedures.Remove(stmt.ProcedureName);
             _compiledStreamingRowProcedures.Remove(stmt.ProcedureName);
+            _plwPrograms.Remove(stmt.ProcedureName);
         }
         return WalhallaResultSet.Affected(0);
     }
@@ -4830,6 +4834,7 @@ public sealed class WalhallaEngine : IDisposable
             _compiledProcedures.Remove(stmt.ProcedureName);
             _compiledStreamingProcedures.Remove(stmt.ProcedureName);
             _compiledStreamingRowProcedures.Remove(stmt.ProcedureName);
+            _plwPrograms.Remove(stmt.ProcedureName);
         }
 
         _grantCatalog.RevokeAllForObject(GrantObjectType.Procedure, stmt.ProcedureName);
@@ -4853,6 +4858,13 @@ public sealed class WalhallaEngine : IDisposable
                 throw new WalhallaException(
                     $"Streaming C# procedure '{exec.ProcedureName}' must be executed via ExecuteStreamingExecAsync.");
             return ExecuteCSharpProcedure(proc, exec.Arguments);
+        }
+
+        if (IsPlwProcedureLanguage(proc.Language))
+        {
+            var program = GetOrParsePlwProgram(proc);
+            var context = new PlwExecutionContext(_options);
+            return PlwInterpreter.Execute(proc, program, exec.Arguments, this, context);
         }
 
         // Bind parameters into body text
@@ -4889,6 +4901,14 @@ public sealed class WalhallaEngine : IDisposable
             return await ExecuteCSharpProcedureStreamingAsync(proc, args, cancellationToken);
         }
 
+        if (IsPlwProcedureLanguage(proc.Language))
+        {
+            var program = GetOrParsePlwProgram(proc);
+            var context = new PlwExecutionContext(_options);
+            var plwResult = PlwInterpreter.Execute(proc, program, args, this, context);
+            return WalhallaResultSetToStream(plwResult);
+        }
+
         var body = BindProcedureBody(proc, args);
         var result = ExecuteProcedureBody(body);
         return WalhallaResultSetToStream(result);
@@ -4900,6 +4920,33 @@ public sealed class WalhallaEngine : IDisposable
 
     private static bool IsStreamingProcedureLanguage(string language)
         => string.Equals(language, "csharp-streaming", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPlwProcedureLanguage(string language)
+        => string.Equals(language, "plw", StringComparison.OrdinalIgnoreCase);
+
+    private PlwProgram GetOrParsePlwProgram(SqlStoredProcedureDefinition proc)
+    {
+        lock (_metaSync)
+        {
+            if (_plwPrograms.TryGetValue(proc.Name, out var cached))
+                return cached;
+        }
+
+        try
+        {
+            var tokens = WalhallaSql.Parsing.Plw.PlwTokenizer.Tokenize(proc.Body);
+            var program = WalhallaSql.Parsing.Plw.PlwParser.Parse(tokens);
+            lock (_metaSync)
+            {
+                _plwPrograms[proc.Name] = program;
+            }
+            return program;
+        }
+        catch (Exception ex) when (ex is not WalhallaException)
+        {
+            throw new WalhallaException($"PLW procedure '{proc.Name}': {ex.Message}", ex);
+        }
+    }
 
     private WalhallaResultSet ExecuteCSharpProcedure(
         SqlStoredProcedureDefinition proc,

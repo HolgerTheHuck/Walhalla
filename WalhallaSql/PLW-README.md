@@ -1,18 +1,7 @@
 # Walhalla Procedural Language (PLW)
 
-PLW ist eine Postgres-orientierte Prozedursprache für WalhallaSql. Sie ist für den eingebetteten Betrieb und für den Client/Server-Betrieb über PgWire gedacht.
-
-## Warum PLW?
-
-WalhallaSql unterstützt drei Arten von Stored Procedures:
-
-| Sprache | Zweck | Sicherheit |
-| --- | --- | --- |
-| `sql` | Einfache SQL-Wrapper | sehr hoch |
-| `plw` | Prozedurale Logik mit Variablen, Schleifen, IF | hoch |
-| `csharp` | Volle C#-Sprache und .NET-API | vertrauensabhängig |
-
-`csharp` ist mächtig, aber im C/S-Betrieb problematisch: Endlosschleifen, StackOverflows oder Assembly-Leaks können den Server belasten. PLW läuft in einem Interpreter innerhalb der Engine und ist daher kontrollierbar.
+PLW ist eine Postgres-orientierte Prozedursprache für WalhallaSql. Sie ist für den
+eingebetteten Betrieb und für den Client/Server-Betrieb über PgWire gedacht.
 
 ## Aktueller Status
 
@@ -28,13 +17,56 @@ WalhallaSql unterstützt drei Arten von Stored Procedures:
   - PLW-Body wird aus Tokens in einen typisierten AST übersetzt
   - Unterstützt Blöcke, Variablen, Zuweisungen, `IF`/`ELSIF`/`ELSE`, `LOOP`/`WHILE`/`FOR`, `RETURN`/`RETURN QUERY`, `PERFORM`, `EXECUTE`, `RAISE`, `SELECT INTO`, `EXIT`/`CONTINUE`
   - SQL-Fragmente werden als Roh-String-Knoten erhalten
-- ⏳ Phase 4–10: Interpreter, Engine-Integration, ADO.NET/Dapper-Tests, Sicherheit, PgWire-Kompatibilität, Dokumentation und Stabilisierung
+- ✅ Phase 4: Interpreter & Engine-Integration abgeschlossen
+  - `WalhallaEngine.ExecuteExec` leitet `LANGUAGE plw` an den `PlwInterpreter` weiter
+  - Parameterbindung für `IN`/`OUT`/`INOUT`, Variablen-Scope, Ausdrucks-Auswertung
+  - Steuerfluss (`EXIT`, `CONTINUE`, `RETURN`, `RETURN QUERY`) über Exceptions
+  - SQL-Fragmente werden zur Laufzeit mit PLW-Variablen substituiert; `EXECUTE ... USING $1` funktioniert
+  - Integrationstests in `WalhallaSql.Tests/PlwExecutionTests.cs`
+- ✅ Phase 5: ADO.NET/Dapper-Integration abgeschlossen
+  - `WalhallaSql.AdoNet` unterstützt `EXEC` für PLW-Prozeduren mit `IN`/`OUT`/`INOUT`-Parametern
+  - `WalhallaSqlDbCommand` mappt formale Prozedurargumentnamen links von `=` auf ADO.NET-Output-Parameter
+  - Dapper `DynamicParameters` funktioniert mit PLW-Output- und InputOutput-Parametern
+  - `RETURN QUERY`-Prozeduren können über `ExecuteReader` bzw. Dapper `Query` gelesen werden
+  - Tests in `WalhallaSql.AdoNet.PlwTests`
+- ✅ Phase 6: Sicherheitslimits abgeschlossen
+  - `WalhallaOptions` enthält `PlwMaxInstructions`, `PlwTimeout`, `PlwMaxAllocatedBytesPerCall`, `PlwMaxCallDepth`
+  - `PlwExecutionContext` prüft Instruktions-, Zeit-, Speicher- und Aufruftiefenlimits während der Ausführung
+  - `WalhallaEngine.ExecuteExec` und `ExecuteStreamingExecAsync` erzeugen den Context aus den Options
+- ✅ Phase 7: PgWire-Kompatibilität abgeschlossen
+  - `CALL` wird vom Parser als Prozeduraufruf erkannt
+  - PgWire-Server routet `EXEC`/`CALL` über den Reader-Pfad
+  - `WalhallaSqlPgWireBackend` stellt Output-Parameter und `RETURN QUERY`-Zeilen als Result-Set bereit
+  - `TryDescribeProcedure` liefert das korrekte `RowDescription`
+- ✅ Phase 8: Dokumentation abgeschlossen
+  - Diese README, Migrations-Guide und Client-Beispiele
+- ✅ Phase 9: Stabilisierung abgeschlossen
+  - Doppelte Variablendeklarationen werden abgelehnt
+  - `SELECT INTO` und `EXECUTE ... INTO` prüfen auf genau eine Zeile
+  - `RETURN` mit Ausdruck wird abgelehnt (nur `RETURN` für Prozeduren, `RETURN QUERY` für Ergebnismengen)
+  - Numerische Operationen vermeiden stille `int`-Überläufe durch automatische Promotion zu `long`/`double`
+  - Fehlermeldungen für unvollständige Dollar-Quotes enthalten Zeile/Spalte
 
-Das technische Design-Dokument liegt unter `docs/plw-design.md`; der detaillierte Umsetzungsplan unter `.claude/plans/plw-procedural-language.md`.
+Das technische Design-Dokument liegt unter `WalhallaSql/docs/plw-design.md`; der
+Migrations-Guide von PL/pgSQL unter `WalhallaSql/docs/plw/from-plpgsql.md`;
+Client-Beispiele für ADO.NET, Dapper und PgWire unter
+`WalhallaSql/docs/plw/ado-net-and-pgwire-examples.md`.
 
-## Syntax
+## Warum PLW?
 
-### Prozedur mit OUT-Parameter
+WalhallaSql unterstützt drei Arten von Stored Procedures:
+
+| Sprache | Zweck | Sicherheit |
+| --- | --- | --- |
+| `sql` | Einfache SQL-Wrapper | sehr hoch |
+| `plw` | Prozedurale Logik mit Variablen, Schleifen, IF | hoch |
+| `csharp` | Volle C#-Sprache und .NET-API | vertrauensabhängig |
+
+`csharp` ist mächtig, aber im C/S-Betrieb problematisch: Endlosschleifen,
+StackOverflows oder Assembly-Leaks können den Server belasten. PLW läuft in einem
+Interpreter innerhalb der Engine und ist daher kontrollierbar.
+
+## Schnellstart
 
 ```sql
 CREATE OR REPLACE PROCEDURE get_customer_name(
@@ -55,60 +87,22 @@ END;
 $$;
 ```
 
-### Funktion mit RETURN QUERY
+Aufruf eingebettet:
 
-```sql
-CREATE OR REPLACE FUNCTION get_customers_by_region(
-    p_region IN STRING
-)
-RETURNS TABLE(id INT, name STRING)
-LANGUAGE plw
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT Id, Name FROM Customers WHERE Region = p_region;
-END;
-$$;
-```
+```csharp
+using var engine = WalhallaEngine.InMemory();
+engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name STRING)");
+engine.Execute("INSERT INTO Customers (Id, Name) VALUES (1, 'Dyn')");
 
-### Schleife über ein SELECT
+var result = engine.Execute(
+    "EXEC get_customer_name @p_id = 1, @p_name = NULL OUTPUT");
 
-```sql
-CREATE OR REPLACE PROCEDURE count_customers(
-    p_count OUT INT
-)
-LANGUAGE plw
-AS $$
-DECLARE
-    v_count INT := 0;
-    rec RECORD;
-BEGIN
-    FOR rec IN SELECT Id FROM Customers LOOP
-        v_count := v_count + 1;
-    END LOOP;
-
-    p_count := v_count;
-END;
-$$;
-```
-
-### Dynamisches SQL
-
-```sql
-CREATE OR REPLACE PROCEDURE drop_table_if_exists(
-    p_name IN STRING
-)
-LANGUAGE plw
-AS $$
-BEGIN
-    EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(p_name);
-END;
-$$;
+Console.WriteLine(result.OutputParameters["p_name"]); // Dyn
 ```
 
 ## Unterstützte Konstrukte
 
-- Variablen-Deklaration mit `DECLARE` und Default-Wert
+- Variablendeklaration mit `DECLARE` und Default-Wert
 - Zuweisungen mit `:=`
 - `IF ... THEN ... ELSIF ... ELSE ... END IF;`
 - `LOOP`, `WHILE`, `FOR ... IN SELECT ... LOOP`
@@ -117,24 +111,39 @@ $$;
 - `RETURN QUERY` für Funktionen
 - `SELECT INTO` für einzelne Werte
 - `EXECUTE` für dynamisches SQL
+- `EXECUTE ... USING $1` für parametrisiertes dynamisches SQL
+- `EXECUTE ... INTO` für dynamisches SQL mit einzelnem Ergebnis
+- `PERFORM` für Queries ohne Rückgabewert
 - `RAISE NOTICE` und `RAISE EXCEPTION`
-- `IN`, `OUT`, `INOUT` Parameter
+- `IN`, `OUT`, `INOUT`-Parameter
+- `%TYPE` für Tabellenspalten (v1)
 
-## Noch nicht unterstützt
+## Aufruf aus verschiedenen Clients
 
-Für die erste Version sind folgende PL/pgSQL-Features nicht geplant:
+### Eingebettet über `WalhallaEngine`
 
-- Cursor-Variablen (`OPEN`, `FETCH`, `CLOSE`)
-- Exception-Handler (`BEGIN ... EXCEPTION ... END`)
-- Arrays und Composite-Typen
-- `PERFORM` (kommt kurz nach v1)
-- Trigger-Funktionen
-- Systemvariablen wie `FOUND`, `SQLSTATE`, `SQLERRM`
-- Prozedur-Überladung
+```csharp
+var result = engine.Execute("EXEC AddNumbers @a = 2, @b = 3, @sum = NULL OUTPUT");
+Console.WriteLine(result.OutputParameters["sum"]);
+```
 
-## Aufruf aus Dapper / ADO.NET
+### ADO.NET
 
-PLW-Prozeduren werden wie SQL- und C#-Prozeduren über `EXEC` aufgerufen.
+```csharp
+using var cmd = connection.CreateCommand();
+cmd.CommandText = "EXEC get_customer_name @p_id = @id, @p_name = @name OUTPUT";
+cmd.Parameters.Add(new WalhallaSqlParameter { ParameterName = "id", Value = 1 });
+cmd.Parameters.Add(new WalhallaSqlParameter
+{
+    ParameterName = "name",
+    Direction = ParameterDirection.Output
+});
+
+cmd.ExecuteNonQuery();
+Console.WriteLine(cmd.Parameters["name"].Value);
+```
+
+### Dapper
 
 ```csharp
 var parameters = new DynamicParameters();
@@ -142,11 +151,67 @@ parameters.Add("id", 1);
 parameters.Add("name", dbType: DbType.String, direction: ParameterDirection.Output, size: 100);
 
 connection.Execute(
-    "EXEC get_customer_name @id = @id, @name = @name OUTPUT",
+    "EXEC get_customer_name @p_id = @id, @p_name = @name OUTPUT",
     parameters);
 
 string name = parameters.Get<string>("name");
 ```
+
+### PgWire / Npgsql
+
+```csharp
+await using var cmd = new NpgsqlCommand("CALL get_customer_name(1)", conn);
+await using var reader = await cmd.ExecuteReaderAsync();
+await reader.ReadAsync();
+Console.WriteLine(reader.GetString(0));
+```
+
+> Hinweis: Über PgWire liefert ein `CALL` genau ein Result-Set. Eine Prozedur
+> gibt entweder ihre `RETURN QUERY`-Zeilen oder ihre Output-Parameter zurück,
+> nicht beides gleichzeitig. Details siehe
+> `WalhallaSql/docs/plw/ado-net-and-pgwire-examples.md`.
+
+## Stabile Laufzeitsemantik
+
+In Phase 9 wurden gezielt Korrektheitslücken geschlossen:
+
+| Situation | Verhalten | SQLSTATE |
+| --- | --- | --- |
+| Doppelte Deklaration derselben Variable im gleichen Scope | `WalhallaException` | – |
+| `SELECT INTO` liefert mehr als eine Zeile | `WalhallaException` | `P0003` |
+| `EXECUTE ... INTO` liefert mehr als eine Zeile | `WalhallaException` | `P0003` |
+| `RETURN` mit Ausdruck in einer Prozedur | `WalhallaException` | – |
+| `int`-Überlauf bei einer arithmetischen Operation | automatische Promotion zu `long` oder `double` | – |
+
+Schleifenvariablen (`FOR i IN ...`, `FOR rec IN SELECT ...`) dürfen dagegen
+Block-Variablen gleichen Namens temporär überschatten.
+
+## Sicherheitslimits
+
+PLW-Limits werden über `WalhallaOptions` konfiguriert:
+
+| Option | Bedeutung | Standard |
+| --- | --- | --- |
+| `PlwMaxInstructions` | Maximale Anzahl ausgeführter Instruktionen pro Aufruf | 0 = unbegrenzt |
+| `PlwTimeout` | Maximale Ausführungszeit pro Aufruf | 0 = unbegrenzt |
+| `PlwMaxAllocatedBytesPerCall` | Maximale allozierbare Byte pro Aufruf | 0 = unbegrenzt |
+| `PlwMaxCallDepth` | Maximale Aufruftiefe (Rekursion) | 0 = unbegrenzt |
+
+Beispiel:
+
+```csharp
+using var engine = new WalhallaEngine(new WalhallaOptions
+{
+    RootPath = "./data",
+    PlwMaxInstructions = 1_000_000,
+    PlwTimeout = TimeSpan.FromSeconds(30),
+    PlwMaxAllocatedBytesPerCall = 64 * 1024 * 1024,
+    PlwMaxCallDepth = 32
+});
+```
+
+Bei Überschreitung wirft der Interpreter eine `WalhallaSqlException` mit einer
+klaren Fehlermeldung.
 
 ## Vergleich mit C#-Stored-Procedures
 
@@ -162,11 +227,21 @@ string name = parameters.Get<string>("name");
 | .NET-API-Zugriff | Voll | Keiner |
 | Einsatzzweck | Migrationen, komplexe Logik, Test-Seeding | C/S-Betrieb, Datenbank-Logik, sichere SPs |
 
-## Sicherheit
+## Noch nicht unterstützt
 
-PLW-Code hat keinen Zugriff auf das .NET-Laufzeitsystem. Alle Operationen laufen über den `WalhallaEngine`-Aufruf. Im C/S-Betrieb kann die Ausführung von `CREATE PROCEDURE ... LANGUAGE plw` über das Berechtigungssystem gesteuert werden.
+Für die erste Version sind folgende PL/pgSQL-Features nicht geplant:
+
+- Cursor-Variablen (`OPEN`, `FETCH`, `CLOSE`)
+- Exception-Handler (`BEGIN ... EXCEPTION ... END`)
+- Arrays und Composite-Typen
+- Trigger-Funktionen
+- Systemvariablen wie `FOUND`, `SQLSTATE`, `SQLERRM`
+- Prozedur-Überladung
+- Format-Platzhalter in `RAISE NOTICE` / `RAISE EXCEPTION`
 
 ## Weitere Dokumentation
 
-- Design-Dokument: `docs/plw-design.md`
-- Allgemeine WalhallaSql-Dokumentation: siehe Repository-README
+- [Design-Dokument](WalhallaSql/docs/plw-design.md)
+- [Migration von PL/pgSQL](WalhallaSql/docs/plw/from-plpgsql.md)
+- [Client-Beispiele: ADO.NET, Dapper, PgWire](WalhallaSql/docs/plw/ado-net-and-pgwire-examples.md)
+- Allgemeine WalhallaSql-Dokumentation: `WalhallaSql/WalhallaSql/README.md`
