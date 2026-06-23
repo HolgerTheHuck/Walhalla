@@ -435,7 +435,7 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
         }
     }
 
-    private sealed class WalhallaSqlTransactionAdapter : IPgWireBackendTransaction
+    internal sealed class WalhallaSqlTransactionAdapter : IPgWireBackendTransaction
     {
         internal readonly WalhallaSqlTransaction _inner;
 
@@ -443,6 +443,8 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
         {
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         }
+
+        public WalhallaSqlTransaction EngineTransaction => _inner;
 
         public void Commit() => _inner.Commit();
         public void Rollback() => _inner.Rollback();

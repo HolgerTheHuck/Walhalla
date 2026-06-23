@@ -178,9 +178,7 @@ public sealed class WalhallaSqlClientSession : ISqlClientSession
     {
         ArgumentNullException.ThrowIfNull(statement);
 
-        if (transaction != null)
-            throw new WalhallaException("Prepared statement execution is not supported inside an external transaction.");
-
+        statement.SetTransaction(transaction);
         statement.ClearBindings();
         for (int i = 0; i < parameters.Count; i++)
         {

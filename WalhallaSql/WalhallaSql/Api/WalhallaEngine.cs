@@ -472,39 +472,99 @@ public sealed class WalhallaEngine : IDisposable
     {
         sql = CorrelatedSubqueryRewriter.Rewrite(sql);
         var statement = SqlStatementParser.Parse(sql);
-        if (statement is not SqlSelectStatement select)
-            throw new NotSupportedException("Only SELECT statements can be prepared.");
 
-        // Views: redirect to the underlying SELECT
-        SqlCreateViewStatement? viewDef;
-        lock (_metaSync)
-            _views.TryGetValue(select.TableName, out viewDef);
-        if (viewDef != null)
-            select = viewDef.SelectStatement;
-
-        // Schema-version-aware plan cache lookup
-        var cacheKey = BuildPlanCacheKey(sql, select.TableName);
-        CompiledPlan plan;
-        if (_planCache != null && _planCache.TryGet(cacheKey, out var cachedPlan))
+        // SELECTs werden wie bisher mit einem CompiledPlan vorbereitet.
+        if (statement is SqlSelectStatement select)
         {
-            Interlocked.Increment(ref _planCacheHits);
-            plan = cachedPlan;
-        }
-        else
-        {
-            Interlocked.Increment(ref _planCacheMisses);
-            plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
-            _planCache?.Set(cacheKey, plan);
+            // Views: redirect to the underlying SELECT
+            SqlCreateViewStatement? viewDef;
+            lock (_metaSync)
+                _views.TryGetValue(select.TableName, out viewDef);
+            if (viewDef != null)
+                select = viewDef.SelectStatement;
+
+            // Schema-version-aware plan cache lookup
+            var cacheKey = BuildPlanCacheKey(sql, select.TableName);
+            CompiledPlan plan;
+            if (_planCache != null && _planCache.TryGet(cacheKey, out var cachedPlan))
+            {
+                Interlocked.Increment(ref _planCacheHits);
+                plan = cachedPlan;
+            }
+            else
+            {
+                Interlocked.Increment(ref _planCacheMisses);
+                plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+                _planCache?.Set(cacheKey, plan);
+            }
+
+            var paramOrdinals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (select.Parameters != null)
+            {
+                for (int i = 0; i < select.Parameters.Count; i++)
+                    paramOrdinals[select.Parameters[i]] = i;
+            }
+
+            return new WalhallaPreparedStatement(plan, select, paramOrdinals, this, _store);
         }
 
-        var paramOrdinals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        if (select.Parameters != null)
+        // DML-Statements werden als parametrisiertes SQL vorbereitet. Pro Execute()
+        // werden die gebundenen Werte in Literale umgewandelt und die bestehende
+        // Engine-Ausführung wiederverwendet.
+        if (statement is SqlInsertStatement or SqlUpdateStatement or SqlDeleteStatement)
         {
-            for (int i = 0; i < select.Parameters.Count; i++)
-                paramOrdinals[select.Parameters[i]] = i;
+            var paramOrdinals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var parameters = ExtractParameterNames(sql);
+            for (int i = 0; i < parameters.Count; i++)
+                paramOrdinals[parameters[i]] = i;
+
+            return new WalhallaPreparedStatement(sql, paramOrdinals, this, _store);
         }
 
-        return new WalhallaPreparedStatement(plan, select, paramOrdinals, this, _store);
+        throw new NotSupportedException($"Statement type '{statement.GetType().Name}' cannot be prepared.");
+    }
+
+    private static IReadOnlyList<string> ExtractParameterNames(string sql)
+    {
+        var names = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var inSingleQuotedLiteral = false;
+
+        for (var index = 0; index < sql.Length; index++)
+        {
+            var current = sql[index];
+
+            if (current == '\'')
+            {
+                if (inSingleQuotedLiteral && index + 1 < sql.Length && sql[index + 1] == '\'')
+                {
+                    index++;
+                    continue;
+                }
+
+                inSingleQuotedLiteral = !inSingleQuotedLiteral;
+                continue;
+            }
+
+            if (!inSingleQuotedLiteral
+                && (current == '@' || current == ':')
+                && index + 1 < sql.Length
+                && (char.IsLetter(sql[index + 1]) || sql[index + 1] == '_'))
+            {
+                var nameStart = index + 1;
+                var nameEnd = nameStart;
+                while (nameEnd < sql.Length && (char.IsLetterOrDigit(sql[nameEnd]) || sql[nameEnd] == '_'))
+                    nameEnd++;
+
+                var name = sql.Substring(nameStart, nameEnd - nameStart);
+                if (seen.Add(name))
+                    names.Add(name);
+
+                index = nameEnd - 1;
+            }
+        }
+
+        return names;
     }
 
     public void CreateTable(SqlTableDefinition table)
