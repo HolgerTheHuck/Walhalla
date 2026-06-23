@@ -16,7 +16,13 @@ WalhallaSql unterstützt drei Arten von Stored Procedures:
 
 ## Aktueller Status
 
-PLW befindet sich in der Entwicklung. Das Design-Dokument liegt unter `docs/plw-design.md`.
+- ✅ Phase 1: Parser-Integration abgeschlossen
+  - `LANGUAGE plw` wird erkannt (vor oder nach dem Body)
+  - Dollar-Quoting (`$$...$$`, `$tag$...$tag$`) wird unterstützt
+  - Parameter-Richtungen `IN`, `OUT`, `INOUT` werden geparst
+- ⏳ Phase 2–10: Tokenizer, AST, Interpreter, Engine-Integration, ADO.NET/Dapper-Tests, Sicherheit, PgWire-Kompatibilität, Dokumentation und Stabilisierung
+
+Das technische Design-Dokument liegt unter `docs/plw-design.md`; der detaillierte Umsetzungsplan unter `.claude/plans/plw-procedural-language.md`.
 
 ## Syntax
 
