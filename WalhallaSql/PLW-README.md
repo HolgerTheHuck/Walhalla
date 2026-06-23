@@ -24,7 +24,11 @@ WalhallaSql unterstützt drei Arten von Stored Procedures:
   - PLW-Body wird in Tokens zerlegt (Schlüsselwörter, Bezeichner, Zahlen, Strings, Dollar-Quotes)
   - Kommentare (`--`, `/* */`) werden übersprungen
   - Operatoren wie `:=`, `||`, `<=`, `>=`, `<>`, `!=` werden erkannt
-- ⏳ Phase 3–10: AST, Interpreter, Engine-Integration, ADO.NET/Dapper-Tests, Sicherheit, PgWire-Kompatibilität, Dokumentation und Stabilisierung
+- ✅ Phase 3: AST / Parser abgeschlossen
+  - PLW-Body wird aus Tokens in einen typisierten AST übersetzt
+  - Unterstützt Blöcke, Variablen, Zuweisungen, `IF`/`ELSIF`/`ELSE`, `LOOP`/`WHILE`/`FOR`, `RETURN`/`RETURN QUERY`, `PERFORM`, `EXECUTE`, `RAISE`, `SELECT INTO`, `EXIT`/`CONTINUE`
+  - SQL-Fragmente werden als Roh-String-Knoten erhalten
+- ⏳ Phase 4–10: Interpreter, Engine-Integration, ADO.NET/Dapper-Tests, Sicherheit, PgWire-Kompatibilität, Dokumentation und Stabilisierung
 
 Das technische Design-Dokument liegt unter `docs/plw-design.md`; der detaillierte Umsetzungsplan unter `.claude/plans/plw-procedural-language.md`.
 
