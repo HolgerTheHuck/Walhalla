@@ -55,6 +55,7 @@ public sealed class WalhallaSqlDbCommand : DbCommand
     private volatile bool _prepareAttempted;
     private volatile bool _cancelPending;
     private CancellationTokenSource _intrinsicCts = new();
+    private IReadOnlyList<OutputParameterMapping> _outputParameterMappings = Array.Empty<OutputParameterMapping>();
 
     private sealed record PreparedParameterBinding(string GeneratedName, string? ParameterName, int? PositionalIndex);
 
@@ -62,6 +63,8 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         string Sql,
         bool UsesStructuredParameters,
         IReadOnlyList<PreparedParameterBinding> Bindings);
+
+    private readonly record struct OutputParameterMapping(string ParameterName, string ColumnAlias);
 
     internal WalhallaSqlDbCommand()
     {
@@ -410,7 +413,11 @@ public sealed class WalhallaSqlDbCommand : DbCommand
             throw new InvalidOperationException("Command has no connection.");
 
         EnsureCommandTypeSupported();
-        EnsureNoOutputParameters();
+        // Output-Parameter werden nicht über den vorbereiteten Statement-Pfad
+        // ausgeführt, sondern über den Literal-Pfad mit nachträglichem Rückschreiben.
+        if (HasOutputParameter())
+            throw new NotSupportedException("Prepared statements are not supported for commands with output parameters.");
+
         ValidateParameters(CommandText);
 
         _preparedTemplate = BuildPreparedCommandTemplate(_connection.SqlClientSession.SupportsStructuredParameters);
@@ -427,7 +434,6 @@ public sealed class WalhallaSqlDbCommand : DbCommand
             throw new InvalidOperationException("Command has no connection.");
 
         EnsureCommandTypeSupported();
-        EnsureNoOutputParameters();
 
         if (string.IsNullOrWhiteSpace(CommandText))
             throw new InvalidOperationException("CommandText must not be empty.");
@@ -446,6 +452,29 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         var command = BuildSqlClientCommand(useStructuredParameters: executionConnection.SqlClientSession.SupportsStructuredParameters);
         var sql = command.Sql;
         TraceCommandText(sql);
+
+        // Output-Parameter werden aktuell nur über den Non-Query-Pfad unterstützt,
+        // da ExecuteReader einen streamingfähigen Reader zurückgeben muss.
+        if (_outputParameterMappings.Count > 0)
+            throw new NotSupportedException("Output parameters are not supported when executing a command with ExecuteReader.");
+
+        // Multi-statement batch: split on semicolons and execute all statements in one go.
+        var statements = SqlStatementSplitter.Split(sql);
+        if (statements.Count > 1)
+        {
+            var batchResults = ExecuteBatchInternal(executionConnection, statements, command);
+            var projectedColumns = TryExtractProjectedColumns(sql);
+            var batchReader = new WalhallaSqlDbDataReader(batchResults, projectedColumns);
+
+            if (behavior.HasFlag(CommandBehavior.CloseConnection) && _connection != null)
+            {
+                var conn = _connection;
+                batchReader.SetCloseConnectionCallback(() => conn.Close());
+            }
+
+            return batchReader;
+        }
+
         if (!behavior.HasFlag(CommandBehavior.SequentialAccess)
             && TryExecutePreparedStatement(executionConnection, command, behavior, out var preparedResult))
         {
@@ -491,6 +520,25 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         }
 
         return reader;
+    }
+
+    private IReadOnlyList<SqlExecutionResult> ExecuteBatchInternal(
+        WalhallaSqlDbConnection executionConnection,
+        IReadOnlyList<string> statements,
+        SqlClientCommand templateCommand)
+    {
+        var commands = new SqlClientCommand[statements.Count];
+        for (var i = 0; i < statements.Count; i++)
+        {
+            var statementSql = NormalizeExecutionSql(statements[i]);
+            commands[i] = new SqlClientCommand(
+                statementSql,
+                templateCommand.HasExternalTransaction,
+                templateCommand.Parameters,
+                templateCommand.PreferTransportPrepare);
+        }
+
+        return executionConnection.SqlClientSession.ExecuteBatch(commands);
     }
 
     protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
@@ -900,7 +948,6 @@ public sealed class WalhallaSqlDbCommand : DbCommand
             throw new InvalidOperationException("Command has no connection.");
 
         EnsureCommandTypeSupported();
-        EnsureNoOutputParameters();
 
         if (string.IsNullOrWhiteSpace(CommandText))
             throw new InvalidOperationException("CommandText must not be empty.");
@@ -938,14 +985,21 @@ public sealed class WalhallaSqlDbCommand : DbCommand
             Interlocked.Add(ref _profBuildCmd, e4 - e3);
             Interlocked.Add(ref _profExecSql, e5Prepared - e4);
             Interlocked.Increment(ref _profCount);
+            ApplyOutputParameters(preparedResult, _outputParameterMappings);
             return preparedResult;
         }
 
         if (TryExecuteBooleanScalarQuery(executionConnection, sql, hasExternalTransaction, out var booleanScalarResult))
+        {
+            ApplyOutputParameters(booleanScalarResult, _outputParameterMappings);
             return booleanScalarResult;
+        }
 
         if (TryExecuteSimpleLiteralScalarQuery(sql, out var literalScalarResult))
+        {
+            ApplyOutputParameters(literalScalarResult, _outputParameterMappings);
             return literalScalarResult;
+        }
 
         var result = executionConnection.ExecuteSql(command);
         long e5 = GC.GetAllocatedBytesForCurrentThread();
@@ -958,6 +1012,7 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         Interlocked.Add(ref _profExecSql, e5 - e4);
         Interlocked.Increment(ref _profCount);
 
+        ApplyOutputParameters(result, _outputParameterMappings);
         return result;
     }
 
@@ -967,23 +1022,37 @@ public sealed class WalhallaSqlDbCommand : DbCommand
             throw new InvalidOperationException("Command has no connection.");
 
         EnsureCommandTypeSupported();
-        EnsureNoOutputParameters();
 
         if (string.IsNullOrWhiteSpace(CommandText))
             throw new InvalidOperationException("CommandText must not be empty.");
 
-        ValidateParameters(CommandText);
+        var orderedParameters = _parameters.OfType<DbParameter>().ToList();
+
+        // SELECT @param = column wird in SELECT column AS param umgeschrieben,
+        // damit die Engine das Statement ausführen kann. Der Wert wird später
+        // aus der ersten Ergebniszeile zurück in den Output-Parameter kopiert.
+        var effectiveCommandText = TryRewriteSelectOutputParameters(
+            CommandText,
+            orderedParameters,
+            out var rewrittenSql,
+            out var outputMappings)
+            ? rewrittenSql
+            : CommandText;
+
+        _outputParameterMappings = outputMappings;
+
+        ValidateParameters(effectiveCommandText);
 
         if (!useStructuredParameters)
         {
-            var rewrittenSql = NormalizeExecutionSql(ApplyParameters(CommandText));
-            return new SqlClientCommand(rewrittenSql, DbTransaction != null);
+            var rewrittenSqlWithLiterals = NormalizeExecutionSql(ApplyParameters(effectiveCommandText));
+            return new SqlClientCommand(rewrittenSqlWithLiterals, DbTransaction != null);
         }
 
         if (_preparedTemplate is { UsesStructuredParameters: true } preparedTemplate)
             return BindPreparedStructuredSqlClientCommand(preparedTemplate);
 
-        return BuildStructuredSqlClientCommand();
+        return BuildStructuredSqlClientCommand(effectiveCommandText, orderedParameters);
     }
 
     private PreparedCommandTemplate BuildPreparedCommandTemplate(bool useStructuredParameters)
@@ -1110,29 +1179,27 @@ public sealed class WalhallaSqlDbCommand : DbCommand
 
     /// <summary>
     /// Re-binds parameter values from the current <see cref="DbParameter"/> collection
-    private SqlClientCommand BuildStructuredSqlClientCommand()
+    /// into a structured SqlClientCommand for engine execution.
+    /// </summary>
+    private SqlClientCommand BuildStructuredSqlClientCommand(string commandText, IReadOnlyList<DbParameter> orderedParameters)
     {
-        var orderedParameters = _parameters
-            .OfType<DbParameter>()
-            .ToList();
-
         if (orderedParameters.Count == 0)
-            return new SqlClientCommand(NormalizeExecutionSql(CommandText), DbTransaction != null);
+            return new SqlClientCommand(NormalizeExecutionSql(commandText), DbTransaction != null);
 
         var parameterMap = BuildNamedParameterMap(orderedParameters);
-        var builder = new StringBuilder(CommandText.Length + 32);
+        var builder = new StringBuilder(commandText.Length + 32);
         var structuredParameters = new List<SqlClientParameter>();
         var generatedNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var inSingleQuotedLiteral = false;
         var positionalIndex = 0;
 
-        for (var index = 0; index < CommandText.Length; index++)
+        for (var index = 0; index < commandText.Length; index++)
         {
-            var current = CommandText[index];
+            var current = commandText[index];
 
             if (current == '\'')
             {
-                if (inSingleQuotedLiteral && index + 1 < CommandText.Length && CommandText[index + 1] == '\'')
+                if (inSingleQuotedLiteral && index + 1 < commandText.Length && commandText[index + 1] == '\'')
                 {
                     builder.Append("''");
                     index++;
@@ -1146,15 +1213,15 @@ public sealed class WalhallaSqlDbCommand : DbCommand
 
             if (!inSingleQuotedLiteral
                 && (current == '@' || current == ':')
-                && IsParameterNameStart(CommandText, index + 1)
-                && !(current == ':' && index > 0 && CommandText[index - 1] == ':'))
+                && IsParameterNameStart(commandText, index + 1)
+                && !(current == ':' && index > 0 && commandText[index - 1] == ':'))
             {
                 var nameStart = index + 1;
                 var nameEnd = nameStart;
-                while (nameEnd < CommandText.Length && IsParameterNamePart(CommandText[nameEnd]))
+                while (nameEnd < commandText.Length && IsParameterNamePart(commandText[nameEnd]))
                     nameEnd++;
 
-                var parameterName = CommandText.Substring(nameStart, nameEnd - nameStart);
+                var parameterName = commandText.Substring(nameStart, nameEnd - nameStart);
                 if (!parameterMap.TryGetValue(parameterName, out var parameter))
                     throw new InvalidOperationException($"Missing value for SQL parameter '{current}{parameterName}'.");
 
@@ -1652,13 +1719,108 @@ public sealed class WalhallaSqlDbCommand : DbCommand
             $"CommandType '{CommandType}' is not supported by WalhallaSql ADO.NET provider. Use CommandType.Text.");
     }
 
-    private void EnsureNoOutputParameters()
+    private bool HasOutputParameter()
     {
         foreach (var param in _parameters.OfType<DbParameter>())
         {
-            if (param.Direction != ParameterDirection.Input)
-                throw new NotSupportedException(
-                    $"Parameter '{param.ParameterName}': ParameterDirection.{param.Direction} is not supported by WalhallaSql ADO.NET provider. Use ParameterDirection.Input.");
+            if (param.Direction == ParameterDirection.Output
+                || param.Direction == ParameterDirection.InputOutput
+                || param.Direction == ParameterDirection.ReturnValue)
+                return true;
+        }
+        return false;
+    }
+
+    private static bool TryRewriteSelectOutputParameters(
+        string sql,
+        IReadOnlyList<DbParameter> parameters,
+        out string rewrittenSql,
+        out IReadOnlyList<OutputParameterMapping> outputMappings)
+    {
+        rewrittenSql = sql;
+        outputMappings = Array.Empty<OutputParameterMapping>();
+
+        var trimmed = sql.AsSpan().TrimStart();
+        if (!trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var fromIndex = FindTopLevelKeyword(sql, "FROM", 6);
+        if (fromIndex < 0)
+            return false;
+
+        var projectionPart = sql[6..fromIndex].Trim();
+        if (string.IsNullOrWhiteSpace(projectionPart))
+            return false;
+
+        var projections = SplitTopLevel(projectionPart, ',');
+        var mappings = new List<OutputParameterMapping>();
+        var rewrittenProjections = new List<string>();
+
+        foreach (var projection in projections)
+        {
+            var trimmedProjection = projection.Trim();
+            var assignmentMatch = Regex.Match(
+                trimmedProjection,
+                @"^[@:]?(?<paramName>[\w_]+)\s*=\s*(?<expr>.+)$",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+            if (assignmentMatch.Success)
+            {
+                var paramName = assignmentMatch.Groups["paramName"].Value;
+                var parameter = parameters.FirstOrDefault(p =>
+                    string.Equals(NormalizeParameterName(p.ParameterName), paramName, StringComparison.OrdinalIgnoreCase)
+                    && (p.Direction == ParameterDirection.Output || p.Direction == ParameterDirection.InputOutput));
+
+                if (parameter != null)
+                {
+                    var alias = NormalizeParameterName(parameter.ParameterName);
+                    var expr = assignmentMatch.Groups["expr"].Value.Trim();
+                    rewrittenProjections.Add($"{expr} AS {alias}");
+                    mappings.Add(new OutputParameterMapping(paramName, alias));
+                    continue;
+                }
+            }
+
+            rewrittenProjections.Add(projection);
+        }
+
+        if (mappings.Count == 0)
+            return false;
+
+        var newProjection = string.Join(", ", rewrittenProjections);
+        rewrittenSql = $"{sql[..6]} {newProjection} {sql[fromIndex..]}";
+        outputMappings = mappings;
+        return true;
+    }
+
+    private void ApplyOutputParameters(
+        SqlExecutionResult result,
+        IReadOnlyList<OutputParameterMapping> mappings)
+    {
+        if (mappings.Count == 0)
+            return;
+
+        var parameterMap = BuildNamedParameterMap(_parameters.OfType<DbParameter>().ToList());
+        var firstRow = result.Rows?.FirstOrDefault();
+
+        foreach (var mapping in mappings)
+        {
+            if (!parameterMap.TryGetValue(mapping.ParameterName, out var parameter))
+                continue;
+
+            object? value;
+            if (firstRow == null)
+            {
+                value = DBNull.Value;
+            }
+            else if (!firstRow.TryGetValue(mapping.ColumnAlias, out value))
+            {
+                value = firstRow
+                    .FirstOrDefault(pair => string.Equals(pair.Key, mapping.ColumnAlias, StringComparison.OrdinalIgnoreCase))
+                    .Value;
+            }
+
+            parameter.Value = value ?? DBNull.Value;
         }
     }
 

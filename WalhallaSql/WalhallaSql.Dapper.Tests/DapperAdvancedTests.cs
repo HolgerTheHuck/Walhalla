@@ -214,7 +214,7 @@ public class DapperAdvancedTests : IDisposable
         Assert.Contains("StoredProcedure", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact(Skip = "WalhallaSql ADO.NET unterstützt aktuell keine ParameterDirection.Output.")]
+    [Fact]
     public void OutputParameter_ReturnsValue()
     {
         _connection.Execute(

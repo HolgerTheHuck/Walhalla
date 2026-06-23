@@ -26,6 +26,11 @@ public sealed class WalhallaSqlDbDataReader : DbDataReader
     private int _recordsAffected = -1;
     private Action? _closeConnectionCallback;
 
+    // Multi-resultset support: holds all result sets and current index.
+    private readonly IReadOnlyList<SqlExecutionResult> _resultSets;
+    private readonly IReadOnlyList<string>? _projectedColumns;
+    private int _resultSetIndex = -1;
+
     internal WalhallaSqlDbDataReader(ScalarResultData scalarData)
     {
         _scalarData = scalarData;
@@ -34,12 +39,14 @@ public sealed class WalhallaSqlDbDataReader : DbDataReader
         _columns = new List<string> { NormalizeDisplayColumnName(scalarData.ColumnName) };
         _columnTypes = new List<Type> { scalarData.ColumnType };
         _columnValueKeys = new List<string?> { null };
+        _resultSets = Array.Empty<SqlExecutionResult>();
+        _projectedColumns = null;
     }
 
     public WalhallaSqlDbDataReader(
         IReadOnlyList<IReadOnlyDictionary<string, object?>>? rows,
         IReadOnlyList<string>? projectedColumns = null)
-        : this((rows ?? Array.Empty<IReadOnlyDictionary<string, object?>>()).AsEnumerable(), projectedColumns, materializeEagerly: true)
+        : this(rows, projectedColumns, materializeEagerly: true)
     {
     }
 
@@ -72,6 +79,28 @@ public sealed class WalhallaSqlDbDataReader : DbDataReader
 
         for (var i = 1; i < _rows.Count; i++)
             UpdateColumnTypes(_rows[i]);
+
+        _resultSets = Array.Empty<SqlExecutionResult>();
+        _projectedColumns = projectedColumns;
+    }
+
+    /// <summary>
+    /// Konstruktor für Multi-Resultset-Batches (z. B. Dapper QueryMultiple).
+    /// </summary>
+    public WalhallaSqlDbDataReader(IReadOnlyList<SqlExecutionResult> resultSets, IReadOnlyList<string>? projectedColumns = null)
+    {
+        _resultSets = resultSets ?? throw new ArgumentNullException(nameof(resultSets));
+        _projectedColumns = projectedColumns;
+
+        // Start with the first result set.
+        _rows = new List<IReadOnlyDictionary<string, object?>>();
+        _streamingEnumerator = null;
+        _columns = new List<string>();
+        _columnTypes = new List<Type>();
+        _columnValueKeys = new List<string?>();
+        _scalarData = null;
+
+        MoveToResultSet(0);
     }
 
     public override object this[int ordinal] => GetValue(ordinal);
@@ -508,12 +537,54 @@ public sealed class WalhallaSqlDbDataReader : DbDataReader
         return schema;
     }
 
-    public override bool NextResult() => false;
+    public override bool NextResult()
+    {
+        if (_resultSets.Count == 0)
+            return false;
+
+        var nextIndex = _resultSetIndex + 1;
+        if (nextIndex >= _resultSets.Count)
+            return false;
+
+        MoveToResultSet(nextIndex);
+        return true;
+    }
 
     public override Task<bool> NextResultAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(false);
+        return Task.FromResult(NextResult());
+    }
+
+    private void MoveToResultSet(int index)
+    {
+        _resultSetIndex = index;
+        _position = -1;
+        _currentRow = null;
+        _rows.Clear();
+        _columns.Clear();
+        _columnTypes.Clear();
+        _columnValueKeys.Clear();
+        _recordsAffected = -1;
+
+        var resultSet = _resultSets[index];
+        var sourceRows = resultSet.Rows ?? Array.Empty<IReadOnlyDictionary<string, object?>>();
+        _rows.AddRange(sourceRows);
+
+        _columns.AddRange(_projectedColumns?.Select(NormalizeDisplayColumnName).ToList() ?? new List<string>());
+        _columnTypes.AddRange(_columns.Select(_ => typeof(object)));
+        _columnValueKeys.AddRange(_projectedColumns?.Select(static column => (string?)column).ToList()
+            ?? _columns.Select(_ => (string?)null).ToList());
+
+        if (_rows.Count > 0)
+        {
+            EnsureSchemaFromRow(_rows[0]);
+            for (var i = 1; i < _rows.Count; i++)
+                UpdateColumnTypes(_rows[i]);
+        }
+
+        if (resultSet.AffectedRows >= 0)
+            _recordsAffected = resultSet.AffectedRows;
     }
 
     public override bool Read()

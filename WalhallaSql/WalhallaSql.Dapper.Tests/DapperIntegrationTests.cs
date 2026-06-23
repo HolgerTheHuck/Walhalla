@@ -183,7 +183,7 @@ public class DapperIntegrationTests : IDisposable
         Assert.Equal("Grace", (string)row.Name);
     }
 
-    [Fact(Skip = "WalhallaSql unterstützt über ADO.NET aktuell keine semikolon-getrennten Multi-Statement-Batches (QueryMultiple).")]
+    [Fact]
     public void QueryMultiple_ReturnsMultipleResultSets()
     {
         _connection.Execute(
