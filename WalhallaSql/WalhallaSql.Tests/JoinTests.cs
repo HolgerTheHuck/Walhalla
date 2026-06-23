@@ -250,6 +250,29 @@ public class JoinTests
     }
 
     [Fact]
+    public void InnerJoin_ThreeTables_SecondJoinRefersToBaseTable_ReturnsMatchingRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("CREATE TABLE Orders (Id INT PRIMARY KEY, CustomerId INT, Amount DOUBLE)");
+        engine.Execute("CREATE TABLE Tags (Id INT PRIMARY KEY, Name STRING, CustomerId INT)");
+
+        engine.Execute("INSERT INTO Customers (Id, Name) VALUES (1, 'Alice')");
+        engine.Execute("INSERT INTO Orders (Id, CustomerId, Amount) VALUES (10, 1, 100.0)");
+        engine.Execute("INSERT INTO Tags (Id, Name, CustomerId) VALUES (20, 'VIP', 1)");
+
+        var result = engine.Execute(
+            "SELECT c.Name, o.Amount, t.Name FROM Customers c " +
+            "INNER JOIN Orders o ON o.CustomerId = c.Id " +
+            "INNER JOIN Tags t ON t.CustomerId = c.Id");
+
+        Assert.Single(result.Rows);
+        Assert.Equal("Alice", result.Rows[0]["Name"]);
+        Assert.Equal(100.0, result.Rows[0]["Amount"]);
+    }
+
+    [Fact]
     public void InnerJoin_GuidKeys_ReturnsMatchingRows()
     {
         using var engine = WalhallaEngine.InMemory();

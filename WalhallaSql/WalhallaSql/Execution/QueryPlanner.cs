@@ -171,37 +171,72 @@ internal static class QueryPlanner
 
                 foreach (var (lName, rName) in keyPairs)
                 {
-                    // Sucht den Spaltennamen in der Basis-Tabelle und allen bereits beigetretenen
-                    // Tabellen und liefert den lokalen Spaltenindex sowie den Tabellen-Alias zurück.
+                    // Löst einen Spaltennamen (qualifiziert oder unqualifiziert) in der
+                    // linken Seite (Basis-Tabelle + bisherige Joins) auf.
                     (int localIdx, string tableAlias, string actualName) FindLeft(string name)
                     {
-                        var idx = FindColumnIndex(baseTableDef, name);
-                        if (idx >= 0) return (idx, baseAlias, name);
+                        var (alias, colName) = SplitQualifiedName(name);
+                        if (!string.IsNullOrEmpty(alias))
+                        {
+                            // Expliziter Alias: nur in der angegebenen Tabelle suchen.
+                            if (string.Equals(alias, baseAlias, StringComparison.OrdinalIgnoreCase))
+                            {
+                                var idx = FindColumnIndex(baseTableDef, colName);
+                                if (idx >= 0) return (idx, baseAlias, colName);
+                            }
+                            foreach (var step in steps)
+                            {
+                                if (string.Equals(alias, step.Alias, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    var idx = FindColumnIndex(step.TableDef, colName);
+                                    if (idx >= 0) return (idx, step.Alias!, colName);
+                                }
+                            }
+                            return (-1, string.Empty, name);
+                        }
+
+                        // Unqualifiziert: erstes Vorkommen in Basis-Tabelle, dann in bisherigen Joins.
+                        var idx2 = FindColumnIndex(baseTableDef, colName);
+                        if (idx2 >= 0) return (idx2, baseAlias, colName);
                         foreach (var step in steps)
                         {
-                            idx = FindColumnIndex(step.TableDef, name);
-                            if (idx >= 0) return (idx, step.Alias!, name);
+                            idx2 = FindColumnIndex(step.TableDef, colName);
+                            if (idx2 >= 0) return (idx2, step.Alias!, colName);
                         }
                         return (-1, string.Empty, name);
                     }
 
-                    // Try the natural assignment: lName = left, rName = right.
-                    var (leftLocalIdx, leftTableAlias, actualLeftName) = FindLeft(lName);
-                    int rightIdx = FindColumnIndex(joinTableDef, rName);
-                    string actualRightName = rName;
+                    // Löst einen Spaltennamen in der aktuell beigetretenen (rechten) Tabelle auf.
+                    (int localIdx, string actualName) FindRight(string name)
+                    {
+                        var (alias, colName) = SplitQualifiedName(name);
+                        if (!string.IsNullOrEmpty(alias)
+                            && !string.Equals(alias, joinAlias, StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(alias, join.TableName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Qualifizierter Alias gehört nicht zur rechten Tabelle.
+                            return (-1, name);
+                        }
+                        var idx = FindColumnIndex(joinTableDef, colName);
+                        return idx >= 0 ? (idx, colName) : (-1, name);
+                    }
 
-                    // If either side is missing, try the swapped assignment.
+                    // Versuche die natürliche Zuordnung: lName = links, rName = rechts.
+                    var (leftLocalIdx, leftTableAlias, actualLeftName) = FindLeft(lName);
+                    var (rightIdx, actualRightName) = FindRight(rName);
+
+                    // Passt nicht, dann Seiten tauschen.
                     if (leftLocalIdx < 0 || rightIdx < 0)
                     {
                         var (swappedLeftLocalIdx, swappedLeftAlias, swappedLeftName) = FindLeft(rName);
-                        var swappedRightIdx = FindColumnIndex(joinTableDef, lName);
+                        var (swappedRightIdx, swappedRightName) = FindRight(lName);
                         if (swappedLeftLocalIdx >= 0 && swappedRightIdx >= 0)
                         {
                             leftLocalIdx = swappedLeftLocalIdx;
                             leftTableAlias = swappedLeftAlias;
                             actualLeftName = swappedLeftName;
                             rightIdx = swappedRightIdx;
-                            actualRightName = lName;
+                            actualRightName = swappedRightName;
                         }
                     }
 
@@ -355,7 +390,10 @@ internal static class QueryPlanner
                 when cmp.Operator == SqlWhereComparisonOperator.Equal
                     && cmp.Left is SqlWhereColumnExpression leftCol
                     && cmp.Right is SqlWhereColumnExpression rightCol:
-                result.Add((leftCol.SimpleName, rightCol.SimpleName));
+                // Volle qualifizierte Namen beibehalten, damit der Planner die Spalte
+                // eindeutig der richtigen Tabelle zuordnen kann (wichtig bei mehreren
+                // Joins mit gleichnamigen Spalten wie Id/CustomerId).
+                result.Add((leftCol.FullName, rightCol.FullName));
                 break;
 
             case SqlWhereAndExpression andExpr:
@@ -396,6 +434,22 @@ internal static class QueryPlanner
         }
 
         throw new WalhallaException($"Cannot resolve column '{expression}'.");
+    }
+
+    /// <summary>
+    /// Zerlegt einen Spaltenausdruck in Alias und Spaltennamen. Bei unqualifizierten
+    /// Namen bleibt der Alias leer.
+    /// </summary>
+    private static (string? alias, string columnName) SplitQualifiedName(string expression)
+    {
+        var dotIdx = expression.IndexOf('.');
+        if (dotIdx >= 0)
+        {
+            var alias = expression[..dotIdx].Trim();
+            var colName = expression[(dotIdx + 1)..].Trim();
+            return (alias, colName);
+        }
+        return (null, expression);
     }
 
     private static (int? colIndex, int? paramIndex, object? constant) TryExtractPkLookup(
