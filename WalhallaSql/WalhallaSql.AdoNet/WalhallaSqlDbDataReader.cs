@@ -260,13 +260,31 @@ public sealed class WalhallaSqlDbDataReader : DbDataReader
         return Convert.ToInt64(v, CultureInfo.InvariantCulture);
     }
 
-    public override string GetName(int ordinal) => _columns[ordinal];
+    public override string GetName(int ordinal)
+    {
+        var column = _columns[ordinal];
+        var dotIndex = column.LastIndexOf('.');
+        return dotIndex >= 0 ? column.Substring(dotIndex + 1) : column;
+    }
 
     public override int GetOrdinal(string name)
     {
+        // 1) Exakte Übereinstimmung (inkl. qualifizierter Alias-Namen).
         for (var i = 0; i < _columns.Count; i++)
         {
             if (string.Equals(_columns[i], name, StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+
+        // 2) Unqualifizierte Übereinstimmung: "o.CustomerId" passt auf "CustomerId".
+        // Bei Duplikaten (z. B. c.Id und o.Id) wird die erste passende Spalte genommen,
+        // was für Dapper-MultiMapping mit splitOn das erwartete Verhalten ist.
+        for (var i = 0; i < _columns.Count; i++)
+        {
+            var column = _columns[i];
+            var dotIndex = column.LastIndexOf('.');
+            var unqualified = dotIndex >= 0 ? column.Substring(dotIndex + 1) : column;
+            if (string.Equals(unqualified, name, StringComparison.OrdinalIgnoreCase))
                 return i;
         }
 

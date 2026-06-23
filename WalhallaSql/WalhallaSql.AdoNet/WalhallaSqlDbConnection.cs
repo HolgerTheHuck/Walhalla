@@ -10,6 +10,8 @@ using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Transactions;
+using WalhallaSql;
 using WalhallaSql.AdoNet.SqlClient;
 using WalhallaSql.Sql;
 
@@ -34,6 +36,12 @@ public sealed class WalhallaSqlDbConnection : DbConnection
     private string _databaseName;
     private readonly bool _hasExplicitEngine;
     private bool _engineFromRegistry;
+
+    // Ambient Transaction (System.Transactions/TransactionScope) Unterstützung.
+    private Transaction? _enlistedTransaction;
+    private WalhallaSqlTransaction? _enlistedEngineTransaction;
+    private bool _enlistedTransactionCompleted;
+    private IEnlistmentNotification? _enlistedNotification;
 
     // Best-effort Session-Pool für InProcess-Verbindungen. Pro Connection-String
     // (bzw. Engine-Identität) wird eine begrenzte Menge an ISqlClientSession-Instanzen
@@ -165,7 +173,7 @@ public sealed class WalhallaSqlDbConnection : DbConnection
     internal ISqlClientSession SqlClientSession => _sqlClientSession
         ?? throw new InvalidOperationException("Connection has no SQL client session instance.");
 
-    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
+    protected override DbTransaction BeginDbTransaction(System.Data.IsolationLevel isolationLevel)
     {
         EnsureOpen();
 
@@ -245,6 +253,11 @@ public sealed class WalhallaSqlDbConnection : DbConnection
         // Shared InMemory) werden beim Schließen der letzten Connection disposed;
         // eine gepoolte Session würde dann auf eine disposed/falsche Engine zeigen.
         if (!_engineFromRegistry && !_hasExplicitEngine)
+            return false;
+
+        // Aktive ambient Transaction: Session darf nicht gepoolt werden, da sie noch
+        // in die Engine-Transaction eingeschrieben ist.
+        if (HasAmbientTransactionEnrollment)
             return false;
 
         return _engine != null
@@ -435,6 +448,11 @@ public sealed class WalhallaSqlDbConnection : DbConnection
             _sqlClientSession = TryAcquireSession() ?? SqlClientSessionFactory.Create(_engine, _connectionString);
 
         _state = ConnectionState.Open;
+
+        // Automatische Eintragung in eine aktive ambient Transaction (TransactionScope).
+        var ambient = Transaction.Current;
+        if (ambient != null && _enlistedTransaction == null)
+            EnlistTransaction(ambient);
     }
 
     public override Task OpenAsync(CancellationToken cancellationToken)
@@ -450,6 +468,139 @@ public sealed class WalhallaSqlDbConnection : DbConnection
         catch (Exception ex)
         {
             return Task.FromException(ex);
+        }
+    }
+
+    public override void EnlistTransaction(Transaction? transaction)
+    {
+        System.IO.File.AppendAllText(@"E:\Develop\WalhallaProject\ambient_trace.log", $"[EnlistTransaction] called tx={transaction?.GetHashCode() ?? 0}{System.Environment.NewLine}");
+
+        // Bereits abgeschlossene Eintragung ignorieren / aufräumen.
+        if (transaction == null || _enlistedTransactionCompleted)
+        {
+            ClearAmbientTransactionEnrollment();
+            return;
+        }
+
+        if (ReferenceEquals(_enlistedTransaction, transaction))
+            return;
+
+        if (!_hasExplicitEngine && !HasLocalEngine)
+            throw new InvalidOperationException("Ambient transactions require a local WalhallaSql engine.");
+
+        // Vorherige Eintragung aufräumen.
+        ClearAmbientTransactionEnrollment();
+
+        var engine = EngineHandle;
+        var engineTx = engine.BeginTransaction();
+        engineTx.SetIsolationLevel(Walhalla.Storage.Contract.IsolationLevel.Serializable);
+
+        // Volatile Enlistment: synchroner Commit/Rollback über ISinglePhaseNotification.
+        // Nach Abschluss der Ambient-Transaction räumen wir den Verbindungszustand auf.
+        var notification = new WalhallaSqlAmbientEnlistment(engineTx, OnAmbientEnlistmentCompleted);
+        transaction.EnlistVolatile(notification, EnlistmentOptions.None);
+
+        _enlistedTransaction = transaction;
+        _enlistedEngineTransaction = engineTx;
+        _enlistedTransactionCompleted = false;
+        _enlistedNotification = notification;
+    }
+
+    private void OnAmbientEnlistmentCompleted()
+    {
+        _enlistedTransactionCompleted = true;
+        _enlistedTransaction = null;
+        _enlistedEngineTransaction = null;
+        _enlistedNotification = null;
+    }
+
+    internal Transaction? EnlistedTransaction => _enlistedTransaction;
+
+    internal WalhallaSqlTransaction? EnlistedEngineTransaction => _enlistedEngineTransaction;
+
+    internal bool HasAmbientTransactionEnrollment
+        => _enlistedTransaction != null && !_enlistedTransactionCompleted;
+
+    private void ClearAmbientTransactionEnrollment()
+    {
+        var engineTx = _enlistedEngineTransaction;
+        if (engineTx != null && !_enlistedTransactionCompleted)
+        {
+            try { engineTx.Rollback(); }
+            catch { /* best-effort */ }
+            engineTx.Dispose();
+        }
+
+        _enlistedTransaction = null;
+        _enlistedEngineTransaction = null;
+        _enlistedTransactionCompleted = false;
+        _enlistedNotification = null;
+    }
+
+    /// <summary>
+    /// Synchroner Volatile-Enlistment für System.Transactions/TransactionScope.
+    /// Wird von der Ambient-Transaction bei Commit/Rollback direkt aufgerufen.
+    /// </summary>
+    private sealed class WalhallaSqlAmbientEnlistment : ISinglePhaseNotification
+    {
+        private readonly WalhallaSqlTransaction _engineTx;
+        private readonly Action _onComplete;
+        private bool _notified;
+
+        public WalhallaSqlAmbientEnlistment(WalhallaSqlTransaction engineTx, Action onComplete)
+        {
+            _engineTx = engineTx;
+            _onComplete = onComplete;
+        }
+
+        public void Prepare(PreparingEnlistment preparingEnlistment)
+        {
+            preparingEnlistment.Prepared();
+        }
+
+        public void Commit(Enlistment enlistment)
+        {
+            Notify(() => _engineTx.Commit(), enlistment);
+        }
+
+        public void Rollback(Enlistment enlistment)
+        {
+            Notify(() => _engineTx.Rollback(), enlistment);
+        }
+
+        public void InDoubt(Enlistment enlistment)
+        {
+            Notify(() => _engineTx.Rollback(), enlistment);
+        }
+
+        public void SinglePhaseCommit(SinglePhaseEnlistment singlePhaseEnlistment)
+        {
+            Notify(() => _engineTx.Commit(), singlePhaseEnlistment);
+        }
+
+        private void Notify(Action action, Enlistment enlistment)
+        {
+            if (_notified)
+            {
+                enlistment.Done();
+                return;
+            }
+
+            _notified = true;
+            try
+            {
+                action();
+            }
+            catch
+            {
+                // Best-effort; Ressource ist volatile.
+            }
+            finally
+            {
+                _engineTx.Dispose();
+                _onComplete();
+                enlistment.Done();
+            }
         }
     }
 

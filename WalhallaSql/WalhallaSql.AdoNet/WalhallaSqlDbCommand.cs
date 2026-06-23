@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Transactions;
 using WalhallaSql.AdoNet.SqlClient;
 using WalhallaSql.Sql;
 
@@ -920,7 +921,9 @@ public sealed class WalhallaSqlDbCommand : DbCommand
 
         var engineTransaction = DbTransaction is WalhallaSqlDbTransaction walhallaTx
             ? walhallaTx.EngineTransaction
-            : null;
+            : _connection?.HasAmbientTransactionEnrollment == true
+                ? _connection.EnlistedEngineTransaction
+                : null;
 
         // Transport-Transaktionen haben keine Engine-Transaktion; dort bleibt der
         // Literal-Pfad aktiv.
@@ -1680,23 +1683,43 @@ public sealed class WalhallaSqlDbCommand : DbCommand
 
         TraceSqlDiagnostic($"DbTransactionType={DbTransaction?.GetType().FullName ?? "<null>"}");
 
-        if (DbTransaction is not WalhallaSqlDbTransaction layeredTransaction)
+        if (DbTransaction is WalhallaSqlDbTransaction layeredTransaction)
         {
-            _connection.SqlClientSession.EnrollTransaction(null);
+            if (layeredTransaction.UsesTransportTransaction)
+            {
+                TraceSqlDiagnostic("Using transport transaction; no engine transaction enrollment performed.");
+                return;
+            }
+
+            if (!ReferenceEquals(layeredTransaction.Connection.EngineHandle, _connection.EngineHandle))
+                throw new InvalidOperationException("The supplied transaction belongs to a different WalhallaSql database instance.");
+
+            TraceSqlDiagnostic($"Enrolling external engine transaction for database '{_connection.Database}'.");
+            _connection.SqlClientSession.EnrollTransaction(layeredTransaction.EngineTransaction);
             return;
         }
 
-        if (layeredTransaction.UsesTransportTransaction)
+        // Ambient Transaction (TransactionScope) automatisch erkennen.
+        System.Transactions.Transaction? ambient = null;
+        try { ambient = System.Transactions.Transaction.Current; }
+        catch (InvalidOperationException) { /* TransactionScope ist bereits abgeschlossen. */ }
+
+        if (ambient != null)
         {
-            TraceSqlDiagnostic("Using transport transaction; no engine transaction enrollment performed.");
-            return;
+            if (!_connection.HasAmbientTransactionEnrollment || !ReferenceEquals(_connection.EnlistedTransaction, ambient))
+            {
+                _connection.EnlistTransaction(ambient);
+            }
+
+            if (_connection.HasAmbientTransactionEnrollment && _connection.EnlistedEngineTransaction != null)
+            {
+                TraceSqlDiagnostic($"Enrolling ambient engine transaction for database '{_connection.Database}'.");
+                _connection.SqlClientSession.EnrollTransaction(_connection.EnlistedEngineTransaction);
+                return;
+            }
         }
 
-        if (!ReferenceEquals(layeredTransaction.Connection.EngineHandle, _connection.EngineHandle))
-            throw new InvalidOperationException("The supplied transaction belongs to a different WalhallaSql database instance.");
-
-        TraceSqlDiagnostic($"Enrolling external engine transaction for database '{_connection.Database}'.");
-        _connection.SqlClientSession.EnrollTransaction(layeredTransaction.EngineTransaction);
+        _connection.SqlClientSession.EnrollTransaction(null);
     }
 
     private WalhallaSqlDbConnection ResolveExecutionConnection()

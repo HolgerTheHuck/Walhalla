@@ -131,7 +131,7 @@ public class DapperAdvancedTests : IDisposable
         Assert.Null(customer.ExternalId);
     }
 
-    [Fact(Skip = "Dapper-MultiMapping braucht Row-Column-SplitOn, das mit WalhallaSqlDbDataReader aktuell nicht korrekt aufgelöst wird.")]
+    [Fact]
     public void MultiMapping_JoinedEntities()
     {
         _connection.Execute(
@@ -149,7 +149,7 @@ public class DapperAdvancedTests : IDisposable
         var lookup = new Dictionary<int, CustomerWithOrders>();
 
         _connection.Query<CustomerWithOrders, OrderSummary, CustomerWithOrders>(
-            @"SELECT c.Id, c.Name, o.Id, o.CustomerId, o.TotalAmount
+            @"SELECT c.Id, c.Name, o.Id AS OrderId, o.CustomerId, o.TotalAmount
               FROM Customers c
               INNER JOIN Orders o ON o.CustomerId = c.Id
               WHERE c.Id = 1
@@ -165,7 +165,7 @@ public class DapperAdvancedTests : IDisposable
                 existing.Orders.Add(order);
                 return existing;
             },
-            splitOn: "CustomerId")
+            splitOn: "OrderId")
             .ToList();
 
         var result = lookup.Values.Single();
@@ -233,7 +233,7 @@ public class DapperAdvancedTests : IDisposable
         Assert.Equal("Out", outputName);
     }
 
-    [Fact(Skip = "InMemory-Store ist nebenläufig unsicher: ByteArrayComparer liefert inkonsistente Ergebnisse unter parallelen Reads.")]
+    [Fact]
     public void ParallelConnections_DapperQueries()
     {
         var data = Enumerable.Range(1, 50)
@@ -262,19 +262,40 @@ public class DapperAdvancedTests : IDisposable
         Assert.True(results.IsCompleted);
     }
 
-    [Fact(Skip = "System.Transactions/TransactionScope-Ambient wird von WalhallaSql ADO.NET aktuell nicht erkannt.")]
-    public void TransactionScope_Ambient_NotSupported_Yet()
+    [Fact]
+    public void TransactionScope_Ambient_Commit_PersistsChanges()
     {
-        // WalhallaSql unterstützt aktuell keine ambienten Transaktionen (System.Transactions).
-        using var scope = new System.Transactions.TransactionScope(
+        using (var scope = new System.Transactions.TransactionScope(
             System.Transactions.TransactionScopeOption.Required,
-            System.Transactions.TransactionScopeAsyncFlowOption.Enabled);
+            System.Transactions.TransactionScopeAsyncFlowOption.Enabled))
+        {
+            _connection.Execute(
+                "INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (@id, @name, @createdAt, @rating, @externalId)",
+                new { id = 1, name = "Ambient", createdAt = DateTime.UtcNow, rating = (double?)null, externalId = (Guid?)null });
 
-        var ex = Assert.Throws<NotSupportedException>(() => _connection.Execute(
-            "INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (@id, @name, @createdAt, @rating, @externalId)",
-            new { id = 1, name = "Ambient", createdAt = DateTime.UtcNow, rating = (double?)null, externalId = (Guid?)null }));
+            scope.Complete();
+        }
 
-        Assert.Contains("TransactionScope", ex.Message, StringComparison.OrdinalIgnoreCase);
+        var count = _connection.ExecuteScalar<int>("SELECT COUNT(*) FROM Customers WHERE Name = 'Ambient'");
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public void TransactionScope_Ambient_Rollback_RevertsChanges()
+    {
+        using (var scope = new System.Transactions.TransactionScope(
+            System.Transactions.TransactionScopeOption.Required,
+            System.Transactions.TransactionScopeAsyncFlowOption.Enabled))
+        {
+            _connection.Execute(
+                "INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (@id, @name, @createdAt, @rating, @externalId)",
+                new { id = 2, name = "AmbientRollback", createdAt = DateTime.UtcNow, rating = (double?)null, externalId = (Guid?)null });
+
+            // Ohne scope.Complete() wird bei Dispose implizit rollback.
+        }
+
+        var count = _connection.ExecuteScalar<int>("SELECT COUNT(*) FROM Customers WHERE Name = 'AmbientRollback'");
+        Assert.Equal(0, count);
     }
 
     [Fact]

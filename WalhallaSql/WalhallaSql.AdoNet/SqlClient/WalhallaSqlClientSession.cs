@@ -73,7 +73,7 @@ public sealed class WalhallaSqlClientSession : ISqlClientSession
         if (InformationSchemaVirtualCatalog.TryResolveVirtualQuery(sql, _engine.GetAllTables(), out var virtualResult))
             return virtualResult;
 
-        var result = command.HasExternalTransaction && _enrolledTransaction != null
+        var result = _enrolledTransaction != null
             ? _engine.Execute(sql, _enrolledTransaction)
             : _engine.Execute(sql);
 

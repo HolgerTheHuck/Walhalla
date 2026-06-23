@@ -201,7 +201,23 @@ public sealed class WalhallaSqlTransaction : IDisposable
         if (_committed || _rolledBack)
             return; // idempotent
         _rolledBack = true;
+        ClearBufferedChanges();
         _engine.RollbackTransaction(this);
+    }
+
+    /// <summary>
+    /// Löscht alle im Arbeitsspeicher gepufferten Änderungen (Insert/Update/Delete),
+    /// sodass ein Rollback die SQL-Engine-Transaktion konsistent zurücksetzt.
+    /// </summary>
+    internal void ClearBufferedChanges()
+    {
+        _writes.Clear();
+        _indexOps.Clear();
+        _insertedRows.Clear();
+        _updatedRows.Clear();
+        _deletedRows.Clear();
+        _lockedRows.Clear();
+        _exclusiveRows.Clear();
     }
 
     // ── Savepoints ──────────────────────────────────────────────────────────
