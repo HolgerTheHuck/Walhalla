@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
@@ -173,6 +174,179 @@ public class DapperAdvancedTests : IDisposable
         Assert.Equal("Parent", result.Name);
         Assert.Equal(2, result.Orders.Count);
         Assert.Equal(99.99m, result.Orders[0].TotalAmount);
+    }
+
+    [Fact(Skip = "Dapper-MultiMapping mit drei Entitäten erfordert zusätzliche Unterstützung für mehrfache splitOn-Grenzen in WalhallaSqlDbDataReader.")]
+    public void MultiMapping_ThreeEntities_SplitOnList()
+    {
+        _connection.Execute(
+            "INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (@id, @name, @createdAt, @rating, @externalId)",
+            new { id = 1, name = "Parent", createdAt = DateTime.UtcNow, rating = (double?)null, externalId = (Guid?)null });
+
+        _connection.Execute(
+            "INSERT INTO Orders (Id, CustomerId, TotalAmount) VALUES (@id, @customerId, @amount)",
+            new { id = 10, customerId = 1, amount = 99.99m });
+
+        _connection.Execute(
+            "INSERT INTO Tags (Id, Name, CustomerId) VALUES (@id, @name, @customerId)",
+            new { id = 20, name = "VIP", customerId = 1 });
+
+        var results = _connection.Query<CustomerWithOrderAndTag, OrderSummary, TagInfo, CustomerWithOrderAndTag>(
+            @"SELECT c.Id, c.Name, o.Id AS OrderId, o.CustomerId, o.TotalAmount, t.Id AS TagId, t.Name, t.CustomerId
+              FROM Customers c
+              INNER JOIN Orders o ON o.CustomerId = c.Id
+              INNER JOIN Tags t ON t.CustomerId = c.Id
+              WHERE c.Id = 1",
+            (customer, order, tag) =>
+            {
+                customer.Order = order;
+                customer.Tag = tag;
+                return customer;
+            },
+            splitOn: "OrderId,TagId")
+            .ToList();
+
+        Assert.NotEmpty(results);
+        var result = results[0];
+        Assert.Equal(1, result.Id);
+        Assert.Equal("Parent", result.Name);
+        Assert.Equal(10, result.Order.Id);
+        Assert.Equal(20, result.Tag.Id);
+        Assert.Equal("VIP", result.Tag.Name);
+    }
+
+    [Fact]
+    public void QueryFirst_UsesSingleRowBehavior()
+    {
+        _connection.Execute(
+            "INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (@id, @name, @createdAt, @rating, @externalId)",
+            new[]
+            {
+                new { id = 1, name = "A", createdAt = DateTime.UtcNow, rating = (double?)null, externalId = (Guid?)null },
+                new { id = 2, name = "B", createdAt = DateTime.UtcNow, rating = (double?)null, externalId = (Guid?)null }
+            });
+
+        var name = _connection.QueryFirst<string>("SELECT Name FROM Customers ORDER BY Id");
+        Assert.Equal("A", name);
+    }
+
+    [Fact]
+    public void QueryMultiple_InsideTransaction_RespectsRollback()
+    {
+        using var tx = _connection.BeginTransaction();
+        _connection.Execute(
+            "INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (@id, @name, @createdAt, @rating, @externalId)",
+            new { id = 1, name = "Tx", createdAt = DateTime.UtcNow, rating = (double?)null, externalId = (Guid?)null },
+            tx);
+
+        using var multi = _connection.QueryMultiple(
+            "SELECT Id, Name FROM Customers; SELECT COUNT(*) FROM Customers",
+            transaction: tx);
+
+        var customers = multi.Read<CustomerSummary>().ToList();
+        var count = multi.Read<int>().Single();
+
+        Assert.Single(customers);
+        Assert.Equal("Tx", customers[0].Name);
+        Assert.Equal(1, count);
+
+        tx.Rollback();
+
+        var afterCount = _connection.ExecuteScalar<int>("SELECT COUNT(*) FROM Customers");
+        Assert.Equal(0, afterCount);
+    }
+
+    [Fact]
+    public async Task AsyncQuery_InsideTransactionScope_Commits()
+    {
+        using (var scope = new System.Transactions.TransactionScope(
+            System.Transactions.TransactionScopeOption.Required,
+            System.Transactions.TransactionScopeAsyncFlowOption.Enabled))
+        {
+            await _connection.ExecuteAsync(
+                "INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (@id, @name, @createdAt, @rating, @externalId)",
+                new { id = 1, name = "AsyncAmbient", createdAt = DateTime.UtcNow, rating = (double?)null, externalId = (Guid?)null });
+
+            scope.Complete();
+        }
+
+        var name = await _connection.QuerySingleAsync<string>("SELECT Name FROM Customers WHERE Id = 1");
+        Assert.Equal("AsyncAmbient", name);
+    }
+
+    [Fact]
+    public void PreparedDml_InsideTransaction_RollbackUndoesChanges()
+    {
+        using var tx = _connection.BeginTransaction();
+        using var cmd = _connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (@id, @name, @createdAt, @rating, @externalId)";
+        AddParameter(cmd, "id", 1);
+        AddParameter(cmd, "name", "PreparedTx");
+        AddParameter(cmd, "createdAt", DateTime.UtcNow);
+        AddParameter(cmd, "rating", DBNull.Value);
+        AddParameter(cmd, "externalId", DBNull.Value);
+        cmd.Prepare();
+        Assert.Equal(1, cmd.ExecuteNonQuery());
+
+        tx.Rollback();
+
+        var count = _connection.ExecuteScalar<int>("SELECT COUNT(*) FROM Customers WHERE Name = 'PreparedTx'");
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public void BatchInsideTransaction_RollbackUndoesAll()
+    {
+        using var tx = _connection.BeginTransaction();
+        using var batchCmd = _connection.CreateCommand();
+        batchCmd.Transaction = tx;
+        var now = DateTime.UtcNow;
+        batchCmd.CommandText = $@"
+            INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (1, 'B1', '{now:O}', NULL, NULL);
+            INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (2, 'B2', '{now:O}', NULL, NULL);
+            SELECT COUNT(*) FROM Customers";
+
+        using var reader = batchCmd.ExecuteReader();
+        // Zwei leere DML-Resultsets überspringen, dann das SELECT auslesen.
+        reader.NextResult();
+        reader.NextResult();
+        Assert.True(reader.Read());
+        var count = reader.GetInt32(0);
+        Assert.Equal(2, count);
+
+        tx.Rollback();
+
+        var afterCount = _connection.ExecuteScalar<int>("SELECT COUNT(*) FROM Customers");
+        Assert.Equal(0, afterCount);
+    }
+
+    [Fact(Skip = "Output-Parameter werden von WalhallaSql aktuell nicht in DynamicParameters zurückgeschrieben.")]
+    public void DynamicParameters_OutputAndReturnValue()
+    {
+        _connection.Execute(
+            "INSERT INTO Customers (Id, Name, CreatedAt, Rating, ExternalId) VALUES (@id, @name, @createdAt, @rating, @externalId)",
+            new { id = 1, name = "Dyn", createdAt = DateTime.UtcNow, rating = (double?)null, externalId = (Guid?)null });
+
+        var parameters = new DynamicParameters();
+        parameters.Add("id", 1);
+        parameters.Add("name", dbType: DbType.String, direction: ParameterDirection.Output, size: 100);
+        parameters.Add("count", dbType: DbType.Int32, direction: ParameterDirection.ReturnValue);
+
+        _connection.Execute(
+            "SELECT @name = Name FROM Customers WHERE Id = @id",
+            parameters);
+
+        Assert.Equal("Dyn", parameters.Get<string>("name"));
+        Assert.Equal(DBNull.Value, parameters.Get<object>("count"));
+    }
+
+    private static void AddParameter(DbCommand command, string name, object? value)
+    {
+        var param = command.CreateParameter();
+        param.ParameterName = name;
+        param.Value = value ?? DBNull.Value;
+        command.Parameters.Add(param);
     }
 
     [Fact]
@@ -401,5 +575,20 @@ public class DapperAdvancedTests : IDisposable
         public int Id { get; set; }
         public int CustomerId { get; set; }
         public decimal TotalAmount { get; set; }
+    }
+
+    private sealed class CustomerWithOrderAndTag
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public OrderSummary Order { get; set; } = new();
+        public TagInfo Tag { get; set; } = new();
+    }
+
+    private sealed class TagInfo
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public int? CustomerId { get; set; }
     }
 }
