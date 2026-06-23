@@ -839,4 +839,85 @@ public class StreamingTests
         Assert.Equal(rowCount, collection.Count);
         Assert.Null(collection.ErrorMessage);
     }
+
+    [Fact]
+    public async Task Streaming_CSharpStreamingProcedure_YieldsRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("INSERT INTO T (Id, Name) VALUES (1, 'Alpha'), (2, 'Beta'), (3, 'Gamma')");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE StreamRowsAsync()
+            AS CSHARP STREAM BEGIN
+                await foreach (var r in ctx.QueryStreamingRows("SELECT Id, Name FROM T ORDER BY Id"))
+                    yield return r;
+            END
+            """);
+
+        var args = Array.Empty<SqlExecArgument>();
+        using var stream = await engine.ExecuteStreamingExecAsync("StreamRowsAsync", args);
+        var streamRows = new List<IReadOnlyDictionary<string, object?>>();
+        await foreach (var row in stream.EnumerateRowsAsync())
+            streamRows.Add(row);
+
+        Assert.Equal(3, streamRows.Count);
+        Assert.Equal(1, streamRows[0]["Id"]);
+        Assert.Equal("Gamma", streamRows[2]["Name"]);
+    }
+
+    [Fact]
+    public void SyncExec_CSharpStreamingProcedure_Throws()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE T (Id INT PRIMARY KEY)");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE StreamingOnly()
+            AS CSHARP STREAM BEGIN
+                yield break;
+            END
+            """);
+
+        Assert.Throws<WalhallaException>(() => engine.Execute("EXEC StreamingOnly"));
+    }
+
+    [Fact]
+    public void WalhallaResultSetBuilder_BuildsResultSet()
+    {
+        var builder = WalhallaResultSetBuilder.Create("Id", "Name");
+        builder.AddRow(1, "Alpha");
+        builder.AddRow(2, "Beta");
+
+        var result = builder.ToResultSet();
+        Assert.Equal(2, result.Rows.Count);
+        Assert.Equal(1, result.Rows[0]["Id"]);
+        Assert.Equal("Beta", result.Rows[1]["Name"]);
+    }
+
+    [Fact]
+    public void WalhallaResultSetBuilder_NamedRowBuilder_Works()
+    {
+        var builder = WalhallaResultSetBuilder.Create("DatabaseName", "BackupFile");
+        builder.AddRow(b =>
+        {
+            b["DatabaseName"] = "Db1";
+            b["BackupFile"] = @"C:\Backup\Db1_20260101.bak";
+        });
+
+        var result = builder.ToResultSet();
+        Assert.Single(result.Rows);
+        Assert.Equal("Db1", result.Rows[0]["DatabaseName"]);
+    }
+
+    [Fact]
+    public void WalhallaResultSet_FromRows_WithColumns_Works()
+    {
+        var rows = new List<object?[]> { new object?[] { 1, "Alpha" }, new object?[] { 2, "Beta" } };
+        var result = WalhallaResultSet.FromRows(new[] { "Id", "Name" }, rows);
+
+        Assert.Equal(2, result.Rows.Count);
+        Assert.Equal(2, result.Rows[1]["Id"]);
+        Assert.Equal("Alpha", result.Rows[0]["Name"]);
+    }
 }

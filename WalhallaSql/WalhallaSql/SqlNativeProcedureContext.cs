@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using WalhallaSql.Sql;
@@ -45,10 +46,46 @@ public sealed class SqlNativeProcedureContext
         return arg is null ? default : ParseAs<T>(arg.ValueExpression);
     }
 
+    public T? Get<T>(string name, T? defaultValue)
+    {
+        var arg = GetArgument(name);
+        return arg is null ? defaultValue : ParseAs<T>(arg.ValueExpression);
+    }
+
     public T? Get<T>(int index)
     {
         var arg = GetArgument(index);
         return arg is null ? default : ParseAs<T>(arg.ValueExpression);
+    }
+
+    public T? Get<T>(int index, T? defaultValue)
+    {
+        var arg = GetArgument(index);
+        return arg is null ? defaultValue : ParseAs<T>(arg.ValueExpression);
+    }
+
+    public bool TryGet<T>(string name, out T? value)
+    {
+        var arg = GetArgument(name);
+        if (arg is null)
+        {
+            value = default;
+            return false;
+        }
+        value = ParseAs<T>(arg.ValueExpression);
+        return true;
+    }
+
+    public bool TryGet<T>(int index, out T? value)
+    {
+        var arg = GetArgument(index);
+        if (arg is null)
+        {
+            value = default;
+            return false;
+        }
+        value = ParseAs<T>(arg.ValueExpression);
+        return true;
     }
 
     public WalhallaResultSet Execute(string sql) => _engine.Execute(sql);
@@ -85,6 +122,39 @@ public sealed class SqlNativeProcedureContext
     /// </summary>
     public IAsyncEnumerable<IReadOnlyDictionary<string, object?>> QueryStreaming(string sql, CancellationToken cancellationToken = default)
         => ExecuteReaderAsync(sql, cancellationToken);
+
+    /// <summary>
+    /// Führt ein SELECT/WITH asynchron aus und liefert die Zeilen als <see cref="WalhallaRow"/>-Strom.
+    /// Nützlich für Streaming-C#-Prozeduren, die direkt <see cref="WalhallaRow"/> zurückerzeugen wollen.
+    /// </summary>
+    public async IAsyncEnumerable<WalhallaRow> QueryStreamingRows(
+        string sql,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var trimmed = sql.TrimStart();
+        if (!trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
+            && !trimmed.StartsWith("WITH", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new WalhallaException("QueryStreamingRows unterstützt nur SELECT-Statements.");
+        }
+
+        var stream = await _engine.ExecuteStreamingAsync(sql, cancellationToken);
+        var schema = stream.Schema;
+        var names = schema.Names;
+        await foreach (var row in stream.EnumerateRowsAsync(cancellationToken))
+        {
+            var values = new object?[names.Length];
+            for (var i = 0; i < names.Length; i++)
+                row.TryGetValue(names[i], out values[i]);
+            yield return new WalhallaRow(schema, values);
+        }
+    }
+
+    /// <summary>
+    /// Erzeugt einen neuen <see cref="WalhallaResultSetBuilder"/> für diese Prozedur.
+    /// </summary>
+    public WalhallaResultSetBuilder CreateResultSet(params string[] columnNames)
+        => WalhallaResultSetBuilder.Create(columnNames);
 
     private static T? ParseAs<T>(string valueExpression)
     {

@@ -75,4 +75,27 @@ public sealed class WalhallaResultSet
         }
         return new WalhallaResultSet(built, names);
     }
+
+    /// <summary>
+    /// Baut ein Ergebnis aus expliziten Spaltennamen und positionsbasierten Zeilenwerten.
+    /// Nützlich für C#-Stored-Procedures, die Ergebnisse programmatisch zusammensetzen.
+    /// </summary>
+    public static WalhallaResultSet FromRows(string[] columnNames, IEnumerable<object?[]> rows)
+    {
+        if (columnNames == null) throw new System.ArgumentNullException(nameof(columnNames));
+        if (rows == null) throw new System.ArgumentNullException(nameof(rows));
+
+        var schema = new ColumnSchema(columnNames);
+        var built = new List<WalhallaRow>();
+        foreach (var row in rows)
+        {
+            if (row == null || row.Length != columnNames.Length)
+                throw new System.ArgumentException($"Each row must contain {columnNames.Length} values.");
+
+            var values = new object?[row.Length];
+            row.CopyTo(values, 0);
+            built.Add(new WalhallaRow(schema, values));
+        }
+        return new WalhallaResultSet(built, columnNames);
+    }
 }

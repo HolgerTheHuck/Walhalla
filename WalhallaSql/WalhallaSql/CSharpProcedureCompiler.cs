@@ -15,7 +15,8 @@ namespace WalhallaSql;
 internal static class CSharpProcedureCompiler
 {
     public static (Func<SqlNativeProcedureContext, WalhallaResultSet> execute,
-        Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>? streamingAsync) Compile(
+        Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>? streamingAsync,
+        Func<SqlNativeProcedureContext, CancellationToken, IAsyncEnumerable<WalhallaRow>>? streamingRows) Compile(
         SqlStoredProcedureDefinition def)
     {
         var source = GenerateSource(def);
@@ -48,24 +49,51 @@ internal static class CSharpProcedureCompiler
         var type = assembly.GetType("__CsProcedureHost")
             ?? throw new InvalidOperationException(
                 $"C# stored procedure '{def.Name}': generated type '__CsProcedureHost' not found.");
+
+        if (IsStreamingLanguage(def.Language))
+        {
+            var streamingMethod = type.GetMethod("ExecuteAsync", BindingFlags.Public | BindingFlags.Static)
+                ?? throw new InvalidOperationException(
+                    $"C# stored procedure '{def.Name}': streaming method 'ExecuteAsync' not found.");
+
+            return (
+                ctx => throw new NotSupportedException($"Streaming procedure '{def.Name}' must be executed via the streaming API."),
+                null,
+                (ctx, ct) => (IAsyncEnumerable<WalhallaRow>)streamingMethod.Invoke(null, [ctx, ct])!);
+        }
+
         var method = type.GetMethod("Execute", BindingFlags.Public | BindingFlags.Static)
             ?? throw new InvalidOperationException(
                 $"C# stored procedure '{def.Name}': method 'Execute' not found.");
-        var streamingMethod = type.GetMethod("ExecuteStreamingAsync", BindingFlags.Public | BindingFlags.Static)
+        var syncStreamingMethod = type.GetMethod("ExecuteStreamingAsync", BindingFlags.Public | BindingFlags.Static)
             ?? throw new InvalidOperationException(
                 $"C# stored procedure '{def.Name}': method 'ExecuteStreamingAsync' not found.");
 
         return (
             ctx => (WalhallaResultSet)method.Invoke(null, [ctx])!,
-            (ctx, ct) => (Task<WalhallaStreamResult>)streamingMethod.Invoke(null, [ctx, ct])!);
+            (ctx, ct) => (Task<WalhallaStreamResult>)syncStreamingMethod.Invoke(null, [ctx, ct])!,
+            (Func<SqlNativeProcedureContext, CancellationToken, IAsyncEnumerable<WalhallaRow>>?)null);
     }
 
+    private static bool IsStreamingLanguage(string language)
+        => string.Equals(language, "csharp-streaming", StringComparison.OrdinalIgnoreCase);
+
     private static string GenerateSource(SqlStoredProcedureDefinition def)
+    {
+        return IsStreamingLanguage(def.Language)
+            ? GenerateStreamingSource(def)
+            : GenerateSyncSource(def);
+    }
+
+    private static string GenerateSyncSource(SqlStoredProcedureDefinition def)
     {
         var sb = new StringBuilder();
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
         sb.AppendLine("using System.Linq;");
+        sb.AppendLine("using System.Runtime.CompilerServices;");
+        sb.AppendLine("using System.Threading;");
+        sb.AppendLine("using System.Threading.Tasks;");
         sb.AppendLine("using WalhallaSql;");
         sb.AppendLine("using WalhallaSql.Sql;");
         sb.AppendLine();
@@ -74,15 +102,7 @@ internal static class CSharpProcedureCompiler
         sb.AppendLine("    public static WalhallaSql.WalhallaResultSet Execute(WalhallaSql.SqlNativeProcedureContext ctx)");
         sb.AppendLine("    {");
 
-        foreach (var p in def.Parameters)
-        {
-            var csType = MapSqlTypeToCSharp(p.Type, p.IsNullable);
-            var varName = p.Name.TrimStart('@');
-            sb.AppendLine($"        var {varName} = ctx.Get<{csType}>(\"{p.Name}\");");
-        }
-
-        if (def.Parameters.Count > 0)
-            sb.AppendLine();
+        AppendParameterBindings(sb, def);
 
         sb.AppendLine("        // --- begin user code ---");
         sb.AppendLine(def.Body);
@@ -119,6 +139,50 @@ internal static class CSharpProcedureCompiler
         sb.AppendLine("}");
 
         return sb.ToString();
+    }
+
+    private static string GenerateStreamingSource(SqlStoredProcedureDefinition def)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("using System;");
+        sb.AppendLine("using System.Collections.Generic;");
+        sb.AppendLine("using System.Linq;");
+        sb.AppendLine("using System.Runtime.CompilerServices;");
+        sb.AppendLine("using System.Threading;");
+        sb.AppendLine("using System.Threading.Tasks;");
+        sb.AppendLine("using WalhallaSql;");
+        sb.AppendLine("using WalhallaSql.Sql;");
+        sb.AppendLine();
+        sb.AppendLine("public static class __CsProcedureHost");
+        sb.AppendLine("{");
+        sb.AppendLine("    public static async System.Collections.Generic.IAsyncEnumerable<WalhallaSql.WalhallaRow> ExecuteAsync(WalhallaSql.SqlNativeProcedureContext ctx, System.Threading.CancellationToken ct = default)");
+        sb.AppendLine("    {");
+
+        AppendParameterBindings(sb, def);
+
+        sb.AppendLine("        // --- begin user code ---");
+        sb.AppendLine(def.Body);
+        sb.AppendLine("        // --- end user code ---");
+        sb.AppendLine("#pragma warning disable CS0162");
+        sb.AppendLine("        yield break;");
+        sb.AppendLine("#pragma warning restore CS0162");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+
+        return sb.ToString();
+    }
+
+    private static void AppendParameterBindings(StringBuilder sb, SqlStoredProcedureDefinition def)
+    {
+        foreach (var p in def.Parameters)
+        {
+            var csType = MapSqlTypeToCSharp(p.Type, p.IsNullable);
+            var varName = p.Name.TrimStart('@');
+            sb.AppendLine($"        var {varName} = ctx.Get<{csType}>(\"{p.Name}\");");
+        }
+
+        if (def.Parameters.Count > 0)
+            sb.AppendLine();
     }
 
     private static string MapSqlTypeToCSharp(SqlScalarType type, bool nullable) => type switch

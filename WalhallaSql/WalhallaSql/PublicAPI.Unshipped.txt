@@ -5,6 +5,7 @@ static WalhallaSql.WalhallaEngine.Open(string! rootPath) -> WalhallaSql.Walhalla
 static WalhallaSql.WalhallaResultSet.Affected(int count) -> WalhallaSql.WalhallaResultSet!
 static WalhallaSql.WalhallaResultSet.Empty(string![]! columnNames) -> WalhallaSql.WalhallaResultSet!
 static WalhallaSql.WalhallaResultSet.FromRows(System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>! rows) -> WalhallaSql.WalhallaResultSet!
+static WalhallaSql.WalhallaResultSet.FromRows(string![]! columnNames, System.Collections.Generic.IEnumerable<object?[]!>! rows) -> WalhallaSql.WalhallaResultSet!
 WalhallaSql.Core.MemTableMode
 WalhallaSql.Core.MemTableMode.Hybrid = 2 -> WalhallaSql.Core.MemTableMode
 WalhallaSql.Core.MemTableMode.InMemory = 0 -> WalhallaSql.Core.MemTableMode
@@ -780,9 +781,21 @@ WalhallaSql.SqlNativeProcedureContext.Get<T>(string! name) -> T?
 WalhallaSql.SqlNativeProcedureContext.GetArgument(int index) -> WalhallaSql.Sql.SqlExecArgument?
 WalhallaSql.SqlNativeProcedureContext.GetArgument(string! name) -> WalhallaSql.Sql.SqlExecArgument?
 WalhallaSql.SqlNativeProcedureContext.Outputs.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
+WalhallaSql.SqlNativeProcedureContext.CreateResultSet(params string![]! columnNames) -> WalhallaSql.WalhallaResultSetBuilder!
+WalhallaSql.SqlNativeProcedureContext.ExecuteReaderAsync(string! sql, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>!
+WalhallaSql.SqlNativeProcedureContext.Get<T>(int index) -> T?
+WalhallaSql.SqlNativeProcedureContext.Get<T>(int index, T? defaultValue) -> T?
+WalhallaSql.SqlNativeProcedureContext.Get<T>(string! name) -> T?
+WalhallaSql.SqlNativeProcedureContext.Get<T>(string! name, T? defaultValue) -> T?
+WalhallaSql.SqlNativeProcedureContext.GetArgument(int index) -> WalhallaSql.Sql.SqlExecArgument?
+WalhallaSql.SqlNativeProcedureContext.GetArgument(string! name) -> WalhallaSql.Sql.SqlExecArgument?
+WalhallaSql.SqlNativeProcedureContext.Outputs.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
 WalhallaSql.SqlNativeProcedureContext.Query(string! sql) -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>!
 WalhallaSql.SqlNativeProcedureContext.QueryStreaming(string! sql, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<System.Collections.Generic.IReadOnlyDictionary<string!, object?>!>!
+WalhallaSql.SqlNativeProcedureContext.QueryStreamingRows(string! sql, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<WalhallaSql.WalhallaRow>!
 WalhallaSql.SqlNativeProcedureContext.SetOutput(string! name, object? value) -> void
+WalhallaSql.SqlNativeProcedureContext.TryGet<T>(int index, out T? value) -> bool
+WalhallaSql.SqlNativeProcedureContext.TryGet<T>(string! name, out T? value) -> bool
 WalhallaSql.WalhallaEngine
 WalhallaSql.WalhallaEngine.BeginTransaction() -> WalhallaSql.WalhallaSqlTransaction!
 WalhallaSql.WalhallaEngine.Backup(string! targetPath) -> void
@@ -868,6 +881,13 @@ WalhallaSql.WalhallaResultSet.OutputParameters.get -> System.Collections.Generic
 WalhallaSql.WalhallaResultSet.OutputParameters.init -> void
 WalhallaSql.WalhallaResultSet.Rows.get -> System.Collections.Generic.IReadOnlyList<WalhallaSql.WalhallaRow>!
 WalhallaSql.WalhallaResultSet.WithOutputParameters(System.Collections.Generic.IReadOnlyDictionary<string!, object?>! outputs) -> WalhallaSql.WalhallaResultSet!
+WalhallaSql.WalhallaResultSetBuilder
+WalhallaSql.WalhallaResultSetBuilder.AddRow(System.Action<WalhallaSql.WalhallaRowBuilder!>! configure) -> WalhallaSql.WalhallaResultSetBuilder!
+WalhallaSql.WalhallaResultSetBuilder.AddRow(params object?[]! values) -> WalhallaSql.WalhallaResultSetBuilder!
+static WalhallaSql.WalhallaResultSetBuilder.Create(System.Collections.Generic.IEnumerable<string!>! columnNames) -> WalhallaSql.WalhallaResultSetBuilder!
+static WalhallaSql.WalhallaResultSetBuilder.Create(params string![]! columnNames) -> WalhallaSql.WalhallaResultSetBuilder!
+WalhallaSql.WalhallaResultSetBuilder.ToResultSet() -> WalhallaSql.WalhallaResultSet!
+WalhallaSql.WalhallaResultSetBuilder.ToStreamResult() -> WalhallaSql.WalhallaStreamResult!
 WalhallaSql.WalhallaRow
 WalhallaSql.WalhallaRow.ContainsKey(string! key) -> bool
 WalhallaSql.WalhallaRow.Count.get -> int
@@ -879,6 +899,9 @@ WalhallaSql.WalhallaRow.this[string! key].get -> object?
 WalhallaSql.WalhallaRow.TryGetValue(string! key, out object? value) -> bool
 WalhallaSql.WalhallaRow.Values.get -> System.Collections.Generic.IEnumerable<object?>!
 WalhallaSql.WalhallaRow.WalhallaRow() -> void
+WalhallaSql.WalhallaRowBuilder
+WalhallaSql.WalhallaRowBuilder.this[int ordinal].set -> void
+WalhallaSql.WalhallaRowBuilder.this[string! columnName].set -> void
 WalhallaSql.WalhallaSqlTransaction
 WalhallaSql.WalhallaSqlTransaction.Commit() -> void
 WalhallaSql.WalhallaSqlTransaction.Dispose() -> void

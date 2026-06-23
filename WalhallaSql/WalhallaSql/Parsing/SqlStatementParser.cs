@@ -2398,15 +2398,22 @@ internal static class SqlStatementParser
         var language = "sql";
         if (remaining.StartsWith("CSHARP", StringComparison.OrdinalIgnoreCase))
         {
-            language = "csharp";
             remaining = remaining["CSHARP".Length..].TrimStart();
+            language = "csharp";
+
+            // Optionaler Streaming-Modus: AS CSHARP STREAM BEGIN ... END
+            if (remaining.StartsWith("STREAM", StringComparison.OrdinalIgnoreCase))
+            {
+                language = "csharp-streaming";
+                remaining = remaining["STREAM".Length..].TrimStart();
+            }
         }
 
-        var body = ExtractBeginEndBody(remaining, language == "csharp");
+        var body = ExtractBeginEndBody(remaining, language.StartsWith("csharp", StringComparison.OrdinalIgnoreCase));
 
         // RemoveTrailingSemicolon (line 16) strips the final ; from the outer SQL,
         // but for CSHARP bodies without BEGIN/END that ; is C# syntax, not SQL punctuation.
-        if (language == "csharp" && body.Length > 0 && body[^1] != ';' && body[^1] != '}')
+        if (language.StartsWith("csharp", StringComparison.OrdinalIgnoreCase) && body.Length > 0 && body[^1] != ';' && body[^1] != '}')
             body += ";";
 
         return new SqlCreateProcedureStatement(procName, parameters, body, orReplace, language);
