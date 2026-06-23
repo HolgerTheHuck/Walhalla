@@ -109,6 +109,39 @@ public class WalhallaSqlPgWireSmokeTests
     }
 
     [Fact]
+    public async Task ExtendedQuery_ParameterizedInsert_ReusesStatementAcrossExecutions()
+    {
+        await using var scope = await WalhallaSqlPgWireTestScope.CreateAsync();
+        await using var conn = await scope.OpenConnectionAsync();
+
+        await Execute(conn, "CREATE TABLE BatchItems (Id INT, Name VARCHAR(100))");
+
+        // Npgsql verwendet das Extended-Query-Protokoll; ein parametrisiertes INSERT
+        // wird als Parse/Bind/Execute ausgeführt und sollte das vorbereitete DML-
+        // Statement wiederverwenden.
+        await using var insertCmd = new NpgsqlCommand(
+            "INSERT INTO BatchItems (Id, Name) VALUES (@id, @name)", conn);
+        insertCmd.Parameters.AddWithValue("id", 1);
+        insertCmd.Parameters.AddWithValue("name", "alpha");
+        Assert.Equal(1, await insertCmd.ExecuteNonQueryAsync());
+
+        insertCmd.Parameters["id"].Value = 2;
+        insertCmd.Parameters["name"].Value = "beta";
+        Assert.Equal(1, await insertCmd.ExecuteNonQueryAsync());
+
+        await using var selectCmd = new NpgsqlCommand(
+            "SELECT Id, Name FROM BatchItems ORDER BY Id", conn);
+        await using var reader = await selectCmd.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1, reader.GetInt32(0));
+        Assert.Equal("alpha", reader.GetString(1));
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(2, reader.GetInt32(0));
+        Assert.Equal("beta", reader.GetString(1));
+        Assert.False(await reader.ReadAsync());
+    }
+
+    [Fact]
     public async Task VirtualCatalog_InformationSchema_RoutinesAndParameters_ListsProcedure()
     {
         await using var scope = await WalhallaSqlPgWireTestScope.CreateAsync();

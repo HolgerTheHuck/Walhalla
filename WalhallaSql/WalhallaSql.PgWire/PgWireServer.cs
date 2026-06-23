@@ -1091,9 +1091,9 @@ public sealed class PgWireServer : IAsyncDisposable
         var literalSql = NormalizeSqlForExecution(RenderSqlWithParameters(prepared.Sql, parameterLiterals));
         var isQuery = ReturnsRows(literalSql);
 
-        // Try to compile a reusable engine-side prepared statement (SELECTs only, no transaction fallback).
+        // Try to compile a reusable engine-side prepared statement.
         var parameterizedSql = NormalizeSqlForExecution(RenderSqlWithParameterMarkers(prepared.Sql, parameterCount));
-        var compiled = isQuery && parameterCount >= 0
+        var compiled = parameterCount >= 0
             ? TryCompilePgStatement(backend, prepared, parameterizedSql, parameterCount)
             : null;
 
@@ -1443,7 +1443,16 @@ public sealed class PgWireServer : IAsyncDisposable
                 return;
             }
 
-            var affected = command.ExecuteNonQuery();
+            int affected;
+            if (portal.PreparedStatement != null)
+            {
+                affected = ExecutePreparedNonQuery(portal, session.Transaction);
+            }
+            else
+            {
+                affected = command.ExecuteNonQuery();
+            }
+
             if (IsDdlStatement(trimmedSql))
                 session.InvalidateTableDefinitionCache();
             await SendCommandCompleteAsync(stream, BuildCommandTag(trimmedSql, affected));
@@ -1959,6 +1968,20 @@ public sealed class PgWireServer : IAsyncDisposable
         {
             return new WalhallaSqlPgWireBackend.WalhallaBackendReader(prepared.Execute());
         }
+    }
+
+    private static int ExecutePreparedNonQuery(PgBoundPortal portal, IPgWireBackendTransaction? transaction)
+    {
+        var prepared = portal.PreparedStatement!;
+        BindParametersToPreparedStatement(prepared, portal.ParameterValues);
+
+        var engineTransaction = transaction is WalhallaSqlPgWireBackend.WalhallaSqlTransactionAdapter adapter
+            ? adapter.EngineTransaction
+            : null;
+        prepared.SetTransaction(engineTransaction);
+
+        var result = prepared.Execute();
+        return result.AffectedRows;
     }
 
     private static void BindParametersToPreparedStatement(WalhallaPreparedStatement prepared, object?[]? values)

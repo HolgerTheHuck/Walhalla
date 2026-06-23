@@ -842,12 +842,6 @@ public sealed class WalhallaSqlDbCommand : DbCommand
     {
         result = null;
 
-        // Prepared statements werden nur ohne externe Transaktion unterstützt,
-        // weil WalhallaPreparedStatement die Merge-Logik für uncommitted Writes
-        // nicht selbst übernimmt. Innerhalb von Transaktionen bleibt der alte Pfad.
-        if (command.HasExternalTransaction)
-            return false;
-
         // SequentialAccess bedeutet Streaming-Modus; hier soll die Engine-
         // Streaming-Pipeline (ExecuteStreaming) statt der materialisierten
         // Prepared-Statement-Ausführung verwendet werden.
@@ -860,7 +854,7 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         if (_preparedTemplate is not { UsesStructuredParameters: true } template)
             return false;
 
-        if (!IsSelectStatement(template.Sql))
+        if (!IsSelectStatement(template.Sql) && !IsDmlStatement(template.Sql))
             return false;
 
         if (_preparedStatement == null)
@@ -876,11 +870,20 @@ public sealed class WalhallaSqlDbCommand : DbCommand
             }
         }
 
+        var engineTransaction = DbTransaction is WalhallaSqlDbTransaction walhallaTx
+            ? walhallaTx.EngineTransaction
+            : null;
+
+        // Transport-Transaktionen haben keine Engine-Transaktion; dort bleibt der
+        // Literal-Pfad aktiv.
+        if (command.HasExternalTransaction && engineTransaction == null)
+            return false;
+
         try
         {
             result = executionConnection.SqlClientSession.ExecutePrepared(
                 _preparedStatement,
-                null,
+                engineTransaction,
                 command.Parameters);
             return true;
         }

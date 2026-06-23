@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using WalhallaSql.Collation;
@@ -13,14 +14,16 @@ namespace WalhallaSql;
 
 public sealed class WalhallaPreparedStatement
 {
-    private readonly CompiledPlan _plan;
-    private readonly SqlSelectStatement _select;
+    private readonly CompiledPlan? _plan;
+    private readonly SqlSelectStatement? _select;
+    private readonly string? _dmlSql;
     private readonly object?[] _boundParams;
     private readonly IReadOnlyDictionary<string, int> _paramOrdinals;
     private readonly WalhallaEngine _engine;
     private readonly TableStore _store;
     private readonly RowDecoder _decoder;
     private readonly bool _decoderUsesPool;
+    private WalhallaSqlTransaction? _transaction;
 
     internal WalhallaPreparedStatement(
         CompiledPlan plan,
@@ -46,6 +49,25 @@ public sealed class WalhallaPreparedStatement
         _decoderUsesPool = plan.ComputedProjections != null;
     }
 
+    internal WalhallaPreparedStatement(
+        string dmlSql,
+        IReadOnlyDictionary<string, int> paramOrdinals,
+        WalhallaEngine engine,
+        TableStore store)
+    {
+        _plan = null;
+        _select = null;
+        _dmlSql = dmlSql;
+        _boundParams = new object?[paramOrdinals.Count];
+        _paramOrdinals = paramOrdinals;
+        _engine = engine;
+        _store = store;
+
+        // Nicht verwendet für DML; Initialisierung vermeidet Compiler-Warnungen.
+        _decoder = _ => Array.Empty<object?>();
+        _decoderUsesPool = false;
+    }
+
     public void Bind(int index, object? value)
     {
         if (index < 0 || index >= _boundParams.Length)
@@ -68,8 +90,23 @@ public sealed class WalhallaPreparedStatement
         Array.Clear(_boundParams, 0, _boundParams.Length);
     }
 
+    /// <summary>
+    /// Ordnet der Ausführung des vorbereiteten Statements eine externe Transaktion zu.
+    /// Muss vor jedem Execute() neu gesetzt werden, wenn die Transaktion wechselt.
+    /// </summary>
+    public void SetTransaction(WalhallaSqlTransaction? transaction)
+    {
+        _transaction = transaction;
+    }
+
     public WalhallaResultSet Execute()
     {
+        if (_dmlSql != null)
+            return ExecuteDml();
+
+        if (_plan == null || _select == null)
+            throw new InvalidOperationException("Prepared statement has no execution plan.");
+
         bool isAggregate = _plan.SelectColumns?.Any(c => c.Aggregate != null || c.WindowFunction != null) == true;
 
         // PK point-lookup fast path: WHERE PK = @param oder literal (nicht für Aggregate).
@@ -560,10 +597,16 @@ public sealed class WalhallaPreparedStatement
     /// </summary>
     public WalhallaStreamResult ExecuteStreaming()
     {
+        if (_dmlSql != null)
+            throw new WalhallaException("Streaming execution is not supported for prepared DML statements.");
+
+        if (_plan == null)
+            throw new InvalidOperationException("Prepared statement has no execution plan.");
+
         if (!_plan.IsStreamable)
             throw new WalhallaException("Prepared query is not streamable.");
 
-        return _engine.ExecuteStreaming(_plan, _select, _boundParams);
+        return _engine.ExecuteStreaming(_plan, _select!, _boundParams);
     }
 
     /// <summary>
@@ -573,15 +616,136 @@ public sealed class WalhallaPreparedStatement
     /// </summary>
     public Task<WalhallaStreamResult> ExecuteStreamingAsync(CancellationToken cancellationToken = default)
     {
+        if (_dmlSql != null)
+            return Task.FromException<WalhallaStreamResult>(
+                new WalhallaException("Streaming execution is not supported for prepared DML statements."));
+
+        if (_plan == null)
+            return Task.FromException<WalhallaStreamResult>(
+                new InvalidOperationException("Prepared statement has no execution plan."));
+
         if (!_plan.IsStreamable)
         {
             return Task.FromException<WalhallaStreamResult>(
                 new WalhallaException("Prepared query is not streamable."));
         }
 
-        return _engine.ExecuteStreamingAsync(_plan, _select, _boundParams, cancellationToken);
+        return _engine.ExecuteStreamingAsync(_plan, _select!, _boundParams, cancellationToken);
     }
 
     internal object?[] GetBoundParameters() => _boundParams;
-    internal CompiledPlan GetPlan() => _plan;
+    internal CompiledPlan? GetPlan() => _plan;
+
+    private WalhallaResultSet ExecuteDml()
+    {
+        if (_dmlSql == null)
+            throw new InvalidOperationException("DML SQL is not set.");
+
+        var literalSql = SubstituteParametersAsLiterals(_dmlSql, _paramOrdinals, _boundParams);
+        return _engine.Execute(literalSql, _transaction);
+    }
+
+    private static string SubstituteParametersAsLiterals(
+        string sql,
+        IReadOnlyDictionary<string, int> paramOrdinals,
+        object?[] boundParams)
+    {
+        var builder = new System.Text.StringBuilder(sql.Length + 32);
+        var inSingleQuotedLiteral = false;
+
+        for (var index = 0; index < sql.Length; index++)
+        {
+            var current = sql[index];
+
+            if (current == '\'')
+            {
+                if (inSingleQuotedLiteral && index + 1 < sql.Length && sql[index + 1] == '\'')
+                {
+                    builder.Append("''");
+                    index++;
+                    continue;
+                }
+
+                inSingleQuotedLiteral = !inSingleQuotedLiteral;
+                builder.Append(current);
+                continue;
+            }
+
+            if (!inSingleQuotedLiteral
+                && (current == '@' || current == ':')
+                && IsParameterNameStart(sql, index + 1))
+            {
+                var nameStart = index + 1;
+                var nameEnd = nameStart;
+                while (nameEnd < sql.Length && IsParameterNamePart(sql[nameEnd]))
+                    nameEnd++;
+
+                var parameterName = sql.Substring(nameStart, nameEnd - nameStart);
+
+                if (!paramOrdinals.TryGetValue(parameterName, out var ordinal)
+                    && !(parameterName.Length > 0 && paramOrdinals.TryGetValue("@" + parameterName, out ordinal)))
+                    throw new WalhallaException($"Missing value for SQL parameter '{current}{parameterName}'.");
+
+                builder.Append(FormatLiteral(boundParams[ordinal]));
+                index = nameEnd - 1;
+                continue;
+            }
+
+            builder.Append(current);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string FormatLiteral(object? value)
+    {
+        if (value == null || value == DBNull.Value)
+            return "NULL";
+
+        if (value is string text)
+            return "'" + text.Replace("'", "''", StringComparison.Ordinal) + "'";
+
+        if (value is bool boolean)
+            return boolean ? "TRUE" : "FALSE";
+
+        if (value is DateOnly dateOnly)
+            return "'" + dateOnly.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) + "'";
+
+        if (value is TimeOnly timeOnly)
+            return "'" + timeOnly.ToString("HH:mm:ss.fffffff", System.Globalization.CultureInfo.InvariantCulture) + "'";
+
+        if (value is TimeSpan timeSpan)
+            return "'" + timeSpan.ToString("c", System.Globalization.CultureInfo.InvariantCulture) + "'";
+
+        if (value is DateTime dateTime)
+            return "'" + dateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture) + "'";
+
+        if (value is DateTimeOffset dateTimeOffset)
+            return "'" + dateTimeOffset.ToString("O", System.Globalization.CultureInfo.InvariantCulture) + "'";
+
+        if (value is byte[] bytes)
+            return "X'" + Convert.ToHexString(bytes) + "'";
+
+        if (value is Enum enumValue)
+        {
+            var underlying = Convert.ChangeType(enumValue, Enum.GetUnderlyingType(enumValue.GetType()), System.Globalization.CultureInfo.InvariantCulture);
+            return Convert.ToString(underlying, System.Globalization.CultureInfo.InvariantCulture) ?? "NULL";
+        }
+
+        if (value is byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal)
+            return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "NULL";
+
+        return "'" + Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)?.Replace("'", "''", StringComparison.Ordinal) + "'";
+    }
+
+    private static bool IsParameterNameStart(string sql, int index)
+    {
+        if (index >= sql.Length)
+            return false;
+        var value = sql[index];
+        return char.IsLetter(value) || value == '_';
+    }
+
+    private static bool IsParameterNamePart(char value)
+        => char.IsLetterOrDigit(value) || value == '_';
 }
