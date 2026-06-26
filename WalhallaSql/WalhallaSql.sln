@@ -35,6 +35,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WalhallaSql.Benchmarks", "W
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WalhallaSql.Dapper.Tests", "WalhallaSql.Dapper.Tests\WalhallaSql.Dapper.Tests.csproj", "{2640D718-CC3B-4B67-B2A0-1F5EE6F82813}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WalhallaSql.AdoNet.PlwTests", "WalhallaSql.AdoNet.PlwTests\WalhallaSql.AdoNet.PlwTests.csproj", "{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -237,6 +239,18 @@ Global
 		{2640D718-CC3B-4B67-B2A0-1F5EE6F82813}.Release|x64.Build.0 = Release|Any CPU
 		{2640D718-CC3B-4B67-B2A0-1F5EE6F82813}.Release|x86.ActiveCfg = Release|Any CPU
 		{2640D718-CC3B-4B67-B2A0-1F5EE6F82813}.Release|x86.Build.0 = Release|Any CPU
+		{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}.Debug|x64.Build.0 = Debug|Any CPU
+		{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}.Debug|x86.Build.0 = Debug|Any CPU
+		{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}.Release|x64.ActiveCfg = Release|Any CPU
+		{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}.Release|x64.Build.0 = Release|Any CPU
+		{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}.Release|x86.ActiveCfg = Release|Any CPU
+		{7A3C8D91-2E4B-4F8A-9C1D-5E6B7F8A9D0E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

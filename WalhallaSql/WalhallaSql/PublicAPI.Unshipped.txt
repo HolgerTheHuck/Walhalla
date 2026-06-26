@@ -338,9 +338,17 @@ WalhallaSql.Sql.SqlOrderByColumn.Descending.init -> void
 WalhallaSql.Sql.SqlOrderByColumn.Collation.get -> string?
 WalhallaSql.Sql.SqlOrderByColumn.Collation.init -> void
 WalhallaSql.Sql.SqlOrderByColumn.SqlOrderByColumn(string! ColumnName, bool Descending = false, string? Collation = null) -> void
+WalhallaSql.Sql.SqlParameterDirection
+WalhallaSql.Sql.SqlParameterDirection.In = 0 -> WalhallaSql.Sql.SqlParameterDirection
+WalhallaSql.Sql.SqlParameterDirection.InOut = 2 -> WalhallaSql.Sql.SqlParameterDirection
+WalhallaSql.Sql.SqlParameterDirection.Out = 1 -> WalhallaSql.Sql.SqlParameterDirection
 WalhallaSql.Sql.SqlProcedureParameter
 WalhallaSql.Sql.SqlProcedureParameter.DefaultValue.get -> object?
 WalhallaSql.Sql.SqlProcedureParameter.DefaultValue.init -> void
+WalhallaSql.Sql.SqlProcedureParameter.Direction.get -> WalhallaSql.Sql.SqlParameterDirection
+WalhallaSql.Sql.SqlProcedureParameter.Direction.init -> void
+WalhallaSql.Sql.SqlProcedureParameter.HasDefaultValue.get -> bool
+WalhallaSql.Sql.SqlProcedureParameter.HasDefaultValue.init -> void
 WalhallaSql.Sql.SqlProcedureParameter.IsNullable.get -> bool
 WalhallaSql.Sql.SqlProcedureParameter.IsNullable.init -> void
 WalhallaSql.Sql.SqlProcedureParameter.IsOutput.get -> bool
@@ -849,6 +857,14 @@ WalhallaSql.WalhallaOptions.PageCacheCapacity.get -> int
 WalhallaSql.WalhallaOptions.PageCacheCapacity.set -> void
 WalhallaSql.WalhallaOptions.PlanCacheCapacity.get -> int
 WalhallaSql.WalhallaOptions.PlanCacheCapacity.set -> void
+WalhallaSql.WalhallaOptions.PlwMaxAllocatedBytesPerCall.get -> long
+WalhallaSql.WalhallaOptions.PlwMaxAllocatedBytesPerCall.set -> void
+WalhallaSql.WalhallaOptions.PlwMaxCallDepth.get -> int
+WalhallaSql.WalhallaOptions.PlwMaxCallDepth.set -> void
+WalhallaSql.WalhallaOptions.PlwMaxInstructions.get -> long
+WalhallaSql.WalhallaOptions.PlwMaxInstructions.set -> void
+WalhallaSql.WalhallaOptions.PlwTimeout.get -> System.TimeSpan?
+WalhallaSql.WalhallaOptions.PlwTimeout.set -> void
 WalhallaSql.WalhallaOptions.RecursiveCteMaxIterations.get -> int
 WalhallaSql.WalhallaOptions.RecursiveCteMaxIterations.set -> void
 WalhallaSql.WalhallaOptions.RootPath.get -> string!

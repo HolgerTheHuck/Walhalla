@@ -28,6 +28,10 @@ public sealed class WalhallaOptions
     private int _blobInliningThreshold = 2048;
     private bool _enableBlobSidecar = true;
     private string _blobSidecarRootPath = "blobs";
+    private long _plwMaxInstructions = 10_000_000;
+    private TimeSpan? _plwTimeout;
+    private long _plwMaxAllocatedBytesPerCall = 64L * 1024 * 1024;
+    private int _plwMaxCallDepth = 32;
 
     public WalhallaOptions(string rootPath)
     {
@@ -204,6 +208,70 @@ public sealed class WalhallaOptions
     {
         get => _blobSidecarRootPath;
         set { ThrowIfFrozen(); _blobSidecarRootPath = value; }
+    }
+
+    /// <summary>
+    /// Maximale Anzahl ausgefuehrter Instruktionen pro PLW-Prozeduraufruf.
+    /// 0 bedeutet keine Begrenzung.
+    /// </summary>
+    public long PlwMaxInstructions
+    {
+        get => _plwMaxInstructions;
+        set
+        {
+            ThrowIfFrozen();
+            if (value < 0)
+                throw new ArgumentOutOfRangeException(nameof(value), "PlwMaxInstructions must be >= 0.");
+            _plwMaxInstructions = value;
+        }
+    }
+
+    /// <summary>
+    /// Maximale Laufzeit pro PLW-Prozeduraufruf. null bedeutet kein Timeout.
+    /// </summary>
+    public TimeSpan? PlwTimeout
+    {
+        get => _plwTimeout;
+        set
+        {
+            ThrowIfFrozen();
+            if (value.HasValue && value.Value <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(value), "PlwTimeout must be greater than TimeSpan.Zero.");
+            _plwTimeout = value;
+        }
+    }
+
+    /// <summary>
+    /// Maximale zusaetzliche Allokation in Bytes pro PLW-Prozeduraufruf.
+    /// Gemessen ueber GC.GetAllocatedBytesForCurrentThread seit Aufrufbeginn.
+    /// 0 bedeutet keine Begrenzung.
+    /// </summary>
+    public long PlwMaxAllocatedBytesPerCall
+    {
+        get => _plwMaxAllocatedBytesPerCall;
+        set
+        {
+            ThrowIfFrozen();
+            if (value < 0)
+                throw new ArgumentOutOfRangeException(nameof(value), "PlwMaxAllocatedBytesPerCall must be >= 0.");
+            _plwMaxAllocatedBytesPerCall = value;
+        }
+    }
+
+    /// <summary>
+    /// Maximale Verschachtelungstiefe fuer Prozeduraufrufe innerhalb von PLW.
+    /// 0 bedeutet keine Begrenzung.
+    /// </summary>
+    public int PlwMaxCallDepth
+    {
+        get => _plwMaxCallDepth;
+        set
+        {
+            ThrowIfFrozen();
+            if (value < 0)
+                throw new ArgumentOutOfRangeException(nameof(value), "PlwMaxCallDepth must be >= 0.");
+            _plwMaxCallDepth = value;
+        }
     }
 
     internal string WalFilePath => Path.Combine(RootPath, WalFileName);

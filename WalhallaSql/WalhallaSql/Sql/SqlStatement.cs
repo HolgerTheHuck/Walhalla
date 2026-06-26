@@ -157,20 +157,34 @@ public sealed record SqlDropViewStatement(
 
 // ── Stored Procedures & Triggers ──────────────────────────────────────────────
 
-public enum SqlTriggerEvent { Insert, Update, Delete }
+public enum SqlTriggerEvent { Insert, Update, Delete, Truncate }
 
 public enum SqlTriggerTiming { Before, After, InsteadOf }
+
+public enum SqlParameterDirection { In, Out, InOut }
 
 public sealed record SqlProcedureParameter(
     string Name,
     SqlScalarType Type,
     bool IsOutput = false,
     bool IsNullable = true,
-    object? DefaultValue = null);
+    object? DefaultValue = null)
+{
+    public SqlParameterDirection Direction { get; init; } = IsOutput ? SqlParameterDirection.Out : SqlParameterDirection.In;
+    public bool HasDefaultValue { get; init; }
+}
 
 public sealed record SqlStoredProcedureDefinition(
     string Name,
     IReadOnlyList<SqlProcedureParameter> Parameters,
+    string Body,
+    string Language = "sql",
+    string? Description = null);
+
+internal sealed record SqlScalarFunctionDefinition(
+    string Name,
+    IReadOnlyList<SqlProcedureParameter> Parameters,
+    SqlScalarType ReturnType,
     string Body,
     string Language = "sql",
     string? Description = null);
@@ -181,7 +195,8 @@ public sealed record SqlTriggerDefinition(
     SqlTriggerEvent Event,
     SqlTriggerTiming Timing = SqlTriggerTiming.After,
     string Body = "",
-    string? Description = null);
+    string? Description = null,
+    string Language = "sql");
 
 public sealed record SqlCreateProcedureStatement(
     string ProcedureName,
@@ -192,6 +207,18 @@ public sealed record SqlCreateProcedureStatement(
 
 public sealed record SqlDropProcedureStatement(
     string ProcedureName,
+    bool IfExists = false) : SqlStatement;
+
+internal sealed record SqlCreateFunctionStatement(
+    string FunctionName,
+    IReadOnlyList<SqlProcedureParameter> Parameters,
+    SqlScalarType ReturnType,
+    string Body,
+    bool OrReplace = false,
+    string Language = "sql") : SqlStatement;
+
+internal sealed record SqlDropFunctionStatement(
+    string FunctionName,
     bool IfExists = false) : SqlStatement;
 
 public sealed record SqlExecStatement(
@@ -208,7 +235,8 @@ public sealed record SqlCreateTriggerStatement(
     SqlTriggerEvent Event,
     SqlTriggerTiming Timing = SqlTriggerTiming.After,
     string Body = "",
-    bool OrReplace = false) : SqlStatement;
+    bool OrReplace = false,
+    string Language = "sql") : SqlStatement;
 
 public sealed record SqlDropTriggerStatement(
     string TriggerName,

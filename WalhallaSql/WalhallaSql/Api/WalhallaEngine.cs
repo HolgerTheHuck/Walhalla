@@ -13,9 +13,11 @@ using WalhallaSql.Collation;
 using WalhallaSql.Core;
 using WalhallaSql.Execution;
 using WalhallaSql.Execution.Join;
+using WalhallaSql.Execution.Plw;
 using WalhallaSql.Execution.Streaming;
 using WalhallaSql.Execution.Window;
 using WalhallaSql.Parsing;
+using WalhallaSql.Parsing.Plw;
 using WalhallaSql.Sql;
 using WalhallaSql.Statistics;
 using WalhallaSql.Storage;
@@ -33,10 +35,14 @@ public sealed class WalhallaEngine : IDisposable
     // Held for the engine lifetime via FileShare.None on '<RootPath>/wal.lock'.
     private readonly FileStream? _rootLock;
     private readonly Dictionary<string, SqlCreateViewStatement> _views = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, SqlStoredProcedureDefinition> _procedures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<SqlStoredProcedureDefinition>> _procedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, WalhallaResultSet>> _compiledProcedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>> _compiledStreamingProcedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, CancellationToken, IAsyncEnumerable<WalhallaRow>>> _compiledStreamingRowProcedures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PlwProgram> _plwPrograms = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PlwProgram> _plwTriggerPrograms = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, SqlScalarFunctionDefinition> _scalarFunctions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PlwProgram> _plwScalarPrograms = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<SqlTriggerDefinition>> _triggersByTable = new(StringComparer.OrdinalIgnoreCase);
     // Guards _views, _procedures, _compiledProcedures, _triggersByTable, _cursors, _cursorDefinitions.
     // Held only while reading/mutating these dictionaries (and trigger lists), never while
@@ -411,6 +417,12 @@ public sealed class WalhallaEngine : IDisposable
             case SqlDropProcedureStatement dropProc:
                 return ExecuteDropProcedure(dropProc);
 
+            case SqlCreateFunctionStatement createFunc:
+                return ExecuteCreateFunction(createFunc);
+
+            case SqlDropFunctionStatement dropFunc:
+                return ExecuteDropFunction(dropFunc);
+
             case SqlExecStatement exec:
                 return ExecuteExec(exec);
 
@@ -494,7 +506,7 @@ public sealed class WalhallaEngine : IDisposable
             else
             {
                 Interlocked.Increment(ref _planCacheMisses);
-                plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+                plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
                 _planCache?.Set(cacheKey, plan);
             }
 
@@ -607,7 +619,10 @@ public sealed class WalhallaEngine : IDisposable
     {
         lock (_metaSync)
         {
-            return _procedures.Values.ToList();
+            var result = new List<SqlStoredProcedureDefinition>();
+            foreach (var overloads in _procedures.Values)
+                result.AddRange(overloads);
+            return result;
         }
     }
 
@@ -1226,7 +1241,7 @@ public sealed class WalhallaEngine : IDisposable
         if (statement is not SqlSelectStatement select)
             throw new NotSupportedException("EXPLAIN currently only supports SELECT statements.");
 
-        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
         var rows = new List<WalhallaRow>();
         var columnNames = new[] { "Operation", "Target", "Details" };
         var schema = new ColumnSchema(columnNames);
@@ -1480,7 +1495,7 @@ public sealed class WalhallaEngine : IDisposable
         {
             if (planCacheKey != null && _planCache != null)
                 Interlocked.Increment(ref _planCacheMisses);
-            plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+            plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
             if (planCacheKey != null && _planCache != null)
                 _planCache.Set(planCacheKey, plan);
         }
@@ -2271,12 +2286,8 @@ public sealed class WalhallaEngine : IDisposable
         // Build index metadata once.
         var indexMetas = GetOrBuildIndexMetadata(insert.TableName, tableDef);
 
-        // Fire BEFORE triggers
-        FireTriggers(insert.TableName, SqlTriggerEvent.Insert, SqlTriggerTiming.Before);
-
-        // Convert string value rows to typed object rows, then encode.
+        // Convert string value rows to typed object rows, then fire BEFORE triggers (may modify NEW).
         var decodedRows = new List<object?[]>(insert.ValueRows.Count);
-        var encodedRows = new List<byte[]>(insert.ValueRows.Count);
         foreach (var valueRow in insert.ValueRows)
         {
             var rowValues = new object?[tableDef.Columns.Count];
@@ -2286,8 +2297,14 @@ public sealed class WalhallaEngine : IDisposable
                 rowValues[colIndexMap[i]] = ParseLiteral(valueRow[i], type);
             }
             decodedRows.Add(rowValues);
-            encodedRows.Add(EncodeRowWithBlobs(tableId, rowValues, tableDef));
         }
+
+        FireTriggers(insert.TableName, SqlTriggerEvent.Insert, SqlTriggerTiming.Before, decodedRows);
+
+        // Encode the (possibly modified) rows.
+        var encodedRows = new List<byte[]>(insert.ValueRows.Count);
+        foreach (var row in decodedRows)
+            encodedRows.Add(EncodeRowWithBlobs(tableId, row, tableDef));
 
         // Enforce foreign key and CHECK constraints on all inserted rows
         foreach (var row in decodedRows)
@@ -2388,8 +2405,6 @@ public sealed class WalhallaEngine : IDisposable
         var tableDef = _store.GetTableDefinition(insertSelect.TableName)
             ?? throw new WalhallaException($"Table '{insertSelect.TableName}' not found.");
 
-        FireTriggers(insertSelect.TableName, SqlTriggerEvent.Insert, SqlTriggerTiming.Before);
-
         var tableId = _store.GetTableId(insertSelect.TableName);
 
         // Build column index map
@@ -2411,9 +2426,8 @@ public sealed class WalhallaEngine : IDisposable
         // Build index metadata
         var indexMetas = GetOrBuildIndexMetadata(insertSelect.TableName, tableDef);
 
-        // Encode source rows as target table rows
+        // Decode source rows as target table rows, then fire BEFORE triggers (may modify NEW).
         var decodedRows = new List<object?[]>(result.Rows.Count);
-        var encodedRows = new List<byte[]>(result.Rows.Count);
         var insertColumns = insertSelect.Columns;
 
         foreach (var sourceRow in result.Rows)
@@ -2426,8 +2440,14 @@ public sealed class WalhallaEngine : IDisposable
                 rowValues[colIndexMap[i]] = ConvertValue(sourceValues[i], type);
             }
             decodedRows.Add(rowValues);
-            encodedRows.Add(EncodeRowWithBlobs(tableId, rowValues, tableDef));
         }
+
+        FireTriggers(insertSelect.TableName, SqlTriggerEvent.Insert, SqlTriggerTiming.Before, decodedRows);
+
+        // Encode the (possibly modified) rows.
+        var encodedRows = new List<byte[]>(result.Rows.Count);
+        foreach (var row in decodedRows)
+            encodedRows.Add(EncodeRowWithBlobs(tableId, row, tableDef));
 
         // Enforce foreign key and CHECK constraints on all inserted rows
         foreach (var row in decodedRows)
@@ -2574,7 +2594,7 @@ public sealed class WalhallaEngine : IDisposable
             // Check optional WHERE clause
             if (onConflict.Where != null)
             {
-                var whereFunc = WhereCompiler.Compile(onConflict.Where, tableDef, 0);
+                var whereFunc = WhereCompiler.Compile(onConflict.Where, tableDef, 0, null, ExecuteScalarFunction);
                 if (whereFunc != null && !whereFunc(existingValues, Array.Empty<object?>()))
                     continue;
             }
@@ -3104,10 +3124,14 @@ public sealed class WalhallaEngine : IDisposable
             ?? throw new WalhallaException($"Table '{truncate.TableName}' not found.");
         var tableId = _store.GetTableId(truncate.TableName);
 
+        FireTriggers(truncate.TableName, SqlTriggerEvent.Truncate, SqlTriggerTiming.Before);
+
         InvalidatePlanCache();
         BumpSchemaVersion(truncate.TableName);
         _store.TruncateTable(truncate.TableName);
         _statisticsCatalog.Invalidate(tableId);
+
+        FireTriggers(truncate.TableName, SqlTriggerEvent.Truncate, SqlTriggerTiming.After);
         return WalhallaResultSet.Affected(0);
     }
 
@@ -3553,16 +3577,12 @@ public sealed class WalhallaEngine : IDisposable
         var tableDef = _store.GetTableDefinition(update.TableName)
             ?? throw new WalhallaException($"Table '{update.TableName}' not found.");
 
-        FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.Before);
-
-        var tableId = _store.GetTableId(update.TableName);
-
         // PK fast path: WHERE PK = constant
         var pkConst = TryExtractPkLiteral(update.Where, tableDef);
         if (pkConst != null)
         {
-            var rowId = Convert.ToInt64(pkConst);
-            var encoded = _store.GetRow(tableId, rowId);
+            var tableIdPk = _store.GetTableId(update.TableName);
+            var encoded = _store.GetRow(tableIdPk, Convert.ToInt64(pkConst));
             if (encoded == null)
                 return WalhallaResultSet.Affected(0);
 
@@ -3577,25 +3597,35 @@ public sealed class WalhallaEngine : IDisposable
                 row[colIdx] = ParseLiteral(kv.Value, tableDef.Columns[colIdx].Type);
             }
 
+            // BEFORE-Trigger darf die Zeile modifizieren, die wir dann schreiben.
+            // Wir packen die Zeilen in Listen, damit FireTriggers sie an PLW uebergeben kann.
+            var beforeNewRows = new List<object?[]> { row };
+            var beforeOldRows = new List<object?[]> { oldRow };
+            FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.Before, beforeNewRows, beforeOldRows);
+
             // Enforce foreign key and CHECK constraints on updated row
             EnforceForeignKeyUpdate(tableDef, oldRow, row);
             CheckConstraintEvaluator.Enforce(tableDef, row);
 
-            var newEncoded = EncodeRowWithBlobs(tableId, row, tableDef);
-            _store.UpdateRow(tableId, rowId, newEncoded);
+            var newEncoded = EncodeRowWithBlobs(tableIdPk, row, tableDef);
+            _store.UpdateRow(tableIdPk, Convert.ToInt64(pkConst), newEncoded);
 
             var indexMetas = GetOrBuildIndexMetadata(update.TableName, tableDef);
-            MaintainIndexesForUpdate(tableDef, tableId, rowId, oldRow, row, indexMetas);
+            MaintainIndexesForUpdate(tableDef, tableIdPk, Convert.ToInt64(pkConst), oldRow, row, indexMetas);
 
-            FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.After);
+            FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.After, beforeNewRows, beforeOldRows);
             return WalhallaResultSet.Affected(1);
         }
+
+        var tableId = _store.GetTableId(update.TableName);
+
+        FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.Before);
 
         // Build WHERE delegate (parameterless)
         Func<object?[], bool>? predicate = null;
         if (update.Where != null)
         {
-            var whereDelegate = WhereCompiler.Compile(update.Where, tableDef, 0);
+            var whereDelegate = WhereCompiler.Compile(update.Where, tableDef, 0, null, ExecuteScalarFunction);
             if (whereDelegate != null)
             {
                 var emptyParams = Array.Empty<object?>();
@@ -3614,6 +3644,11 @@ public sealed class WalhallaEngine : IDisposable
         // Update each matching row with assignments
         var affected = 0;
         var indexMetasAll = GetOrBuildIndexMetadata(update.TableName, tableDef);
+
+        // Fuer AFTER-Trigger muessen wir alle alten/neuen Zeilen paarweise speichern.
+        var updatedNewRows = new List<object?[]>();
+        var updatedOldRows = new List<object?[]>();
+
         for (var i = 0; i < matchingRows.Count; i++)
         {
             var row = matchingRows[i];
@@ -3637,10 +3672,13 @@ public sealed class WalhallaEngine : IDisposable
             _store.UpdateRow(tableId, rowId, encoded);
 
             MaintainIndexesForUpdate(tableDef, tableId, rowId, oldRow, row, indexMetasAll);
+
+            updatedNewRows.Add(row);
+            updatedOldRows.Add(oldRow);
             affected++;
         }
 
-        FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.After);
+        FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.After, updatedNewRows, updatedOldRows);
         return WalhallaResultSet.Affected(affected);
     }
 
@@ -3650,8 +3688,6 @@ public sealed class WalhallaEngine : IDisposable
 
         var tableDef = _store.GetTableDefinition(delete.TableName)
             ?? throw new WalhallaException($"Table '{delete.TableName}' not found.");
-
-        FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.Before);
 
         var tableId = _store.GetTableId(delete.TableName);
 
@@ -3665,6 +3701,9 @@ public sealed class WalhallaEngine : IDisposable
                 return WalhallaResultSet.Affected(0);
 
             var row = RowCodec.DecodeToArray(encoded, tableDef);
+            var deletedRows = new List<object?[]> { row };
+
+            FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.Before, null, deletedRows);
 
             // Check foreign key constraints before deleting
             EnforceForeignKeyDelete(tableDef, rowId, row);
@@ -3695,14 +3734,14 @@ public sealed class WalhallaEngine : IDisposable
             _store.DeleteIndexEntries(pkIndexEntries);
             _store.DeleteRows(tableId, new[] { rowId });
 
-            FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.After);
+            FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.After, null, deletedRows);
             return WalhallaResultSet.Affected(1);
         }
 
         Func<object?[], bool>? predicate = null;
         if (delete.Where != null)
         {
-            var whereDelegate = WhereCompiler.Compile(delete.Where, tableDef, 0);
+            var whereDelegate = WhereCompiler.Compile(delete.Where, tableDef, 0, null, ExecuteScalarFunction);
             if (whereDelegate != null)
             {
                 var emptyParams = Array.Empty<object?>();
@@ -3827,11 +3866,21 @@ public sealed class WalhallaEngine : IDisposable
         _store.DeleteIndexEntries(indexEntries2);
         _store.DeleteRows(tableId, rowIds2);
 
+        // Kopie der geloeschten Zeilen fuer AFTER-Trigger anfertigen, bevor die gepoolten
+        // Buffer zurueckgegeben werden.
+        var deletedRowsForAfter = new List<object?[]>();
+        foreach (var row in matchingRows)
+        {
+            var copy = new object?[row.Length];
+            Array.Copy(row, copy, row.Length);
+            deletedRowsForAfter.Add(copy);
+        }
+
         // Pooled row buffers zurückgeben, um den managed Heap-Druck zu reduzieren.
         foreach (var row in matchingRows)
             RowCodec.ReturnPooledArray(row);
 
-        FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.After);
+        FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.After, null, deletedRowsForAfter);
         return WalhallaResultSet.Affected(matchingRows.Count);
     }
 
@@ -4139,7 +4188,7 @@ public sealed class WalhallaEngine : IDisposable
         Func<object?[], bool>? predicate = null;
         if (update.Where != null)
         {
-            var whereDelegate = WhereCompiler.Compile(update.Where, tableDef, 0);
+            var whereDelegate = WhereCompiler.Compile(update.Where, tableDef, 0, null, ExecuteScalarFunction);
             if (whereDelegate != null)
             {
                 var emptyParams = Array.Empty<object?>();
@@ -4258,7 +4307,7 @@ public sealed class WalhallaEngine : IDisposable
         Func<object?[], bool>? predicate = null;
         if (delete.Where != null)
         {
-            var whereDelegate = WhereCompiler.Compile(delete.Where, tableDef, 0);
+            var whereDelegate = WhereCompiler.Compile(delete.Where, tableDef, 0, null, ExecuteScalarFunction);
             if (whereDelegate != null)
             {
                 var emptyParams = Array.Empty<object?>();
@@ -4327,7 +4376,7 @@ public sealed class WalhallaEngine : IDisposable
                 var rawResult = ExecuteSelect(rawSelect, transaction, planCacheKey: null);
                 var rawRows = rawResult.Rows.Select(r => r.Values is object?[] a ? a : r.Values.ToArray()).ToList();
 
-                var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+                var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
                 var aggregated = AggregateExecutor.ExecuteGroupBy(rawRows, select.GroupByColumns, select.Columns, plan.TableDefinition, plan.OutputColumnNames);
                 aggregated = AggregateExecutor.ApplyHaving(aggregated, select.Having, plan.OutputColumnNames);
 
@@ -4429,7 +4478,7 @@ public sealed class WalhallaEngine : IDisposable
             // Apply WHERE filter if present
             if (select.Where != null)
             {
-                var whereDelegate = WhereCompiler.Compile(select.Where, tableDef, 0);
+                var whereDelegate = WhereCompiler.Compile(select.Where, tableDef, 0, null, ExecuteScalarFunction);
                 if (whereDelegate != null)
                 {
                     var emptyParams = Array.Empty<object?>();
@@ -4442,7 +4491,7 @@ public sealed class WalhallaEngine : IDisposable
         }
 
         // Re-apply ORDER BY, projection, paging
-        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
         return ApplyPostProcessing(filteredRows, plan, select);
     }
 
@@ -4466,7 +4515,7 @@ public sealed class WalhallaEngine : IDisposable
             var decoded = RowCodec.DecodeToPooledArray(encoded, tableDef);
             if (select.Where != null)
             {
-                var whereDelegate = WhereCompiler.Compile(select.Where, tableDef, 0);
+                var whereDelegate = WhereCompiler.Compile(select.Where, tableDef, 0, null, ExecuteScalarFunction);
                 if (whereDelegate != null)
                 {
                     var emptyParams = Array.Empty<object?>();
@@ -4483,7 +4532,7 @@ public sealed class WalhallaEngine : IDisposable
         if (rows.Count == 0)
             return committed;
 
-        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
         return ApplyPostProcessing(rows, plan, select);
     }
 
@@ -4806,16 +4855,32 @@ public sealed class WalhallaEngine : IDisposable
         EnsureSuperuser("CREATE PROCEDURE");
         lock (_metaSync)
         {
-            if (_procedures.ContainsKey(stmt.ProcedureName) && !stmt.OrReplace)
-                throw new WalhallaException(
-                    $"Procedure '{stmt.ProcedureName}' already exists. Use OR REPLACE to overwrite.");
-
             var proc = new SqlStoredProcedureDefinition(
                 stmt.ProcedureName, stmt.Parameters, stmt.Body, stmt.Language);
-            _procedures[stmt.ProcedureName] = proc;
-            _compiledProcedures.Remove(stmt.ProcedureName);
-            _compiledStreamingProcedures.Remove(stmt.ProcedureName);
-            _compiledStreamingRowProcedures.Remove(stmt.ProcedureName);
+            var signatureKey = GetProcedureSignatureKey(proc);
+
+            if (!_procedures.TryGetValue(stmt.ProcedureName, out var overloads))
+            {
+                overloads = new List<SqlStoredProcedureDefinition>();
+                _procedures[stmt.ProcedureName] = overloads;
+            }
+
+            var existingIndex = overloads.FindIndex(
+                p => string.Equals(GetProcedureSignatureKey(p), signatureKey, StringComparison.OrdinalIgnoreCase));
+
+            if (existingIndex >= 0 && !stmt.OrReplace)
+                throw new WalhallaException(
+                    $"Procedure '{stmt.ProcedureName}' with signature {signatureKey} already exists. Use OR REPLACE to overwrite.");
+
+            if (existingIndex >= 0)
+                overloads[existingIndex] = proc;
+            else
+                overloads.Add(proc);
+
+            _compiledProcedures.Remove(signatureKey);
+            _compiledStreamingProcedures.Remove(signatureKey);
+            _compiledStreamingRowProcedures.Remove(signatureKey);
+            _plwPrograms.Remove(signatureKey);
         }
         return WalhallaResultSet.Affected(0);
     }
@@ -4827,25 +4892,273 @@ public sealed class WalhallaEngine : IDisposable
         {
             if (!_procedures.Remove(stmt.ProcedureName) && !stmt.IfExists)
                 throw new WalhallaException($"Procedure '{stmt.ProcedureName}' not found.");
-            _compiledProcedures.Remove(stmt.ProcedureName);
-            _compiledStreamingProcedures.Remove(stmt.ProcedureName);
-            _compiledStreamingRowProcedures.Remove(stmt.ProcedureName);
+            RemoveCompiledProcedureCaches(stmt.ProcedureName);
         }
 
         _grantCatalog.RevokeAllForObject(GrantObjectType.Procedure, stmt.ProcedureName);
         return WalhallaResultSet.Affected(0);
     }
 
+    private static string GetProcedureSignatureKey(SqlStoredProcedureDefinition proc)
+    {
+        var types = string.Join(",", proc.Parameters.Select(p => p.Type.ToString().ToLowerInvariant()));
+        return $"{proc.Name}({types})";
+    }
+
+    private void RemoveCompiledProcedureCaches(string procedureName)
+    {
+        var prefix = procedureName + "(";
+        foreach (var key in _compiledProcedures.Keys.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList())
+            _compiledProcedures.Remove(key);
+        foreach (var key in _compiledStreamingProcedures.Keys.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList())
+            _compiledStreamingProcedures.Remove(key);
+        foreach (var key in _compiledStreamingRowProcedures.Keys.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList())
+            _compiledStreamingRowProcedures.Remove(key);
+        foreach (var key in _plwPrograms.Keys.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList())
+            _plwPrograms.Remove(key);
+    }
+
+    private SqlStoredProcedureDefinition ResolveProcedure(string procedureName, IReadOnlyList<SqlExecArgument> args)
+    {
+        lock (_metaSync)
+        {
+            if (!_procedures.TryGetValue(procedureName, out var overloads))
+                throw new WalhallaException($"Procedure '{procedureName}' not found.");
+
+            var candidates = new List<SqlStoredProcedureDefinition>(overloads);
+
+            // Map arguments to parameters and filter by availability / count.
+            var mappedCandidates = new List<(SqlStoredProcedureDefinition Proc, SqlScalarType?[] ArgTypes)>();
+            foreach (var proc in candidates)
+            {
+                if (TryMapArguments(proc, args, out var argTypes))
+                    mappedCandidates.Add((proc, argTypes));
+            }
+
+            if (mappedCandidates.Count == 0)
+                throw new WalhallaException($"Procedure '{procedureName}' hat keine passende Ueberladung fuer die angegebenen Argumente.");
+
+            if (mappedCandidates.Count == 1)
+                return mappedCandidates[0].Proc;
+
+            // Try to disambiguate using inferred argument types.
+            var exactMatches = mappedCandidates.Where(
+                m => m.ArgTypes.Zip(m.Proc.Parameters, (argType, param) =>
+                {
+                    if (argType == null) return true;
+                    return argType.Value == param.Type;
+                }).All(ok => ok)).ToList();
+
+            if (exactMatches.Count == 1)
+                return exactMatches[0].Proc;
+
+            if (exactMatches.Count > 1)
+            {
+                // Tie-Break: spezifischste Ueberladung bevorzugen (weniger Parameter,
+                // weniger fehlende optionale Parameter).
+                var ordered = exactMatches
+                    .OrderBy(m => m.Proc.Parameters.Count)
+                    .ThenBy(m => m.ArgTypes.Count(t => t == null))
+                    .ToList();
+
+                var best = ordered[0];
+                if (ordered.Count > 1)
+                {
+                    var second = ordered[1];
+                    var bestMissing = best.ArgTypes.Count(t => t == null);
+                    var secondMissing = second.ArgTypes.Count(t => t == null);
+                    if (second.Proc.Parameters.Count == best.Proc.Parameters.Count && secondMissing == bestMissing)
+                        throw new WalhallaException($"Procedure '{procedureName}' ist mehrdeutig fuer die angegebenen Argumente.");
+                }
+                return best.Proc;
+            }
+
+            throw new WalhallaException($"Procedure '{procedureName}' hat keine passende Ueberladung fuer die angegebenen Argumenttypen.");
+        }
+    }
+
+    private static bool TryMapArguments(
+        SqlStoredProcedureDefinition proc,
+        IReadOnlyList<SqlExecArgument> args,
+        out SqlScalarType?[] argTypes)
+    {
+        argTypes = new SqlScalarType?[proc.Parameters.Count];
+        var provided = new bool[proc.Parameters.Count];
+
+        // Named arguments first.
+        for (int i = 0; i < args.Count; i++)
+        {
+            var arg = args[i];
+            if (arg.ParameterName != null)
+            {
+                var paramIndex = proc.Parameters
+                    .Select((p, idx) => (p, idx))
+                    .FirstOrDefault(x => string.Equals(x.p.Name, arg.ParameterName, StringComparison.OrdinalIgnoreCase));
+                if (paramIndex.p == null)
+                    return false;
+                if (provided[paramIndex.idx])
+                    return false;
+                provided[paramIndex.idx] = true;
+                argTypes[paramIndex.idx] = InferArgumentType(arg.ValueExpression);
+            }
+        }
+
+        // Positional arguments fill remaining slots.
+        int positionalIndex = 0;
+        for (int i = 0; i < args.Count; i++)
+        {
+            var arg = args[i];
+            if (arg.ParameterName != null)
+                continue;
+
+            while (positionalIndex < proc.Parameters.Count && provided[positionalIndex])
+                positionalIndex++;
+
+            if (positionalIndex >= proc.Parameters.Count)
+                return false;
+
+            provided[positionalIndex] = true;
+            argTypes[positionalIndex] = InferArgumentType(arg.ValueExpression);
+            positionalIndex++;
+        }
+
+        // Ensure all required parameters are supplied. Output-Parameter und nullable
+        // Input-Parameter duerfen fehlen (werden spaeter mit NULL gebunden).
+        for (int i = 0; i < proc.Parameters.Count; i++)
+        {
+            if (provided[i])
+                continue;
+
+            var param = proc.Parameters[i];
+            if (param.HasDefaultValue)
+                continue;
+            if (param.Direction != SqlParameterDirection.In)
+                continue;
+            if (param.IsNullable)
+                continue;
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private static SqlScalarType? InferArgumentType(string valueExpression)
+    {
+        try
+        {
+            var expr = SqlWhereParser.ParseValueExpression(valueExpression);
+            return InferTypeFromValueExpression(expr);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static SqlScalarType? InferTypeFromValueExpression(SqlWhereValueExpression expr)
+    {
+        switch (expr)
+        {
+            case SqlWhereLiteralExpression literal:
+                return InferTypeFromLiteral(literal.Value);
+            case SqlWhereUnaryValueExpression unary when unary.Operator == SqlWhereUnaryOperator.Minus:
+                return InferTypeFromValueExpression(unary.Operand);
+            case SqlWhereCastExpression cast:
+                return cast.TargetType;
+            case SqlWhereParameterExpression param:
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    private static SqlScalarType? InferTypeFromLiteral(object? value)
+    {
+        if (value == null || value is DBNull) return null;
+        return value switch
+        {
+            int or uint or short or ushort or sbyte or byte => SqlScalarType.Int32,
+            long or ulong => SqlScalarType.Int64,
+            double or float or decimal => SqlScalarType.Double,
+            bool => SqlScalarType.Boolean,
+            string => SqlScalarType.String,
+            DateTime or DateTimeOffset or TimeSpan => SqlScalarType.DateTime,
+            Guid => SqlScalarType.Guid,
+            _ => null
+        };
+    }
+
+    private WalhallaResultSet ExecuteCreateFunction(SqlCreateFunctionStatement stmt)
+    {
+        EnsureSuperuser("CREATE FUNCTION");
+        if (!IsPlwProcedureLanguage(stmt.Language))
+            throw new WalhallaException($"LANGUAGE '{stmt.Language}' wird fuer skalare Funktionen nicht unterstuetzt. Verwenden Sie LANGUAGE plw.");
+
+        lock (_metaSync)
+        {
+            if (_scalarFunctions.ContainsKey(stmt.FunctionName) && !stmt.OrReplace)
+                throw new WalhallaException(
+                    $"Function '{stmt.FunctionName}' already exists. Use OR REPLACE to overwrite.");
+
+            var func = new SqlScalarFunctionDefinition(
+                stmt.FunctionName, stmt.Parameters, stmt.ReturnType, stmt.Body, stmt.Language);
+            _scalarFunctions[stmt.FunctionName] = func;
+            _plwScalarPrograms.Remove(stmt.FunctionName);
+        }
+        return WalhallaResultSet.Affected(0);
+    }
+
+    private WalhallaResultSet ExecuteDropFunction(SqlDropFunctionStatement stmt)
+    {
+        EnsureSuperuser("DROP FUNCTION");
+        lock (_metaSync)
+        {
+            if (!_scalarFunctions.Remove(stmt.FunctionName) && !stmt.IfExists)
+                throw new WalhallaException($"Function '{stmt.FunctionName}' not found.");
+            _plwScalarPrograms.Remove(stmt.FunctionName);
+        }
+        _grantCatalog.RevokeAllForObject(GrantObjectType.Procedure, stmt.FunctionName);
+        return WalhallaResultSet.Affected(0);
+    }
+
+    internal object? ExecuteScalarFunction(string functionName, IReadOnlyList<object?> argumentValues)
+    {
+        EnsureFunctionPrivilege(functionName, GrantPrivilege.Execute);
+
+        SqlScalarFunctionDefinition? func;
+        PlwProgram? program;
+        lock (_metaSync)
+        {
+            if (!_scalarFunctions.TryGetValue(functionName, out func))
+                throw new WalhallaException($"Function '{functionName}' not found.");
+            if (!_plwScalarPrograms.TryGetValue(functionName, out program))
+            {
+                program = WalhallaSql.Parsing.Plw.PlwParser.Parse(
+                    WalhallaSql.Parsing.Plw.PlwTokenizer.Tokenize(func.Body));
+                _plwScalarPrograms[functionName] = program;
+            }
+        }
+
+        var context = new PlwExecutionContext(_options);
+        return PlwInterpreter.ExecuteScalar(func, program, argumentValues, this, context);
+    }
+
+    private void EnsureFunctionPrivilege(string functionName, GrantPrivilege privilege)
+    {
+        if (!_authIdCatalog.TryGetRole(CurrentRole, out var role))
+            return;
+        if (role.IsSuperuser || _grantCatalog.HasPrivilege(CurrentRole, GrantObjectType.Procedure, functionName, privilege))
+            return;
+        throw new WalhallaException(
+            $"Role '{CurrentRole}' lacks {privilege} privilege on function '{functionName}'.");
+    }
+
     private WalhallaResultSet ExecuteExec(SqlExecStatement exec)
     {
         EnsureProcedurePrivilege(exec.ProcedureName, GrantPrivilege.Execute);
 
-        SqlStoredProcedureDefinition? proc;
-        lock (_metaSync)
-        {
-            if (!_procedures.TryGetValue(exec.ProcedureName, out proc))
-                throw new WalhallaException($"Procedure '{exec.ProcedureName}' not found.");
-        }
+        var proc = ResolveProcedure(exec.ProcedureName, exec.Arguments);
 
         if (IsCSharpProcedureLanguage(proc.Language))
         {
@@ -4853,6 +5166,13 @@ public sealed class WalhallaEngine : IDisposable
                 throw new WalhallaException(
                     $"Streaming C# procedure '{exec.ProcedureName}' must be executed via ExecuteStreamingExecAsync.");
             return ExecuteCSharpProcedure(proc, exec.Arguments);
+        }
+
+        if (IsPlwProcedureLanguage(proc.Language))
+        {
+            var program = GetOrParsePlwProgram(proc);
+            var context = new PlwExecutionContext(_options);
+            return PlwInterpreter.Execute(proc, program, exec.Arguments, this, context);
         }
 
         // Bind parameters into body text
@@ -4874,12 +5194,7 @@ public sealed class WalhallaEngine : IDisposable
     {
         EnsureProcedurePrivilege(procedureName, GrantPrivilege.Execute);
 
-        SqlStoredProcedureDefinition? proc;
-        lock (_metaSync)
-        {
-            if (!_procedures.TryGetValue(procedureName, out proc))
-                throw new WalhallaException($"Procedure '{procedureName}' not found.");
-        }
+        var proc = ResolveProcedure(procedureName, args);
 
         if (IsCSharpProcedureLanguage(proc.Language))
         {
@@ -4887,6 +5202,14 @@ public sealed class WalhallaEngine : IDisposable
                 return await ExecuteCSharpProcedureNativeStreamingAsync(proc, args, cancellationToken);
 
             return await ExecuteCSharpProcedureStreamingAsync(proc, args, cancellationToken);
+        }
+
+        if (IsPlwProcedureLanguage(proc.Language))
+        {
+            var program = GetOrParsePlwProgram(proc);
+            var context = new PlwExecutionContext(_options);
+            var plwResult = PlwInterpreter.Execute(proc, program, args, this, context);
+            return WalhallaResultSetToStream(plwResult);
         }
 
         var body = BindProcedureBody(proc, args);
@@ -4900,6 +5223,59 @@ public sealed class WalhallaEngine : IDisposable
 
     private static bool IsStreamingProcedureLanguage(string language)
         => string.Equals(language, "csharp-streaming", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPlwProcedureLanguage(string language)
+        => string.Equals(language, "plw", StringComparison.OrdinalIgnoreCase);
+
+    private PlwProgram GetOrParsePlwProgram(SqlStoredProcedureDefinition proc)
+    {
+        var signatureKey = GetProcedureSignatureKey(proc);
+        lock (_metaSync)
+        {
+            if (_plwPrograms.TryGetValue(signatureKey, out var cached))
+                return cached;
+        }
+
+        try
+        {
+            var tokens = WalhallaSql.Parsing.Plw.PlwTokenizer.Tokenize(proc.Body);
+            var program = WalhallaSql.Parsing.Plw.PlwParser.Parse(tokens);
+            lock (_metaSync)
+            {
+                _plwPrograms[signatureKey] = program;
+            }
+            return program;
+        }
+        catch (Exception ex) when (ex is not WalhallaException)
+        {
+            throw new WalhallaException($"PLW procedure '{proc.Name}': {ex.Message}", ex);
+        }
+    }
+
+    private PlwProgram GetOrParsePlwTriggerProgram(SqlTriggerDefinition trigger)
+    {
+        var cacheKey = $"{trigger.TableName}.{trigger.Name}";
+        lock (_metaSync)
+        {
+            if (_plwTriggerPrograms.TryGetValue(cacheKey, out var cached))
+                return cached;
+        }
+
+        try
+        {
+            var tokens = WalhallaSql.Parsing.Plw.PlwTokenizer.Tokenize(trigger.Body);
+            var program = WalhallaSql.Parsing.Plw.PlwParser.Parse(tokens);
+            lock (_metaSync)
+            {
+                _plwTriggerPrograms[cacheKey] = program;
+            }
+            return program;
+        }
+        catch (Exception ex) when (ex is not WalhallaException)
+        {
+            throw new WalhallaException($"PLW trigger '{trigger.Name}' on '{trigger.TableName}': {ex.Message}", ex);
+        }
+    }
 
     private WalhallaResultSet ExecuteCSharpProcedure(
         SqlStoredProcedureDefinition proc,
@@ -5001,11 +5377,12 @@ public sealed class WalhallaEngine : IDisposable
         Func<SqlNativeProcedureContext, WalhallaResultSet>? compiled;
         Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>? compiledStreaming;
         Func<SqlNativeProcedureContext, CancellationToken, IAsyncEnumerable<WalhallaRow>>? compiledStreamingRows;
+        var signatureKey = GetProcedureSignatureKey(proc);
         lock (_metaSync)
         {
-            _compiledProcedures.TryGetValue(proc.Name, out compiled);
-            _compiledStreamingProcedures.TryGetValue(proc.Name, out compiledStreaming);
-            _compiledStreamingRowProcedures.TryGetValue(proc.Name, out compiledStreamingRows);
+            _compiledProcedures.TryGetValue(signatureKey, out compiled);
+            _compiledStreamingProcedures.TryGetValue(signatureKey, out compiledStreaming);
+            _compiledStreamingRowProcedures.TryGetValue(signatureKey, out compiledStreamingRows);
         }
 
         if (compiled == null || compiledStreaming == null || compiledStreamingRows == null)
@@ -5025,11 +5402,11 @@ public sealed class WalhallaEngine : IDisposable
             lock (_metaSync)
             {
                 if (compiled != null)
-                    _compiledProcedures[proc.Name] = compiled;
+                    _compiledProcedures[signatureKey] = compiled;
                 if (compiledStreaming != null)
-                    _compiledStreamingProcedures[proc.Name] = compiledStreaming;
+                    _compiledStreamingProcedures[signatureKey] = compiledStreaming;
                 if (compiledStreamingRows != null)
-                    _compiledStreamingRowProcedures[proc.Name] = compiledStreamingRows;
+                    _compiledStreamingRowProcedures[signatureKey] = compiledStreamingRows;
             }
         }
 
@@ -5353,7 +5730,8 @@ public sealed class WalhallaEngine : IDisposable
             }
 
             list.Add(new SqlTriggerDefinition(
-                stmt.TriggerName, stmt.TableName, stmt.Event, stmt.Timing, stmt.Body));
+                stmt.TriggerName, stmt.TableName, stmt.Event, stmt.Timing, stmt.Body,
+                Language: stmt.Language));
         }
         return WalhallaResultSet.Affected(0);
     }
@@ -5407,7 +5785,7 @@ public sealed class WalhallaEngine : IDisposable
     }
 
     private void FireTriggers(string tableName, SqlTriggerEvent evt, SqlTriggerTiming timing,
-        IReadOnlyList<object?[]>? insertedRows = null, IReadOnlyList<object?[]>? deletedRows = null)
+        List<object?[]>? insertedRows = null, List<object?[]>? deletedRows = null)
     {
         SqlTriggerDefinition[] snapshot;
         lock (_metaSync)
@@ -5446,11 +5824,18 @@ public sealed class WalhallaEngine : IDisposable
                     transitionTables["DELETED"] = deletedName;
                 }
 
-                var body = transitionTables.Count > 0
-                    ? ReplaceTransitionTableNames(trigger.Body, transitionTables)
-                    : trigger.Body;
+                if (IsPlwProcedureLanguage(trigger.Language))
+                {
+                    ExecutePlwTrigger(trigger, insertedRows, deletedRows);
+                }
+                else
+                {
+                    var body = transitionTables.Count > 0
+                        ? ReplaceTransitionTableNames(trigger.Body, transitionTables)
+                        : trigger.Body;
 
-                ExecuteProcedureBody(body);
+                    ExecuteProcedureBody(body);
+                }
             }
             finally
             {
@@ -5459,6 +5844,82 @@ public sealed class WalhallaEngine : IDisposable
                 _triggerDepth--;
             }
         }
+    }
+
+    private void ExecutePlwTrigger(
+        SqlTriggerDefinition trigger,
+        List<object?[]>? insertedRows,
+        List<object?[]>? deletedRows)
+    {
+        var tableDef = _store.GetTableDefinition(trigger.TableName);
+        var program = GetOrParsePlwTriggerProgram(trigger);
+        var context = new PlwExecutionContext(_options);
+
+        if (trigger.Event == SqlTriggerEvent.Insert)
+        {
+            var rows = insertedRows ?? new List<object?[]>();
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                var newRow = BuildTriggerRow(row, tableDef);
+                PlwInterpreter.ExecuteTrigger(trigger, program, this, context, newRow, null);
+                if (trigger.Timing == SqlTriggerTiming.Before)
+                    CopyTriggerRowBack(newRow, row, tableDef);
+            }
+        }
+        else if (trigger.Event == SqlTriggerEvent.Delete)
+        {
+            var rows = deletedRows ?? new List<object?[]>();
+            foreach (var row in rows)
+            {
+                var oldRow = BuildTriggerRow(row, tableDef);
+                PlwInterpreter.ExecuteTrigger(trigger, program, this, context, null, oldRow);
+            }
+        }
+        else if (trigger.Event == SqlTriggerEvent.Update)
+        {
+            var newRows = insertedRows ?? new List<object?[]>();
+            var oldRows = deletedRows ?? new List<object?[]>();
+            for (int i = 0; i < Math.Max(newRows.Count, oldRows.Count); i++)
+            {
+                var newRow = i < newRows.Count ? BuildTriggerRow(newRows[i], tableDef) : null;
+                var oldRow = i < oldRows.Count ? BuildTriggerRow(oldRows[i], tableDef) : null;
+                PlwInterpreter.ExecuteTrigger(trigger, program, this, context, newRow, oldRow);
+                if (trigger.Timing == SqlTriggerTiming.Before && newRow != null && i < newRows.Count)
+                    CopyTriggerRowBack(newRow, newRows[i], tableDef);
+            }
+        }
+        else if (trigger.Event == SqlTriggerEvent.Truncate)
+        {
+            PlwInterpreter.ExecuteTrigger(trigger, program, this, context, null, null);
+        }
+    }
+
+    private static void CopyTriggerRowBack(Dictionary<string, object?> source, object?[] target, SqlTableDefinition? tableDef)
+    {
+        if (tableDef == null)
+            return;
+        for (int i = 0; i < tableDef.Columns.Count && i < target.Length; i++)
+        {
+            if (source.TryGetValue(tableDef.Columns[i].Name, out var value))
+                target[i] = value;
+        }
+    }
+
+    private static Dictionary<string, object?> BuildTriggerRow(object?[] row, SqlTableDefinition? tableDef)
+    {
+        var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (tableDef != null)
+        {
+            for (int i = 0; i < Math.Min(row.Length, tableDef.Columns.Count); i++)
+                dict[tableDef.Columns[i].Name] = row[i];
+        }
+        else
+        {
+            for (int i = 0; i < row.Length; i++)
+                dict[$"column{i}"] = row[i];
+        }
+        return dict;
     }
 
     private void CreateTransitionTable(string actualName, SqlTableDefinition sourceDef,
@@ -5919,7 +6380,7 @@ public sealed class WalhallaEngine : IDisposable
 
         EnsureTablePrivilege(select.TableName, GrantPrivilege.Select);
 
-        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
 
         if (!plan.IsStreamable)
             throw new WalhallaException(
@@ -5965,7 +6426,7 @@ public sealed class WalhallaEngine : IDisposable
             return Task.FromException<WalhallaStreamResult>(ex);
         }
 
-        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
 
         if (!plan.IsStreamable)
             return Task.FromException<WalhallaStreamResult>(

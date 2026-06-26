@@ -79,6 +79,21 @@ using var connection = tunnel.CreateOpenConnection();
 // ... use connection as normal ADO.NET connection
 ```
 
+## Stored Procedures (PLW)
+
+ADO.NET supports `LANGUAGE plw` procedures with `IN`, `OUT`, and `INOUT`
+parameters, as well as `RETURN QUERY` result sets:
+
+```csharp
+using var cmd = connection.CreateCommand();
+cmd.CommandText = "EXEC get_customer_name @p_id = @id, @p_name = @name OUTPUT";
+// add parameters ...
+cmd.ExecuteNonQuery();
+```
+
+See the [PLW README](../PLW-README.md) and
+[PLW Examples](../docs/plw/ado-net-and-pgwire-examples.md) for full samples.
+
 ## Connection String Keywords
 
 | Keyword | Description | Example |
@@ -92,4 +107,6 @@ using var connection = tunnel.CreateOpenConnection();
 ## Documentation
 
 - [Migration Guide — SQLite → WalhallaSql](../docs/migration/from-sqlite.md)
+- [PLW README](../PLW-README.md)
+- [PLW Examples — ADO.NET, Dapper, PgWire](../docs/plw/ado-net-and-pgwire-examples.md)
 - [API Surface v1](../docs/api/v1-surface.md)

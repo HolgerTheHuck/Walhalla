@@ -58,6 +58,17 @@ public interface IPgWireBackendConnection : IDisposable
     IReadOnlyList<(string Name, Type ClrType)>? TryDescribeQuery(string sql);
 
     /// <summary>
+    /// Describe the result columns of a stored-procedure call without executing it if possible.
+    /// The returned schema covers either the first result set (e.g. RETURN QUERY) or,
+    /// for procedures without result sets, the output parameters. Return null to fall back
+    /// to executing the call.
+    /// </summary>
+    IReadOnlyList<(string Name, Type ClrType)>? TryDescribeProcedure(string sql)
+    {
+        return null;
+    }
+
+    /// <summary>
     /// Attempts to retrieve the stored SCRAM-SHA-256 hash for a user.
     /// Return false if the user does not exist, is not allowed to login, or auth is not configured.
     /// </summary>
@@ -110,6 +121,12 @@ public interface IPgWireBackendReader : IDisposable
     bool Read();
     bool IsDBNull(int i);
     object GetValue(int i);
+
+    /// <summary>
+    /// Output parameters returned by a stored-procedure call (e.g. PLW OUT/INOUT).
+    /// Empty for ordinary SELECT/row-returning statements.
+    /// </summary>
+    IReadOnlyDictionary<string, object?> OutputParameters { get; }
 }
 
 public interface IPgWireBackendTransaction : IDisposable

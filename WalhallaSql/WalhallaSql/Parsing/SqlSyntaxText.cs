@@ -75,8 +75,8 @@ internal static class SqlSyntaxText
 
             if (!inString)
             {
-                if (c == '(') depth++;
-                else if (c == ')') depth--;
+                if (c == '(' || c == '[') depth++;
+                else if (c == ')' || c == ']') depth--;
                 else if (c == separator && depth == 0)
                 {
                     var part = text.Slice(start, i - start).Trim();

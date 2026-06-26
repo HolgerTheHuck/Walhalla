@@ -1042,7 +1042,20 @@ public sealed class WalhallaSqlDbCommand : DbCommand
             ? rewrittenSql
             : CommandText;
 
-        _outputParameterMappings = outputMappings;
+        // EXEC/EXECUTE mit Output-Parametern: formale Argumentnamen (links von '=')
+        // muessen auf die tatsaechlichen ADO.NET-Parameternamen (rechts von '=')
+        // abgebildet werden, damit Output-Parameter zurueckgeschrieben werden koennen.
+        var execMappings = TryExtractExecParameterMappings(effectiveCommandText, orderedParameters);
+        if (execMappings.Count > 0)
+        {
+            var combined = new List<OutputParameterMapping>(outputMappings);
+            combined.AddRange(execMappings);
+            _outputParameterMappings = combined;
+        }
+        else
+        {
+            _outputParameterMappings = outputMappings;
+        }
 
         ValidateParameters(effectiveCommandText);
 
@@ -1225,18 +1238,18 @@ public sealed class WalhallaSqlDbCommand : DbCommand
                     nameEnd++;
 
                 var parameterName = commandText.Substring(nameStart, nameEnd - nameStart);
-                if (!parameterMap.TryGetValue(parameterName, out var parameter))
-                    throw new InvalidOperationException($"Missing value for SQL parameter '{current}{parameterName}'.");
 
                 // Prozedurargument-Name links des '=' (z. B. EXEC Proc @id = @id)
-                // muss erhalten bleiben; nur der Wert-Parameter rechts des '=' wird
-                // durch einen strukturierten Parameter ersetzt.
-                if (IsFollowedByAssignment(commandText, nameEnd))
+                // muss erhalten bleiben; es handelt sich nicht um einen ADO.NET-Parameter.
+                if (IsExecStatement(commandText) && IsFollowedByAssignment(commandText, nameEnd))
                 {
                     builder.Append(current).Append(parameterName);
                     index = nameEnd - 1;
                     continue;
                 }
+
+                if (!parameterMap.TryGetValue(parameterName, out var parameter))
+                    throw new InvalidOperationException($"Missing value for SQL parameter '{current}{parameterName}'.");
 
                 var normalizedName = NormalizeParameterName(parameter.ParameterName);
                 if (!generatedNames.TryGetValue(normalizedName, out var generatedName))
@@ -1267,6 +1280,131 @@ public sealed class WalhallaSqlDbCommand : DbCommand
         }
 
         return new SqlClientCommand(NormalizeExecutionSql(builder.ToString()), DbTransaction != null, structuredParameters);
+    }
+
+    private static IReadOnlyList<OutputParameterMapping> TryExtractExecParameterMappings(
+        string sql,
+        IReadOnlyList<DbParameter> parameters)
+    {
+        var trimmed = sql.AsSpan().TrimStart();
+        if (!trimmed.StartsWith("EXEC", StringComparison.OrdinalIgnoreCase)
+            && !trimmed.StartsWith("EXECUTE", StringComparison.OrdinalIgnoreCase))
+        {
+            return Array.Empty<OutputParameterMapping>();
+        }
+
+        var parameterMap = BuildNamedParameterMap(parameters);
+        var text = sql.Trim();
+        var mappings = new List<OutputParameterMapping>();
+        var inSingleQuotedLiteral = false;
+        var index = 0;
+
+        // Wir suchen nach '@formal = @value [OUTPUT|OUT]' Mustern.
+        while (index < text.Length)
+        {
+            var current = text[index];
+
+            if (current == '\'')
+            {
+                if (inSingleQuotedLiteral && index + 1 < text.Length && text[index + 1] == '\'')
+                {
+                    index += 2;
+                    continue;
+                }
+
+                inSingleQuotedLiteral = !inSingleQuotedLiteral;
+                index++;
+                continue;
+            }
+
+            if (inSingleQuotedLiteral)
+            {
+                index++;
+                continue;
+            }
+
+            if ((current == '@' || current == ':')
+                && IsParameterNameStart(text, index + 1)
+                && !(current == ':' && index > 0 && text[index - 1] == ':'))
+            {
+                var nameStart = index + 1;
+                var nameEnd = nameStart;
+                while (nameEnd < text.Length && IsParameterNamePart(text[nameEnd]))
+                    nameEnd++;
+
+                var formalName = text.Substring(nameStart, nameEnd - nameStart);
+
+                if (IsFollowedByAssignment(text, nameEnd))
+                {
+                    // Ueberspringe '=' und optionale Leerzeichen.
+                    var valueIndex = nameEnd;
+                    while (valueIndex < text.Length && char.IsWhiteSpace(text[valueIndex]))
+                        valueIndex++;
+                    valueIndex++; // '='
+                    while (valueIndex < text.Length && char.IsWhiteSpace(text[valueIndex]))
+                        valueIndex++;
+
+                    if (valueIndex < text.Length
+                        && (text[valueIndex] == '@' || text[valueIndex] == ':')
+                        && IsParameterNameStart(text, valueIndex + 1))
+                    {
+                        var paramStart = valueIndex + 1;
+                        var paramEnd = paramStart;
+                        while (paramEnd < text.Length && IsParameterNamePart(text[paramEnd]))
+                            paramEnd++;
+
+                        var adoNetName = text.Substring(paramStart, paramEnd - paramStart);
+
+                        // Nur formale Argumente, die tatsaechlich Output sind,
+                        // werden fuer das Rueckschreiben gemappt.
+                        var isOutput = IsFollowedByOutputKeyword(text, paramEnd)
+                            || (parameterMap.TryGetValue(adoNetName, out var parameter)
+                                && (parameter.Direction == ParameterDirection.Output
+                                    || parameter.Direction == ParameterDirection.InputOutput));
+
+                        if (isOutput)
+                            mappings.Add(new OutputParameterMapping(adoNetName, formalName));
+
+                        index = paramEnd;
+                        continue;
+                    }
+                }
+
+                index = nameEnd;
+                continue;
+            }
+
+            index++;
+        }
+
+        return mappings;
+    }
+
+    private static bool IsFollowedByOutputKeyword(string sql, int index)
+    {
+        while (index < sql.Length && char.IsWhiteSpace(sql[index]))
+            index++;
+
+        if (index >= sql.Length)
+            return false;
+
+        if (sql[index] != 'O' && sql[index] != 'o')
+            return false;
+
+        var remaining = sql.AsSpan(index);
+        if (remaining.StartsWith("OUTPUT", StringComparison.OrdinalIgnoreCase))
+        {
+            var after = remaining["OUTPUT".Length..];
+            return after.IsEmpty || char.IsWhiteSpace(after[0]) || after[0] == ',' || after[0] == ';';
+        }
+
+        if (remaining.StartsWith("OUT", StringComparison.OrdinalIgnoreCase))
+        {
+            var after = remaining["OUT".Length..];
+            return after.IsEmpty || char.IsWhiteSpace(after[0]) || after[0] == ',' || after[0] == ';';
+        }
+
+        return false;
     }
 
     private static bool TryExecuteBooleanScalarQuery(WalhallaSqlDbConnection executionConnection, string sql, bool hasExternalTransaction, out SqlExecutionResult result)
@@ -1858,14 +1996,25 @@ public sealed class WalhallaSqlDbCommand : DbCommand
             }
         }
 
-        // 2) Output-Parameter aus Stored-Procedure-Ausführung (C#-SP via ctx.SetOutput)
-        // in die passenden DbParameter zurückschreiben.
+        // 2) Output-Parameter aus Stored-Procedure-Ausführung (C#-SP via ctx.SetOutput
+        // oder PLW-Interpreter) in die passenden DbParameter zurueckschreiben.
+        // Dabei werden formale Prozedurargumentnamen (z. B. '@o_name') auf die
+        // tatsaechlichen ADO.NET-Parameternamen abgebildet, die im EXEC-Aufruf
+        // rechts von '=' stehen.
         if (result.OutputParameters != null && result.OutputParameters.Count > 0)
         {
+            var execMappings = _outputParameterMappings
+                .Where(m => !string.IsNullOrWhiteSpace(m.ParameterName))
+                .ToDictionary(m => m.ColumnAlias, m => m.ParameterName, StringComparer.OrdinalIgnoreCase);
+
             foreach (var (name, value) in result.OutputParameters)
             {
                 var normalized = NormalizeParameterName(name);
-                if (parameterMap.TryGetValue(normalized, out var parameter))
+                var targetParameterName = execMappings.TryGetValue(normalized, out var mappedName)
+                    ? mappedName
+                    : normalized;
+
+                if (targetParameterName != null && parameterMap.TryGetValue(targetParameterName, out var parameter))
                 {
                     parameter.Value = value ?? DBNull.Value;
                 }
@@ -1926,6 +2075,15 @@ public sealed class WalhallaSqlDbCommand : DbCommand
                     nameEnd++;
 
                 var parameterName = sql.Substring(nameStart, nameEnd - nameStart);
+
+                // In EXEC/EXECUTE-Anweisungen sind @-Token links des '=' formale
+                // Prozedurargumentnamen und keine ADO.NET-Parameter.
+                if (IsExecStatement(sql) && IsFollowedByAssignment(sql, nameEnd))
+                {
+                    index = nameEnd - 1;
+                    continue;
+                }
+
                 if (!parameterMap.ContainsKey(parameterName))
                     throw new InvalidOperationException($"Missing value for SQL parameter '{current}{parameterName}'.");
 
@@ -2054,6 +2212,16 @@ public sealed class WalhallaSqlDbCommand : DbCommand
                 if (!parameterMap.TryGetValue(parameterName, out var parameter))
                     throw new InvalidOperationException($"Missing value for SQL parameter '{current}{parameterName}'.");
 
+                // In EXEC/EXECUTE-Anweisungen sind @-Token links des '=' formale
+                // Prozedurargumentnamen und duerfen nicht durch Literale ersetzt
+                // werden (z. B. EXEC GetName @o_name = @name OUTPUT).
+                if (IsExecStatement(sql) && IsFollowedByAssignment(sql, nameEnd))
+                {
+                    builder.Append(current).Append(parameterName);
+                    index = nameEnd - 1;
+                    continue;
+                }
+
                 builder.Append(ToLiteral(parameter.Value));
                 index = nameEnd - 1;
                 continue;
@@ -2121,7 +2289,30 @@ public sealed class WalhallaSqlDbCommand : DbCommand
     {
         while (index < sql.Length && char.IsWhiteSpace(sql[index]))
             index++;
-        return index < sql.Length && sql[index] == '=';
+
+        if (index >= sql.Length || sql[index] != '=')
+            return false;
+
+        // Keine Zuweisung, wenn '=' Teil eines Vergleichsoperators (==) ist.
+        return index + 1 >= sql.Length || sql[index + 1] != '=';
+    }
+
+    private static bool IsExecStatement(string sql)
+    {
+        var trimmed = sql.AsSpan().TrimStart();
+        if (trimmed.StartsWith("EXEC", StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = trimmed["EXEC".Length..];
+            return rest.IsEmpty || char.IsWhiteSpace(rest[0]) || rest[0] == '(';
+        }
+
+        if (trimmed.StartsWith("EXECUTE", StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = trimmed["EXECUTE".Length..];
+            return rest.IsEmpty || char.IsWhiteSpace(rest[0]) || rest[0] == '(';
+        }
+
+        return false;
     }
 
     private static string ToLiteral(object? value)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using WalhallaSql;
+using WalhallaSql.Parsing;
 using WalhallaSql.Sql;
 using WalhallaSql.Statistics;
 
@@ -138,6 +139,38 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
     {
         if (values.Length == 0) return null;
         return "{" + string.Join(",", values.Select(v => v?.ToString() ?? "")) + "}";
+    }
+
+    public IReadOnlyList<(string Name, Type ClrType)>? TryDescribeProcedure(string sql)
+    {
+        try
+        {
+            var result = _engine.Execute(sql);
+
+            if (result.OutputParameters.Count > 0)
+            {
+                return result.OutputParameters
+                    .Select(p => (p.Key, p.Value?.GetType() ?? typeof(string)))
+                    .ToArray();
+            }
+
+            if (result.ColumnNames.Count > 0)
+            {
+                return result.ColumnNames
+                    .Select(name => (name, result.Rows.Count > 0
+                        && result.Rows[0].TryGetValue(name, out var v)
+                        && v != null
+                            ? v.GetType()
+                            : typeof(string)))
+                    .ToArray();
+            }
+        }
+        catch
+        {
+            // Fall back to execution-time discovery.
+        }
+
+        return null;
     }
 
     public IReadOnlyList<(string Name, Type ClrType)>? TryDescribeQuery(string sql)
@@ -302,6 +335,7 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
     {
         private readonly WalhallaEngine _engine;
         private WalhallaSqlTransaction? _tx;
+        private IReadOnlyDictionary<string, object?>? _outputParameters;
 
         public WalhallaBackendCommand(WalhallaEngine engine)
         {
@@ -319,8 +353,25 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
             }
         }
 
+        /// <summary>
+        /// Output-Parameter des letzten Aufrufs (nur bei EXEC/CALL relevant).
+        /// </summary>
+        public IReadOnlyDictionary<string, object?> OutputParameters
+            => _outputParameters ?? new Dictionary<string, object?>();
+
         public IPgWireBackendReader ExecuteReader()
         {
+            // Prozeduraufrufe werden nicht ueber den Streaming-Pfad ausgefuehrt,
+            // damit Output-Parameter erhalten bleiben.
+            if (IsProcedureCall(CommandText))
+            {
+                var result = _tx != null
+                    ? _engine.Execute(CommandText, _tx)
+                    : _engine.Execute(CommandText);
+                _outputParameters = result.OutputParameters;
+                return new WalhallaBackendReader(result);
+            }
+
             try
             {
                 var streamResult = _tx != null
@@ -333,6 +384,7 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
                 var result = _tx != null
                     ? _engine.Execute(CommandText, _tx)
                     : _engine.Execute(CommandText);
+                _outputParameters = result.OutputParameters;
                 return new WalhallaBackendReader(result);
             }
         }
@@ -342,10 +394,18 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
             var result = _tx != null
                 ? _engine.Execute(CommandText, _tx)
                 : _engine.Execute(CommandText);
+            _outputParameters = result.OutputParameters;
             return result.AffectedRows;
         }
 
         public void Dispose() { }
+
+        private static bool IsProcedureCall(string sql)
+        {
+            return SqlSyntaxText.StartsWithKeyword(sql, "EXEC")
+                || SqlSyntaxText.StartsWithKeyword(sql, "EXECUTE")
+                || SqlSyntaxText.StartsWithKeyword(sql, "CALL");
+        }
     }
 
     internal sealed class WalhallaBackendReader : IPgWireBackendReader
@@ -427,6 +487,9 @@ public sealed class WalhallaSqlPgWireBackend : IPgWireBackendConnection
 
             return _result!.Rows[_rowIndex].GetValue(i) ?? DBNull.Value;
         }
+
+        public IReadOnlyDictionary<string, object?> OutputParameters
+            => _result?.OutputParameters ?? new Dictionary<string, object?>();
 
         public void Dispose()
         {

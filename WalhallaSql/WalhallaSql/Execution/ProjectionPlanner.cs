@@ -15,7 +15,8 @@ internal static class ProjectionPlanner
     // fresh cache without explicit invalidation.
     private static readonly ConditionalWeakTable<SqlTableDefinition, Dictionary<string, int>> _columnIndexCache = new();
 
-    public static ProjectionPlan Build(IReadOnlyList<SqlSelectColumn> columns, SqlTableDefinition table)
+    public static ProjectionPlan Build(IReadOnlyList<SqlSelectColumn> columns, SqlTableDefinition table,
+        Func<string, IReadOnlyList<object?>, object?>? scalarFunctionInvoker = null)
     {
         if (columns.Count == 1 && columns[0].Expression == "*")
         {
@@ -76,7 +77,7 @@ internal static class ProjectionPlanner
                     try
                     {
                         var valueExpr = SqlWhereParser.ParseValueExpression(sourceName);
-                        evaluator = WhereCompiler.CompileValue(valueExpr, table);
+                        evaluator = WhereCompiler.CompileValue(valueExpr, table, scalarFunctionInvoker);
                     }
                     catch
                     {
