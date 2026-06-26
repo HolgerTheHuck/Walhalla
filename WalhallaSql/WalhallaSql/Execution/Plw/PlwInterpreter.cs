@@ -88,8 +88,8 @@ internal sealed class PlwInterpreter
         PlwProgram program,
         WalhallaEngine engine,
         PlwExecutionContext context,
-        object? newRow,
-        object? oldRow)
+        IDictionary<string, object?>? newRow,
+        IDictionary<string, object?>? oldRow)
     {
         var env = new PlwEnvironment();
         var evaluator = new PlwExpressionEvaluator();

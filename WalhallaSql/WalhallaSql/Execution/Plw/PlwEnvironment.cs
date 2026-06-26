@@ -28,8 +28,8 @@ internal sealed class PlwEnvironment
     private bool _found;
     private string _sqlState = "00000";
     private string _sqlErrm = string.Empty;
-    private object? _triggerNewRow;
-    private object? _triggerOldRow;
+    private IDictionary<string, object?>? _triggerNewRow;
+    private IDictionary<string, object?>? _triggerOldRow;
     private string _triggerOperation = string.Empty;
     private string _triggerTableName = string.Empty;
     private string _triggerWhen = string.Empty;
@@ -47,8 +47,8 @@ internal sealed class PlwEnvironment
     /// Wird von PlwInterpreter.ExecuteTrigger vor dem Body aufgerufen.
     /// </summary>
     public void SetTriggerContext(
-        object? newRow,
-        object? oldRow,
+        IDictionary<string, object?>? newRow,
+        IDictionary<string, object?>? oldRow,
         string operation,
         string tableName,
         string when,
@@ -64,6 +64,9 @@ internal sealed class PlwEnvironment
         if (_parent != null)
             _parent.SetTriggerContext(newRow, oldRow, operation, tableName, when, triggerName);
     }
+
+    public IDictionary<string, object?>? GetTriggerNewRow() => _triggerNewRow;
+    public IDictionary<string, object?>? GetTriggerOldRow() => _triggerOldRow;
 
     public void Declare(string name, string typeName, object? value, bool allowOverwrite = false)
     {

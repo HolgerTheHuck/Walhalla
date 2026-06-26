@@ -1071,4 +1071,48 @@ public sealed class PlwExecutionTests
         var result = engine.Execute("EXEC ConcatDemo @o_result = NULL OUTPUT");
         Assert.Equal("Hello World", result.OutputParameters["o_result"]);
     }
+
+    [Fact]
+    public void Plw_Before_Insert_Modifies_New()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE audit_items (id INT PRIMARY KEY, name STRING, created_at DATETIME)");
+        engine.Execute("""
+            CREATE OR REPLACE TRIGGER trg_set_created_at
+            ON audit_items BEFORE INSERT LANGUAGE plw
+            AS
+            BEGIN
+                NEW.created_at := NOW();
+            END;
+            """);
+
+        engine.Execute("INSERT INTO audit_items (id, name) VALUES (1, 'test')");
+        var result = engine.Execute("SELECT id, name, created_at FROM audit_items WHERE id = 1");
+        Assert.Single(result.Rows);
+        Assert.NotNull(result.Rows[0]["created_at"]);
+    }
+
+    [Fact]
+    public void Plw_Truncate_Trigger_Fires()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE trunc_log (id INT PRIMARY KEY, msg STRING)");
+        engine.Execute("CREATE TABLE trunc_test (id INT PRIMARY KEY, name STRING)");
+        engine.Execute("""
+            CREATE OR REPLACE TRIGGER trg_trunc_audit
+            ON trunc_test BEFORE TRUNCATE LANGUAGE plw
+            AS
+            BEGIN
+                INSERT INTO trunc_log (id, msg) VALUES (1, 'truncated');
+            END;
+            """);
+
+        engine.Execute("TRUNCATE TABLE trunc_test");
+
+        var result = engine.Execute("SELECT msg FROM trunc_log");
+        Assert.Single(result.Rows);
+        Assert.Equal("truncated", result.Rows[0]["msg"]);
+    }
 }

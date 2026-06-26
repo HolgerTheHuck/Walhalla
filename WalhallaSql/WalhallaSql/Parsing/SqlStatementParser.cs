@@ -2722,6 +2722,21 @@ internal static class SqlStatementParser
             evt = SqlTriggerEvent.Delete;
             remaining = remaining["DELETE".Length..].TrimStart();
         }
+        else if (remaining.StartsWith("TRUNCATE", StringComparison.OrdinalIgnoreCase))
+        {
+            evt = SqlTriggerEvent.Truncate;
+            remaining = remaining["TRUNCATE".Length..].TrimStart();
+        }
+
+        // Optional: FOR EACH ROW / FOR EACH STATEMENT
+        if (remaining.StartsWith("FOR EACH", StringComparison.OrdinalIgnoreCase))
+        {
+            remaining = remaining["FOR EACH".Length..].TrimStart();
+            if (remaining.StartsWith("ROW", StringComparison.OrdinalIgnoreCase))
+                remaining = remaining["ROW".Length..].TrimStart();
+            else if (remaining.StartsWith("STATEMENT", StringComparison.OrdinalIgnoreCase))
+                remaining = remaining["STATEMENT".Length..].TrimStart();
+        }
 
         // Optional: LANGUAGE <lang> vor dem Body
         var language = "sql";

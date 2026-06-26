@@ -157,7 +157,7 @@ public sealed record SqlDropViewStatement(
 
 // ── Stored Procedures & Triggers ──────────────────────────────────────────────
 
-public enum SqlTriggerEvent { Insert, Update, Delete }
+public enum SqlTriggerEvent { Insert, Update, Delete, Truncate }
 
 public enum SqlTriggerTiming { Before, After, InsteadOf }
 
