@@ -84,15 +84,51 @@ internal static class PlwParser
 
         reader.Expect(PlwTokenKind.Begin);
         var body = new List<PlwNode>();
-        while (reader.Current.Kind != PlwTokenKind.End && reader.Current.Kind != PlwTokenKind.Eof)
+        while (reader.Current.Kind != PlwTokenKind.End
+               && reader.Current.Kind != PlwTokenKind.Exception
+               && reader.Current.Kind != PlwTokenKind.Eof)
         {
             body.Add(ParseStatement(ref reader));
         }
+
+        var handlers = new List<PlwExceptionHandler>();
+        if (reader.Current.Kind == PlwTokenKind.Exception)
+        {
+            reader.Advance(); // EXCEPTION
+            while (reader.Current.Kind == PlwTokenKind.When)
+            {
+                reader.Advance(); // WHEN
+                var condition = ParseExceptionCondition(ref reader);
+                reader.Expect(PlwTokenKind.Then);
+                var handlerBody = ParseStatementListUntil(PlwTokenKind.When, PlwTokenKind.End, ref reader);
+                handlers.Add(new PlwExceptionHandler(condition, handlerBody));
+            }
+        }
+
         reader.Expect(PlwTokenKind.End);
         if (reader.Current.Kind == PlwTokenKind.Semicolon)
             reader.Advance();
 
-        return new PlwBlock(declarations, body);
+        return new PlwBlock(declarations, body, handlers);
+    }
+
+    private static string ParseExceptionCondition(ref TokenReader reader)
+    {
+        // Erlaubt: OTHERS, identifier (z. B. division_by_zero), String-Literal (SQLSTATE)
+        if (reader.Current.Kind == PlwTokenKind.Others)
+        {
+            reader.Advance();
+            return "OTHERS";
+        }
+
+        if (reader.Current.Kind == PlwTokenKind.String)
+        {
+            var text = reader.Current.Text;
+            reader.Advance();
+            return text;
+        }
+
+        return reader.Expect(PlwTokenKind.Identifier).Text;
     }
 
     private static PlwNode? ParseVariableDeclaration(ref TokenReader reader)
@@ -171,7 +207,7 @@ internal static class PlwParser
         {
             stmts.Add(ParseStatement(ref reader));
         }
-        return stmts.Count == 1 ? stmts[0] : new PlwBlock(System.Array.Empty<PlwVariableDeclaration>(), stmts);
+        return stmts.Count == 1 ? stmts[0] : new PlwBlock(System.Array.Empty<PlwNode>(), stmts);
     }
 
     private static PlwIf ParseIf(ref TokenReader reader)
@@ -210,7 +246,7 @@ internal static class PlwParser
         {
             stmts.Add(ParseStatement(ref reader));
         }
-        return stmts.Count == 1 ? stmts[0] : new PlwBlock(System.Array.Empty<PlwVariableDeclaration>(), stmts);
+        return stmts.Count == 1 ? stmts[0] : new PlwBlock(System.Array.Empty<PlwNode>(), stmts);
     }
 
     private static PlwNode ParseStatementListUntil(PlwTokenKind terminator, PlwTokenKind alt1, PlwTokenKind alt2, ref TokenReader reader)
@@ -220,7 +256,17 @@ internal static class PlwParser
         {
             stmts.Add(ParseStatement(ref reader));
         }
-        return stmts.Count == 1 ? stmts[0] : new PlwBlock(System.Array.Empty<PlwVariableDeclaration>(), stmts);
+        return stmts.Count == 1 ? stmts[0] : new PlwBlock(System.Array.Empty<PlwNode>(), stmts);
+    }
+
+    private static PlwNode ParseStatementListUntil(PlwTokenKind alt1, PlwTokenKind alt2, ref TokenReader reader)
+    {
+        var stmts = new List<PlwNode>();
+        while (reader.Current.Kind != alt1 && reader.Current.Kind != alt2 && reader.Current.Kind != PlwTokenKind.Eof)
+        {
+            stmts.Add(ParseStatement(ref reader));
+        }
+        return stmts.Count == 1 ? stmts[0] : new PlwBlock(System.Array.Empty<PlwNode>(), stmts);
     }
 
     private static PlwNode ParseSimpleLoop(ref TokenReader reader)
@@ -236,7 +282,7 @@ internal static class PlwParser
             (reader.Current.Kind == PlwTokenKind.Identifier && reader.Current.Text.Equals("LOOP", StringComparison.OrdinalIgnoreCase)))
             reader.Advance();
         SkipOptionalSemicolon(ref reader);
-        return new PlwSimpleLoop(new PlwBlock(System.Array.Empty<PlwVariableDeclaration>(), body));
+        return new PlwSimpleLoop(new PlwBlock(System.Array.Empty<PlwNode>(), body));
     }
 
     private static PlwNode ParseWhileLoop(ref TokenReader reader)
@@ -312,14 +358,14 @@ internal static class PlwParser
             (reader.Current.Kind == PlwTokenKind.Identifier && reader.Current.Text.Equals("LOOP", StringComparison.OrdinalIgnoreCase)))
             reader.Advance();
         SkipOptionalSemicolon(ref reader);
-        return new PlwBlock(System.Array.Empty<PlwVariableDeclaration>(), body);
+        return new PlwBlock(System.Array.Empty<PlwNode>(), body);
     }
 
     private static PlwNode ParseExit(ref TokenReader reader)
     {
         reader.Advance(); // EXIT
         PlwExpression? when = null;
-        if (reader.Current.Kind == PlwTokenKind.Identifier && reader.Current.Text.Equals("WHEN", StringComparison.OrdinalIgnoreCase))
+        if (reader.Current.Kind == PlwTokenKind.When)
         {
             reader.Advance();
             when = ParseExpression(ref reader);
@@ -332,7 +378,7 @@ internal static class PlwParser
     {
         reader.Advance(); // CONTINUE
         PlwExpression? when = null;
-        if (reader.Current.Kind == PlwTokenKind.Identifier && reader.Current.Text.Equals("WHEN", StringComparison.OrdinalIgnoreCase))
+        if (reader.Current.Kind == PlwTokenKind.When)
         {
             reader.Advance();
             when = ParseExpression(ref reader);
@@ -381,8 +427,18 @@ internal static class PlwParser
                 args.Add(ParseExpression(ref reader));
             }
         }
+
+        PlwExpression? sqlState = null;
+        if (reader.Current.Kind == PlwTokenKind.Using)
+        {
+            reader.Advance();
+            reader.Expect(PlwTokenKind.SqlState);
+            reader.Expect(PlwTokenKind.Equals);
+            sqlState = ParseExpression(ref reader);
+        }
+
         SkipOptionalSemicolon(ref reader);
-        return new PlwRaise(level, message, args);
+        return new PlwRaise(level, message, args, sqlState);
     }
 
     private static PlwNode ParsePerform(ref TokenReader reader)
@@ -732,6 +788,10 @@ internal static class PlwParser
                 // FOUND ist die boolesche Systemvariable des PLW-Interpreters.
                 reader.Advance();
                 return new PlwIdentifierExpression("FOUND");
+            case PlwTokenKind.SqlState:
+                // SQLSTATE ist die Systemvariable fuer den aktuellen SQLSTATE.
+                reader.Advance();
+                return new PlwIdentifierExpression("SQLSTATE");
             case PlwTokenKind.Identifier:
                 reader.Advance();
                 var name = token.Text;

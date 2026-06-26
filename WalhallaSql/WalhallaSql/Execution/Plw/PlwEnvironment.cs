@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using WalhallaSql.Parsing.Plw;
 
 namespace WalhallaSql.Execution.Plw;
@@ -12,11 +13,15 @@ namespace WalhallaSql.Execution.Plw;
 internal sealed class PlwEnvironment
 {
     public const string FoundVariableName = "found";
+    public const string SqlStateVariableName = "sqlstate";
+    public const string SqlErrmVariableName = "sqlerrm";
 
     private readonly Dictionary<string, PlwVariable> _variables;
     private readonly Dictionary<string, PlwCursor> _cursors;
     private readonly PlwEnvironment? _parent;
     private bool _found;
+    private string _sqlState = "00000";
+    private string _sqlErrm = string.Empty;
 
     public PlwEnvironment(PlwEnvironment? parent = null)
     {
@@ -70,6 +75,18 @@ internal sealed class PlwEnvironment
             return;
         }
 
+        if (IsSqlStateVariable(key))
+        {
+            SetSqlState(Convert.ToString(value, CultureInfo.InvariantCulture) ?? "00000");
+            return;
+        }
+
+        if (IsSqlErrmVariable(key))
+        {
+            SetSqlErrm(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);
+            return;
+        }
+
         if (_variables.TryGetValue(key, out var variable))
         {
             variable.Value = value;
@@ -91,6 +108,12 @@ internal sealed class PlwEnvironment
         if (IsFoundVariable(key))
             return _found;
 
+        if (IsSqlStateVariable(key))
+            return _sqlState;
+
+        if (IsSqlErrmVariable(key))
+            return _sqlErrm;
+
         if (_variables.TryGetValue(key, out var variable))
             return variable.Value;
 
@@ -106,6 +129,18 @@ internal sealed class PlwEnvironment
         if (IsFoundVariable(key))
         {
             value = _found;
+            return true;
+        }
+
+        if (IsSqlStateVariable(key))
+        {
+            value = _sqlState;
+            return true;
+        }
+
+        if (IsSqlErrmVariable(key))
+        {
+            value = _sqlErrm;
             return true;
         }
 
@@ -125,7 +160,7 @@ internal sealed class PlwEnvironment
     public bool Contains(string name)
     {
         var key = Normalize(name);
-        return IsFoundVariable(key) || _variables.ContainsKey(key) || (_parent?.Contains(name) ?? false);
+        return IsSystemVariable(key) || _variables.ContainsKey(key) || (_parent?.Contains(name) ?? false);
     }
 
     public string? TryGetTypeName(string name)
@@ -133,6 +168,9 @@ internal sealed class PlwEnvironment
         var key = Normalize(name);
         if (IsFoundVariable(key))
             return "BOOLEAN";
+
+        if (IsSqlStateVariable(key) || IsSqlErrmVariable(key))
+            return "STRING";
 
         if (_variables.TryGetValue(key, out var variable))
             return variable.TypeName;
@@ -153,11 +191,42 @@ internal sealed class PlwEnvironment
             _parent.SetFound(value);
     }
 
+    /// <summary>
+    /// Setzt SQLSTATE und SQLERRM. Wird beim Auftreten oder Abfangen einer Exception aufgerufen.
+    /// </summary>
+    public void SetErrorState(string sqlState, string sqlErrm)
+    {
+        _sqlState = sqlState;
+        _sqlErrm = sqlErrm;
+        if (_parent != null)
+            _parent.SetErrorState(sqlState, sqlErrm);
+    }
+
+    public void SetSqlState(string sqlState)
+    {
+        _sqlState = sqlState;
+        if (_parent != null)
+            _parent.SetSqlState(sqlState);
+    }
+
+    public void SetSqlErrm(string sqlErrm)
+    {
+        _sqlErrm = sqlErrm;
+        if (_parent != null)
+            _parent.SetSqlErrm(sqlErrm);
+    }
+
     private static bool IsFoundVariable(string key)
         => string.Equals(key, FoundVariableName, StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsSqlStateVariable(string key)
+        => string.Equals(key, SqlStateVariableName, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSqlErrmVariable(string key)
+        => string.Equals(key, SqlErrmVariableName, StringComparison.OrdinalIgnoreCase);
+
     private static bool IsSystemVariable(string key)
-        => IsFoundVariable(key);
+        => IsFoundVariable(key) || IsSqlStateVariable(key) || IsSqlErrmVariable(key);
 
     private static string Normalize(string name)
         => name.TrimStart('@').Trim();

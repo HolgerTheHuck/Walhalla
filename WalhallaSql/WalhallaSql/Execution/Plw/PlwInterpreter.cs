@@ -153,15 +153,67 @@ internal sealed class PlwInterpreter
 
     private void ExecuteBlock(PlwBlock block)
     {
-        foreach (var declaration in block.Declarations)
+        try
         {
-            ExecuteNode(declaration);
+            foreach (var declaration in block.Declarations)
+            {
+                ExecuteNode(declaration);
+            }
+
+            foreach (var statement in block.Body)
+            {
+                ExecuteNode(statement);
+            }
+        }
+        catch (WalhallaException ex)
+        {
+            var handler = FindExceptionHandler(block.ExceptionHandlers, ex);
+            if (handler == null)
+                throw;
+
+            _env.SetErrorState(ex.SqlState ?? "P0001", ex.Message);
+            ExecuteNode(handler.Body);
+        }
+    }
+
+    private static PlwExceptionHandler? FindExceptionHandler(IReadOnlyList<PlwExceptionHandler>? handlers, WalhallaException ex)
+    {
+        if (handlers == null || handlers.Count == 0)
+            return null;
+
+        foreach (var handler in handlers)
+        {
+            var condition = handler.Condition;
+            if (condition.Equals("OTHERS", StringComparison.OrdinalIgnoreCase))
+                return handler;
+
+            if (!string.IsNullOrEmpty(ex.SqlState))
+            {
+                if (condition.Equals(ex.SqlState, StringComparison.OrdinalIgnoreCase))
+                    return handler;
+
+                // Vordefinierte Namen, die auf SQLSTATE gemappt werden.
+                var mapped = MapExceptionNameToSqlState(condition);
+                if (mapped.Equals(ex.SqlState, StringComparison.OrdinalIgnoreCase))
+                    return handler;
+            }
         }
 
-        foreach (var statement in block.Body)
+        return null;
+    }
+
+    private static string MapExceptionNameToSqlState(string name)
+    {
+        return name.ToUpperInvariant() switch
         {
-            ExecuteNode(statement);
-        }
+            "DIVISION_BY_ZERO" => "22012",
+            "NO_DATA_FOUND" => "P0002",
+            "TOO_MANY_ROWS" => "P0003",
+            "UNIQUE_VIOLATION" => "23505",
+            "FOREIGN_KEY_VIOLATION" => "23503",
+            "CHECK_VIOLATION" => "23514",
+            _ => name
+        };
     }
 
     private void ExecuteNode(PlwNode node)
@@ -251,6 +303,10 @@ internal sealed class PlwInterpreter
             case PlwRaise raise:
                 ExecuteRaise(raise);
                 break;
+
+            // PlwExceptionHandler ist kein ausfuehrbarer Knoten; wird von ExecuteBlock verarbeitet.
+            case PlwExceptionHandler:
+                throw new WalhallaException("Exception-Handler duerfen nur direkt in einem BEGIN ... EXCEPTION ... END-Block stehen.");
 
             case PlwSqlStatement sqlStatement:
                 SetFoundFromResult(_executor.Execute(sqlStatement.Sql, _env));
@@ -518,7 +574,12 @@ internal sealed class PlwInterpreter
             : string.Empty;
 
         if (level == "EXCEPTION")
-            throw new WalhallaException($"PLW EXCEPTION: {message}");
+        {
+            var sqlState = raise.SqlStateExpression != null
+                ? Convert.ToString(_evaluator.Evaluate(raise.SqlStateExpression, _env), CultureInfo.InvariantCulture)
+                : "P0001";
+            throw new WalhallaException(message, sqlState);
+        }
 
         // NOTICE/INFO/WARNING werden vorerst als Diagnose-Ausgabe behandelt.
         System.Diagnostics.Debug.WriteLine($"[PLW {level}] {message}");

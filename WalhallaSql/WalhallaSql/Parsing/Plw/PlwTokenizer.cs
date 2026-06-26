@@ -41,6 +41,8 @@ internal enum PlwTokenKind
     In,
     Exit,
     Continue,
+    When,
+    Others,
 
     // SQL-artige Schlüsselwörter innerhalb von PLW
     Return,
@@ -58,6 +60,7 @@ internal enum PlwTokenKind
     Fetch,
     Close,
     Cursor,
+    SqlState,
 
     // Operatoren und Satzzeichen
     ColonEquals,    // :=
@@ -425,6 +428,9 @@ internal static class PlwTokenizer
             "FETCH" => PlwTokenKind.Fetch,
             "CLOSE" => PlwTokenKind.Close,
             "CURSOR" => PlwTokenKind.Cursor,
+            "WHEN" => PlwTokenKind.When,
+            "OTHERS" => PlwTokenKind.Others,
+            "SQLSTATE" => PlwTokenKind.SqlState,
 
             "NULL" => PlwTokenKind.Null,
             "TRUE" => PlwTokenKind.True,

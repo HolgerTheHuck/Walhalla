@@ -53,6 +53,11 @@ eingebetteten Betrieb und für den Client/Server-Betrieb über PgWire gedacht.
   - Deklaration mit `name CURSOR FOR query`
   - `OPEN`, `FETCH INTO` (einzelne Variablen oder `RECORD`), `CLOSE`
   - `FETCH` setzt `FOUND` auf `true` bei Erfolg bzw. `false` am Ende
+- ✅ Phase 11: Exception-Handler abgeschlossen
+  - `BEGIN ... EXCEPTION ... END` mit mehreren `WHEN`-Zweigen
+  - `WHEN OTHERS`, `WHEN 'SQLSTATE'`, `WHEN exception_name`
+  - `RAISE EXCEPTION 'message' [USING SQLSTATE = 'xxx']`
+  - Systemvariablen `SQLSTATE` und `SQLERRM` im Handler verfuegbar
 
 Das technische Design-Dokument liegt unter `WalhallaSql/docs/plw-design.md`; der
 Migrations-Guide von PL/pgSQL unter `WalhallaSql/docs/plw/from-plpgsql.md`;
@@ -126,6 +131,8 @@ Console.WriteLine(result.OutputParameters["p_name"]); // Dyn
 - `%TYPE` für Tabellenspalten (v1)
 - `FOUND`-Systemvariable
 - Cursor-Variablen (`CURSOR FOR`, `OPEN`, `FETCH INTO`, `CLOSE`)
+- Exception-Handler (`BEGIN ... EXCEPTION ... END`)
+- `SQLSTATE`- und `SQLERRM`-Systemvariablen
 
 ## Aufruf aus verschiedenen Clients
 
@@ -192,6 +199,9 @@ In Phase 9 wurden gezielt Korrektheitslücken geschlossen:
 | `RETURN` mit Ausdruck in einer Prozedur | `WalhallaException` | – |
 | `int`-Überlauf bei einer arithmetischen Operation | automatische Promotion zu `long` oder `double` | – |
 | `FOUND` nach einer SQL-Operation | `true`, wenn Zeilen betroffen oder gefunden wurden; sonst `false` | – |
+| `RAISE EXCEPTION` ohne `USING SQLSTATE` | Meldung ohne SQLSTATE -> SQLSTATE `P0001` | `P0001` |
+| Exception im `BEGIN`-Teil ohne passenden Handler | Exception wird weitergegeben | Original-SQLSTATE |
+| Exception im `BEGIN`-Teil mit passendem Handler | Handler-Body ausführen, danach normal fortfahren | – |
 | `FETCH` am Ende eines Cursors | `FOUND` wird `false`; Ziele werden nicht verändert | – |
 
 Schleifenvariablen (`FOR i IN ...`, `FOR rec IN SELECT ...`) dürfen dagegen

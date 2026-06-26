@@ -8,11 +8,12 @@ namespace WalhallaSql.Parsing.Plw;
 internal abstract record PlwNode;
 
 /// <summary>
-/// Deklarationsblock + ausführbarer Body.
+/// Deklarationsblock + ausführbarer Body + optionale Exception-Handler.
 /// </summary>
 internal sealed record PlwBlock(
     IReadOnlyList<PlwNode> Declarations,
-    IReadOnlyList<PlwNode> Body) : PlwNode;
+    IReadOnlyList<PlwNode> Body,
+    IReadOnlyList<PlwExceptionHandler>? ExceptionHandlers = null) : PlwNode;
 
 /// <summary>
 /// Variablen-/Parameter-Deklaration.
@@ -146,13 +147,22 @@ internal sealed record PlwExecute(
     IReadOnlyList<PlwExpression> UsingArguments) : PlwNode;
 
 /// <summary>
-/// RAISE level format [, args];
+/// RAISE level format [, args] [USING SQLSTATE = 'xxx'];
 /// Level ist ein String-Literal oder Identifier.
 /// </summary>
 internal sealed record PlwRaise(
     string Level,
     PlwExpression? Message,
-    IReadOnlyList<PlwExpression> Arguments) : PlwNode;
+    IReadOnlyList<PlwExpression> Arguments,
+    PlwExpression? SqlStateExpression = null) : PlwNode;
+
+/// <summary>
+/// Einzelner WHEN-Zweig in einem Exception-Handler.
+/// Condition ist ein Exception-Name, SQLSTATE-Literal oder "OTHERS".
+/// </summary>
+internal sealed record PlwExceptionHandler(
+    string Condition,
+    PlwNode Body) : PlwNode;
 
 /// <summary>
 /// Beliebige eingebettete SQL-Anweisung, die nicht direkt verarbeitet wird.

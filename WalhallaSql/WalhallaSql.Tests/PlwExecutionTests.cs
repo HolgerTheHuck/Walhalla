@@ -709,4 +709,124 @@ public sealed class PlwExecutionTests
         var ex = Assert.Throws<WalhallaException>(() => engine.Execute("EXEC CursorDoubleOpen"));
         Assert.Contains("bereits geoeffnet", ex.Message);
     }
+
+    [Fact]
+    public void Plw_Procedure_ExceptionHandler_Others_Catches_RaiseException()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE CatchAll(OUT @o_handled BOOLEAN)
+            LANGUAGE plw AS $$
+            BEGIN
+                BEGIN
+                    RAISE EXCEPTION 'something went wrong';
+                    o_handled := false;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        o_handled := true;
+                END;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC CatchAll @o_handled = false OUTPUT");
+        Assert.Equal(true, Convert.ToBoolean(result.OutputParameters["o_handled"]));
+    }
+
+    [Fact]
+    public void Plw_Procedure_ExceptionHandler_Exposes_SqlState_And_SqlErrm()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE ExposeError(OUT @o_state STRING, OUT @o_message STRING)
+            LANGUAGE plw AS $$
+            BEGIN
+                BEGIN
+                    RAISE EXCEPTION 'boom' USING SQLSTATE = 'P9999';
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        o_state := SQLSTATE;
+                        o_message := SQLERRM;
+                END;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC ExposeError @o_state = '' OUTPUT, @o_message = '' OUTPUT");
+        Assert.Equal("P9999", result.OutputParameters["o_state"]);
+        Assert.Equal("boom", result.OutputParameters["o_message"]);
+    }
+
+    [Fact]
+    public void Plw_Procedure_ExceptionHandler_Matches_Named_Exception()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE MatchNamed(OUT @o_handled BOOLEAN)
+            LANGUAGE plw AS $$
+            BEGIN
+                BEGIN
+                    RAISE EXCEPTION 'division' USING SQLSTATE = '22012';
+                EXCEPTION
+                    WHEN division_by_zero THEN
+                        o_handled := true;
+                END;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC MatchNamed @o_handled = false OUTPUT");
+        Assert.Equal(true, Convert.ToBoolean(result.OutputParameters["o_handled"]));
+    }
+
+    [Fact]
+    public void Plw_Procedure_ExceptionHandler_Matches_SqlState_String()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE MatchSqlState(OUT @o_handled BOOLEAN)
+            LANGUAGE plw AS $$
+            BEGIN
+                BEGIN
+                    RAISE EXCEPTION 'custom' USING SQLSTATE = '12345';
+                EXCEPTION
+                    WHEN '12345' THEN
+                        o_handled := true;
+                END;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC MatchSqlState @o_handled = false OUTPUT");
+        Assert.Equal(true, Convert.ToBoolean(result.OutputParameters["o_handled"]));
+    }
+
+    [Fact]
+    public void Plw_Procedure_ExceptionHandler_Unhandled_Rethrows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE Unhandled()
+            LANGUAGE plw AS $$
+            DECLARE
+                v_state STRING;
+            BEGIN
+                BEGIN
+                    RAISE EXCEPTION 'no handler' USING SQLSTATE = '99999';
+                EXCEPTION
+                    WHEN '11111' THEN
+                        v_state := SQLSTATE;
+                END;
+            END;
+            $$;
+            """);
+
+        var ex = Assert.Throws<WalhallaException>(() => engine.Execute("EXEC Unhandled"));
+        Assert.Equal("99999", ex.SqlState);
+    }
 }
