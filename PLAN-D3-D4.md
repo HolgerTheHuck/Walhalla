@@ -65,6 +65,11 @@ Diese Phase konzentriert sich auf **PLW-Laufzeitstrukturen**; es werden **keine 
 - **Alternative**: Statt echtes Bulk-INSERT könnte `FORALL` nur eine optimierte Schleife sein. Dies wäre einfacher, aber langsamer. Wir versuchen zuerst echtes Bulk-INSERT für `INSERT ... VALUES`.
 
 ## Erfolgskriterien
-- Mindestens 6 neue Tests für Arrays, `FOREACH`, `FORALL`, `%ROWTYPE`.
-- Alle bestehenden WalhallaSql-Tests bleiben grün.
-- Keine neuen PublicAPI-Warnungen.
+- Mindestens 6 neue Tests für Arrays, `FOREACH`, `FORALL`, `%ROWTYPE`. ✅
+- Alle bestehenden WalhallaSql-Tests bleiben grün. ✅
+- Keine neuen PublicAPI-Warnungen. ✅
+
+## Status
+**Abgeschlossen** am 26.06.2026. Alle geplanten Features implementiert, alle Kriterien erfüllt.
+- WalhallaSql.Tests: 701/701 grün
+- WalhallaSql.PgWire.Tests: 27/27 grün
