@@ -40,6 +40,7 @@ public sealed class WalhallaEngine : IDisposable
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>> _compiledStreamingProcedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, CancellationToken, IAsyncEnumerable<WalhallaRow>>> _compiledStreamingRowProcedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PlwProgram> _plwPrograms = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PlwProgram> _plwTriggerPrograms = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<SqlTriggerDefinition>> _triggersByTable = new(StringComparer.OrdinalIgnoreCase);
     // Guards _views, _procedures, _compiledProcedures, _triggersByTable, _cursors, _cursorDefinitions.
     // Held only while reading/mutating these dictionaries (and trigger lists), never while
@@ -3556,16 +3557,12 @@ public sealed class WalhallaEngine : IDisposable
         var tableDef = _store.GetTableDefinition(update.TableName)
             ?? throw new WalhallaException($"Table '{update.TableName}' not found.");
 
-        FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.Before);
-
-        var tableId = _store.GetTableId(update.TableName);
-
         // PK fast path: WHERE PK = constant
         var pkConst = TryExtractPkLiteral(update.Where, tableDef);
         if (pkConst != null)
         {
-            var rowId = Convert.ToInt64(pkConst);
-            var encoded = _store.GetRow(tableId, rowId);
+            var tableIdPk = _store.GetTableId(update.TableName);
+            var encoded = _store.GetRow(tableIdPk, Convert.ToInt64(pkConst));
             if (encoded == null)
                 return WalhallaResultSet.Affected(0);
 
@@ -3580,19 +3577,29 @@ public sealed class WalhallaEngine : IDisposable
                 row[colIdx] = ParseLiteral(kv.Value, tableDef.Columns[colIdx].Type);
             }
 
+            // BEFORE-Trigger darf die Zeile modifizieren, die wir dann schreiben.
+            // Wir packen die Zeilen in Listen, damit FireTriggers sie an PLW uebergeben kann.
+            var beforeNewRows = new List<object?[]> { row };
+            var beforeOldRows = new List<object?[]> { oldRow };
+            FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.Before, beforeNewRows, beforeOldRows);
+
             // Enforce foreign key and CHECK constraints on updated row
             EnforceForeignKeyUpdate(tableDef, oldRow, row);
             CheckConstraintEvaluator.Enforce(tableDef, row);
 
-            var newEncoded = EncodeRowWithBlobs(tableId, row, tableDef);
-            _store.UpdateRow(tableId, rowId, newEncoded);
+            var newEncoded = EncodeRowWithBlobs(tableIdPk, row, tableDef);
+            _store.UpdateRow(tableIdPk, Convert.ToInt64(pkConst), newEncoded);
 
             var indexMetas = GetOrBuildIndexMetadata(update.TableName, tableDef);
-            MaintainIndexesForUpdate(tableDef, tableId, rowId, oldRow, row, indexMetas);
+            MaintainIndexesForUpdate(tableDef, tableIdPk, Convert.ToInt64(pkConst), oldRow, row, indexMetas);
 
-            FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.After);
+            FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.After, beforeNewRows, beforeOldRows);
             return WalhallaResultSet.Affected(1);
         }
+
+        var tableId = _store.GetTableId(update.TableName);
+
+        FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.Before);
 
         // Build WHERE delegate (parameterless)
         Func<object?[], bool>? predicate = null;
@@ -3617,6 +3624,11 @@ public sealed class WalhallaEngine : IDisposable
         // Update each matching row with assignments
         var affected = 0;
         var indexMetasAll = GetOrBuildIndexMetadata(update.TableName, tableDef);
+
+        // Fuer AFTER-Trigger muessen wir alle alten/neuen Zeilen paarweise speichern.
+        var updatedNewRows = new List<object?[]>();
+        var updatedOldRows = new List<object?[]>();
+
         for (var i = 0; i < matchingRows.Count; i++)
         {
             var row = matchingRows[i];
@@ -3640,10 +3652,13 @@ public sealed class WalhallaEngine : IDisposable
             _store.UpdateRow(tableId, rowId, encoded);
 
             MaintainIndexesForUpdate(tableDef, tableId, rowId, oldRow, row, indexMetasAll);
+
+            updatedNewRows.Add(row);
+            updatedOldRows.Add(oldRow);
             affected++;
         }
 
-        FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.After);
+        FireTriggers(update.TableName, SqlTriggerEvent.Update, SqlTriggerTiming.After, updatedNewRows, updatedOldRows);
         return WalhallaResultSet.Affected(affected);
     }
 
@@ -3653,8 +3668,6 @@ public sealed class WalhallaEngine : IDisposable
 
         var tableDef = _store.GetTableDefinition(delete.TableName)
             ?? throw new WalhallaException($"Table '{delete.TableName}' not found.");
-
-        FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.Before);
 
         var tableId = _store.GetTableId(delete.TableName);
 
@@ -3668,6 +3681,9 @@ public sealed class WalhallaEngine : IDisposable
                 return WalhallaResultSet.Affected(0);
 
             var row = RowCodec.DecodeToArray(encoded, tableDef);
+            var deletedRows = new List<object?[]> { row };
+
+            FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.Before, null, deletedRows);
 
             // Check foreign key constraints before deleting
             EnforceForeignKeyDelete(tableDef, rowId, row);
@@ -3698,7 +3714,7 @@ public sealed class WalhallaEngine : IDisposable
             _store.DeleteIndexEntries(pkIndexEntries);
             _store.DeleteRows(tableId, new[] { rowId });
 
-            FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.After);
+            FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.After, null, deletedRows);
             return WalhallaResultSet.Affected(1);
         }
 
@@ -3830,11 +3846,21 @@ public sealed class WalhallaEngine : IDisposable
         _store.DeleteIndexEntries(indexEntries2);
         _store.DeleteRows(tableId, rowIds2);
 
+        // Kopie der geloeschten Zeilen fuer AFTER-Trigger anfertigen, bevor die gepoolten
+        // Buffer zurueckgegeben werden.
+        var deletedRowsForAfter = new List<object?[]>();
+        foreach (var row in matchingRows)
+        {
+            var copy = new object?[row.Length];
+            Array.Copy(row, copy, row.Length);
+            deletedRowsForAfter.Add(copy);
+        }
+
         // Pooled row buffers zurückgeben, um den managed Heap-Druck zu reduzieren.
         foreach (var row in matchingRows)
             RowCodec.ReturnPooledArray(row);
 
-        FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.After);
+        FireTriggers(delete.TableName, SqlTriggerEvent.Delete, SqlTriggerTiming.After, null, deletedRowsForAfter);
         return WalhallaResultSet.Affected(matchingRows.Count);
     }
 
@@ -4948,6 +4974,31 @@ public sealed class WalhallaEngine : IDisposable
         }
     }
 
+    private PlwProgram GetOrParsePlwTriggerProgram(SqlTriggerDefinition trigger)
+    {
+        var cacheKey = $"{trigger.TableName}.{trigger.Name}";
+        lock (_metaSync)
+        {
+            if (_plwTriggerPrograms.TryGetValue(cacheKey, out var cached))
+                return cached;
+        }
+
+        try
+        {
+            var tokens = WalhallaSql.Parsing.Plw.PlwTokenizer.Tokenize(trigger.Body);
+            var program = WalhallaSql.Parsing.Plw.PlwParser.Parse(tokens);
+            lock (_metaSync)
+            {
+                _plwTriggerPrograms[cacheKey] = program;
+            }
+            return program;
+        }
+        catch (Exception ex) when (ex is not WalhallaException)
+        {
+            throw new WalhallaException($"PLW trigger '{trigger.Name}' on '{trigger.TableName}': {ex.Message}", ex);
+        }
+    }
+
     private WalhallaResultSet ExecuteCSharpProcedure(
         SqlStoredProcedureDefinition proc,
         IReadOnlyList<SqlExecArgument> args)
@@ -5400,7 +5451,8 @@ public sealed class WalhallaEngine : IDisposable
             }
 
             list.Add(new SqlTriggerDefinition(
-                stmt.TriggerName, stmt.TableName, stmt.Event, stmt.Timing, stmt.Body));
+                stmt.TriggerName, stmt.TableName, stmt.Event, stmt.Timing, stmt.Body,
+                Language: stmt.Language));
         }
         return WalhallaResultSet.Affected(0);
     }
@@ -5493,11 +5545,18 @@ public sealed class WalhallaEngine : IDisposable
                     transitionTables["DELETED"] = deletedName;
                 }
 
-                var body = transitionTables.Count > 0
-                    ? ReplaceTransitionTableNames(trigger.Body, transitionTables)
-                    : trigger.Body;
+                if (IsPlwProcedureLanguage(trigger.Language))
+                {
+                    ExecutePlwTrigger(trigger, insertedRows, deletedRows);
+                }
+                else
+                {
+                    var body = transitionTables.Count > 0
+                        ? ReplaceTransitionTableNames(trigger.Body, transitionTables)
+                        : trigger.Body;
 
-                ExecuteProcedureBody(body);
+                    ExecuteProcedureBody(body);
+                }
             }
             finally
             {
@@ -5506,6 +5565,62 @@ public sealed class WalhallaEngine : IDisposable
                 _triggerDepth--;
             }
         }
+    }
+
+    private void ExecutePlwTrigger(
+        SqlTriggerDefinition trigger,
+        IReadOnlyList<object?[]>? insertedRows,
+        IReadOnlyList<object?[]>? deletedRows)
+    {
+        var tableDef = _store.GetTableDefinition(trigger.TableName);
+        var program = GetOrParsePlwTriggerProgram(trigger);
+        var context = new PlwExecutionContext(_options);
+
+        if (trigger.Event == SqlTriggerEvent.Insert)
+        {
+            var rows = insertedRows ?? Array.Empty<object?[]>();
+            foreach (var row in rows)
+            {
+                var newRow = BuildTriggerRow(row, tableDef);
+                PlwInterpreter.ExecuteTrigger(trigger, program, this, context, newRow, null);
+            }
+        }
+        else if (trigger.Event == SqlTriggerEvent.Delete)
+        {
+            var rows = deletedRows ?? Array.Empty<object?[]>();
+            foreach (var row in rows)
+            {
+                var oldRow = BuildTriggerRow(row, tableDef);
+                PlwInterpreter.ExecuteTrigger(trigger, program, this, context, null, oldRow);
+            }
+        }
+        else if (trigger.Event == SqlTriggerEvent.Update)
+        {
+            var newRows = insertedRows ?? Array.Empty<object?[]>();
+            var oldRows = deletedRows ?? Array.Empty<object?[]>();
+            for (int i = 0; i < Math.Max(newRows.Count, oldRows.Count); i++)
+            {
+                var newRow = i < newRows.Count ? BuildTriggerRow(newRows[i], tableDef) : null;
+                var oldRow = i < oldRows.Count ? BuildTriggerRow(oldRows[i], tableDef) : null;
+                PlwInterpreter.ExecuteTrigger(trigger, program, this, context, newRow, oldRow);
+            }
+        }
+    }
+
+    private static IReadOnlyDictionary<string, object?> BuildTriggerRow(object?[] row, SqlTableDefinition? tableDef)
+    {
+        var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (tableDef != null)
+        {
+            for (int i = 0; i < Math.Min(row.Length, tableDef.Columns.Count); i++)
+                dict[tableDef.Columns[i].Name] = row[i];
+        }
+        else
+        {
+            for (int i = 0; i < row.Length; i++)
+                dict[$"column{i}"] = row[i];
+        }
+        return dict;
     }
 
     private void CreateTransitionTable(string actualName, SqlTableDefinition sourceDef,

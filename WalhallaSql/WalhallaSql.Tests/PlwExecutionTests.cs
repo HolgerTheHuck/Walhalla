@@ -829,4 +829,136 @@ public sealed class PlwExecutionTests
         var ex = Assert.Throws<WalhallaException>(() => engine.Execute("EXEC Unhandled"));
         Assert.Equal("99999", ex.SqlState);
     }
+
+    [Fact]
+    public void Plw_Trigger_Insert_Uses_New_And_TgVariables()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Accounts (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("CREATE TABLE Audit (Id INT PRIMARY KEY, Op STRING, TableName STRING)");
+
+        engine.Execute("""
+            CREATE OR REPLACE TRIGGER trg_Accounts_Insert
+            ON Accounts AFTER INSERT LANGUAGE plw
+            AS
+            BEGIN
+                INSERT INTO Audit (Id, Op, TableName)
+                VALUES (NEW.Id, TG_OP, TG_TABLE_NAME);
+            END;
+            """);
+
+        engine.Execute("INSERT INTO Accounts (Id, Name) VALUES (1, 'Alice')");
+
+        var rows = engine.Execute("SELECT Op, TableName FROM Audit").Rows;
+        Assert.Single(rows);
+        Assert.Equal("INSERT", rows[0]["Op"]);
+        Assert.Equal("Accounts", rows[0]["TableName"]);
+    }
+
+    [Fact]
+    public void Plw_Trigger_Update_Uses_New_And_Old()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Accounts (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("CREATE TABLE Audit (Id INT PRIMARY KEY, OldName STRING, NewName STRING)");
+        engine.Execute("INSERT INTO Accounts (Id, Name) VALUES (1, 'Alice')");
+
+        engine.Execute("""
+            CREATE OR REPLACE TRIGGER trg_Accounts_Update
+            ON Accounts AFTER UPDATE LANGUAGE plw
+            AS
+            BEGIN
+                INSERT INTO Audit (Id, OldName, NewName)
+                VALUES (NEW.Id, OLD.Name, NEW.Name);
+            END;
+            """);
+
+        engine.Execute("UPDATE Accounts SET Name = 'Bob' WHERE Id = 1");
+
+        var rows = engine.Execute("SELECT OldName, NewName FROM Audit").Rows;
+        Assert.Single(rows);
+        Assert.Equal("Alice", rows[0]["OldName"]);
+        Assert.Equal("Bob", rows[0]["NewName"]);
+    }
+
+    [Fact]
+    public void Plw_Trigger_Delete_Uses_Old()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Accounts (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("CREATE TABLE Audit (Id INT PRIMARY KEY, Message STRING)");
+        engine.Execute("INSERT INTO Accounts (Id, Name) VALUES (1, 'Alice')");
+
+        engine.Execute("""
+            CREATE OR REPLACE TRIGGER trg_Accounts_Delete
+            ON Accounts AFTER DELETE LANGUAGE plw
+            AS
+            BEGIN
+                INSERT INTO Audit (Id, Message)
+                VALUES (OLD.Id, OLD.Name);
+            END;
+            """);
+
+        engine.Execute("DELETE FROM Accounts WHERE Id = 1");
+
+        var rows = engine.Execute("SELECT Message FROM Audit").Rows;
+        Assert.Single(rows);
+        Assert.Equal("Alice", rows[0]["Message"]);
+    }
+
+    [Fact]
+    public void Plw_Raise_Formats_Percent_Placeholders()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE FormatRaise(OUT @o_msg STRING)
+            LANGUAGE plw AS $$
+            BEGIN
+                o_msg := 'placeholder';
+                RAISE NOTICE 'Count: %, Name: %', 42, 'Alice';
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC FormatRaise @o_msg = NULL OUTPUT");
+        Assert.Equal("placeholder", result.OutputParameters["o_msg"]);
+    }
+
+    [Fact]
+    public void Plw_Raise_Escapes_Double_Percent()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE RaiseEscape()
+            LANGUAGE plw AS $$
+            BEGIN
+                RAISE EXCEPTION 'Value is %% %', 7 USING SQLSTATE = '77777';
+            END;
+            $$;
+            """);
+
+        var ex = Assert.Throws<WalhallaException>(() => engine.Execute("EXEC RaiseEscape"));
+        Assert.Equal("Value is % 7", ex.Message);
+        Assert.Equal("77777", ex.SqlState);
+    }
+
+    [Fact]
+    public void Plw_Raise_Too_Few_Arguments_Throws()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE RaiseTooFew()
+            LANGUAGE plw AS $$
+            BEGIN
+                RAISE EXCEPTION 'A % B % C %', 1, 2;
+            END;
+            $$;
+            """);
+
+        var ex = Assert.Throws<WalhallaException>(() => engine.Execute("EXEC RaiseTooFew"));
+        Assert.Contains("Zu wenige Argumente", ex.Message);
+    }
 }

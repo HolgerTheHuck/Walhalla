@@ -650,7 +650,8 @@ internal static class PlwParser
                 continue;
             }
             sb.Append(token.Text);
-            if (token.Kind != PlwTokenKind.Dot)
+            var nextToken = reader.Position + 1 < reader.Tokens.Count ? reader.Tokens[reader.Position + 1] : null;
+            if (token.Kind != PlwTokenKind.Dot && nextToken?.Kind != PlwTokenKind.Dot)
                 sb.Append(' ');
             reader.Advance();
         }
@@ -819,10 +820,9 @@ internal static class PlwParser
                 {
                     reader.Advance();
                     var member = reader.Expect(PlwTokenKind.Identifier).Text;
-                    return new PlwBinaryExpression(
+                    return new PlwFieldAccessExpression(
                         new PlwIdentifierExpression(name),
-                        PlwTokenKind.Dot,
-                        new PlwIdentifierExpression(member));
+                        member);
                 }
                 return new PlwIdentifierExpression(name);
             case PlwTokenKind.LeftParen:

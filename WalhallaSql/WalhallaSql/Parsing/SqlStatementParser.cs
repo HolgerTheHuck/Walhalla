@@ -2723,12 +2723,24 @@ internal static class SqlStatementParser
             remaining = remaining["DELETE".Length..].TrimStart();
         }
 
+        // Optional: LANGUAGE <lang> vor dem Body
+        var language = "sql";
+        if (remaining.StartsWith("LANGUAGE", StringComparison.OrdinalIgnoreCase))
+        {
+            remaining = remaining["LANGUAGE".Length..].TrimStart();
+            (language, remaining) = ReadLanguageToken(remaining);
+        }
+
         // Expect AS
         if (remaining.StartsWith("AS", StringComparison.OrdinalIgnoreCase))
             remaining = remaining["AS".Length..].TrimStart();
 
-        var body = ExtractBeginEndBody(remaining, false);
-        return new SqlCreateTriggerStatement(triggerName, tableName, evt, timing, body, orReplace);
+        // PLW-Trigger benoetigen den vollstaendigen BEGIN ... END-Block, da der PLW-Parser
+        // darauf aufbaut. SQL-Trigger behalten weiterhin nur den inneren Body.
+        var body = string.Equals(language, "plw", StringComparison.OrdinalIgnoreCase)
+            ? remaining.Trim()
+            : ExtractBeginEndBody(remaining, false);
+        return new SqlCreateTriggerStatement(triggerName, tableName, evt, timing, body, orReplace, language);
     }
 
     private static SqlDropTriggerStatement ParseDropTriggerStatement(string sql)

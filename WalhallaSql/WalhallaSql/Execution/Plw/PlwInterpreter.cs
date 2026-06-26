@@ -79,6 +79,49 @@ internal sealed class PlwInterpreter
         return result;
     }
 
+    /// <summary>
+    /// Fuehrt einen PLW-Trigger-Body aus. Der Trigger hat keine Parameter, dafuer
+    /// aber Trigger-Kontextvariablen (NEW, OLD, TG_OP, TG_TABLE_NAME, TG_WHEN, TG_NAME).
+    /// </summary>
+    public static WalhallaResultSet ExecuteTrigger(
+        SqlTriggerDefinition trigger,
+        PlwProgram program,
+        WalhallaEngine engine,
+        PlwExecutionContext context,
+        object? newRow,
+        object? oldRow)
+    {
+        var env = new PlwEnvironment();
+        var evaluator = new PlwExpressionEvaluator();
+        var executor = new PlwSqlExecutor(engine, evaluator);
+        var interpreter = new PlwInterpreter(
+            env,
+            executor,
+            evaluator,
+            context,
+            new SqlStoredProcedureDefinition(trigger.Name, Array.Empty<SqlProcedureParameter>(), trigger.Body, trigger.Language),
+            Array.Empty<SqlExecArgument>());
+
+        env.SetTriggerContext(
+            newRow,
+            oldRow,
+            trigger.Event.ToString().ToUpperInvariant(),
+            trigger.TableName,
+            trigger.Timing.ToString().ToUpperInvariant(),
+            trigger.Name);
+
+        try
+        {
+            interpreter.ExecuteBlock(program.Body);
+        }
+        catch (PlwFlowControlException ex) when (ex.Kind == PlwFlowControlKind.Return)
+        {
+            return ex.ReturnResultSet ?? WalhallaResultSet.Affected(0);
+        }
+
+        return WalhallaResultSet.Affected(0);
+    }
+
     private void BindParameters()
     {
         var named = new Dictionary<string, SqlExecArgument>(StringComparer.OrdinalIgnoreCase);
@@ -573,6 +616,8 @@ internal sealed class PlwInterpreter
             ? Convert.ToString(_evaluator.Evaluate(raise.Message, _env), CultureInfo.InvariantCulture)
             : string.Empty;
 
+        message = FormatRaiseMessage(message, raise.Arguments);
+
         if (level == "EXCEPTION")
         {
             var sqlState = raise.SqlStateExpression != null
@@ -583,6 +628,66 @@ internal sealed class PlwInterpreter
 
         // NOTICE/INFO/WARNING werden vorerst als Diagnose-Ausgabe behandelt.
         System.Diagnostics.Debug.WriteLine($"[PLW {level}] {message}");
+    }
+
+    private string FormatRaiseMessage(string message, IReadOnlyList<PlwExpression> arguments)
+    {
+        if (arguments.Count == 0)
+            return message;
+
+        var sb = new System.Text.StringBuilder(message.Length + arguments.Count * 8);
+        int argIndex = 0;
+        for (int i = 0; i < message.Length; i++)
+        {
+            var c = message[i];
+            if (c != '%')
+            {
+                sb.Append(c);
+                continue;
+            }
+
+            if (i + 1 < message.Length && message[i + 1] == '%')
+            {
+                sb.Append('%');
+                i++;
+                continue;
+            }
+
+            if (argIndex >= arguments.Count)
+                throw new WalhallaException("Zu wenige Argumente fuer Format-Platzhalter in RAISE.");
+
+            var value = _evaluator.Evaluate(arguments[argIndex], _env);
+            sb.Append(FormatRaiseArgument(value));
+            argIndex++;
+        }
+
+        return sb.ToString();
+    }
+
+    private static string FormatRaiseArgument(object? value)
+    {
+        if (value == null)
+            return "NULL";
+
+        if (value is bool b)
+            return b ? "true" : "false";
+
+        if (value is DateTime dt)
+            return dt.ToString("O", CultureInfo.InvariantCulture);
+
+        if (value is DateOnly dateOnly)
+            return dateOnly.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        if (value is TimeSpan timeSpan)
+            return timeSpan.ToString("c", CultureInfo.InvariantCulture);
+
+        if (value is TimeOnly timeOnly)
+            return timeOnly.ToString("HH:mm:ss.fffffff", CultureInfo.InvariantCulture);
+
+        if (value is Guid guid)
+            return guid.ToString();
+
+        return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
     }
 
     private void Assign(PlwExpression target, object? value)

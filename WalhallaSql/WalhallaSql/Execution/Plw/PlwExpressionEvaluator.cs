@@ -25,6 +25,7 @@ internal sealed class PlwExpressionEvaluator
             PlwBooleanExpression b => b.Value,
             PlwNullExpression => null,
             PlwParameterReference pr => env.Get($"__param{pr.Index}"),
+            PlwFieldAccessExpression fa => EvaluateFieldAccess(fa, env),
             PlwUnaryExpression u => EvaluateUnary(u, env),
             PlwBinaryExpression b => EvaluateBinary(b, env),
             _ => throw new WalhallaException($"Nicht unterstuetzter PLW-Ausdruck: {expression.GetType().Name}")
@@ -111,6 +112,12 @@ internal sealed class PlwExpressionEvaluator
             "UPPER" => SingleStringArg(args, name)?.ToUpperInvariant(),
             _ => throw new WalhallaException($"Unbekannte PLW-Funktion '{name}'.")
         };
+    }
+
+    private object? EvaluateFieldAccess(PlwFieldAccessExpression access, PlwEnvironment env)
+    {
+        var record = Evaluate(access.Record, env);
+        return AccessMember(record, access.FieldName);
     }
 
     private object? EvaluateMemberAccess(PlwBinaryExpression access, PlwEnvironment env)

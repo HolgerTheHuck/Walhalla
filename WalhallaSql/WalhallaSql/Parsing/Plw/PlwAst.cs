@@ -186,6 +186,13 @@ internal sealed record PlwUnaryExpression(PlwTokenKind Operator, PlwExpression O
 internal sealed record PlwParameterReference(int Index) : PlwExpression;
 
 /// <summary>
+/// Feldzugriff auf eine Record/Row-Variable, z. B. NEW.Id oder OLD.Name.
+/// </summary>
+internal sealed record PlwFieldAccessExpression(
+    PlwExpression Record,
+    string FieldName) : PlwExpression;
+
+/// <summary>
 /// Roh-SQL-Fragment mit Ersetzungsplatzhaltern.
 /// Der Text enthält die SQL-Anweisung, und Arguments markiert Stellen,
 /// an denen PLW-Ausdrücke eingesetzt werden (z. B. {expr}).

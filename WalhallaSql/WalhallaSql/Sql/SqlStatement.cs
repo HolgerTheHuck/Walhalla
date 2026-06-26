@@ -186,7 +186,8 @@ public sealed record SqlTriggerDefinition(
     SqlTriggerEvent Event,
     SqlTriggerTiming Timing = SqlTriggerTiming.After,
     string Body = "",
-    string? Description = null);
+    string? Description = null,
+    string Language = "sql");
 
 public sealed record SqlCreateProcedureStatement(
     string ProcedureName,
@@ -213,7 +214,8 @@ public sealed record SqlCreateTriggerStatement(
     SqlTriggerEvent Event,
     SqlTriggerTiming Timing = SqlTriggerTiming.After,
     string Body = "",
-    bool OrReplace = false) : SqlStatement;
+    bool OrReplace = false,
+    string Language = "sql") : SqlStatement;
 
 public sealed record SqlDropTriggerStatement(
     string TriggerName,

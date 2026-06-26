@@ -105,6 +105,34 @@ internal sealed class PlwSqlExecutor
                 var token = sql[start..i];
                 var normalized = token.TrimStart('@');
 
+                // NEW.Id oder OLD.Name im SQL-Fragment muss vor normaler Variablenersetzung
+                // geprüft werden, damit der Record-Container nicht als Ganzes substituiert wird.
+                if (IsRecordVariableToken(token, env))
+                {
+                    if (i < sql.Length && sql[i] == '.')
+                    {
+                        var (recordName, fieldName, nextPos) = ParseRecordFieldAccess(sql, start, i);
+                        if (!string.IsNullOrEmpty(fieldName))
+                        {
+                            var record = env.Get(recordName);
+                            var value = PlwExpressionEvaluator.AccessMember(record, fieldName);
+                            sb.Append(FormatSqlValue(value, null));
+                            i = nextPos;
+                            continue;
+                        }
+                    }
+
+                    // NEW/OLD ohne Feldzugriff oder TG_* als skalare Variable ersetzen.
+                    if (env.Contains(token) || env.Contains(normalized))
+                    {
+                        var value = env.Get(token);
+                        var typeName = env.TryGetTypeName(token) ?? env.TryGetTypeName(normalized);
+                        var type = TryParseScalarType(typeName);
+                        sb.Append(FormatSqlValue(value, type));
+                        continue;
+                    }
+                }
+
                 if (env.Contains(token) || env.Contains(normalized))
                 {
                     var value = env.Get(token);
@@ -202,6 +230,34 @@ internal sealed class PlwSqlExecutor
 
     private static bool IsIdentifierPart(char c, bool allowAt)
         => char.IsLetterOrDigit(c) || c == '_' || c == '$' || (allowAt && c == '@');
+
+    private static bool IsRecordVariableToken(string token, PlwEnvironment env)
+    {
+        var normalized = token.TrimStart('@');
+        return string.Equals(normalized, "NEW", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(normalized, "OLD", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(normalized, "TG_OP", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(normalized, "TG_TABLE_NAME", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(normalized, "TG_WHEN", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(normalized, "TG_NAME", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static (string RecordName, string FieldName, int NextPos) ParseRecordFieldAccess(string sql, int start, int identifierEnd)
+    {
+        var recordName = sql[start..identifierEnd].TrimStart('@');
+        if (identifierEnd >= sql.Length || sql[identifierEnd] != '.')
+            return (recordName, string.Empty, identifierEnd);
+
+        var pos = identifierEnd + 1;
+        if (pos >= sql.Length || !IsIdentifierStart(sql[pos], allowAt: false))
+            return (recordName, string.Empty, identifierEnd);
+
+        var fieldStart = pos;
+        while (pos < sql.Length && IsIdentifierPart(sql[pos], allowAt: false))
+            pos++;
+
+        return (recordName, sql[fieldStart..pos], pos);
+    }
 
     private static bool IsNumericType(SqlScalarType type)
         => type is SqlScalarType.Int32 or SqlScalarType.Int64 or SqlScalarType.Int16

@@ -58,6 +58,15 @@ eingebetteten Betrieb und für den Client/Server-Betrieb über PgWire gedacht.
   - `WHEN OTHERS`, `WHEN 'SQLSTATE'`, `WHEN exception_name`
   - `RAISE EXCEPTION 'message' [USING SQLSTATE = 'xxx']`
   - Systemvariablen `SQLSTATE` und `SQLERRM` im Handler verfuegbar
+- ✅ Phase 12: PLW-Trigger-Funktionen abgeschlossen
+  - `CREATE TRIGGER ... LANGUAGE plw` auf Tabellen
+  - `BEFORE`/`AFTER` für `INSERT`/`UPDATE`/`DELETE`
+  - Trigger-Kontextvariablen `NEW`, `OLD`, `TG_OP`, `TG_TABLE_NAME`, `TG_WHEN`, `TG_NAME`
+  - `NEW.column` und `OLD.column` werden in SQL-Fragmenten aufgeloest
+- ✅ Phase 13: Format-Platzhalter in `RAISE` abgeschlossen
+  - `RAISE NOTICE 'Count: %', 42` ersetzt `%` durch das Argument
+  - `%%` wird zu `%` escaped
+  - Zu wenige Argumente fuer `%` fuehren zu einem Laufzeitfehler
 
 Das technische Design-Dokument liegt unter `WalhallaSql/docs/plw-design.md`; der
 Migrations-Guide von PL/pgSQL unter `WalhallaSql/docs/plw/from-plpgsql.md`;
@@ -126,13 +135,14 @@ Console.WriteLine(result.OutputParameters["p_name"]); // Dyn
 - `EXECUTE ... USING $1` für parametrisiertes dynamisches SQL
 - `EXECUTE ... INTO` für dynamisches SQL mit einzelnem Ergebnis
 - `PERFORM` für Queries ohne Rückgabewert
-- `RAISE NOTICE` und `RAISE EXCEPTION`
+- `RAISE NOTICE` und `RAISE EXCEPTION` mit `%`-Platzhaltern
 - `IN`, `OUT`, `INOUT`-Parameter
 - `%TYPE` für Tabellenspalten (v1)
 - `FOUND`-Systemvariable
 - Cursor-Variablen (`CURSOR FOR`, `OPEN`, `FETCH INTO`, `CLOSE`)
 - Exception-Handler (`BEGIN ... EXCEPTION ... END`)
 - `SQLSTATE`- und `SQLERRM`-Systemvariablen
+- Trigger-Funktionen (`CREATE TRIGGER ... LANGUAGE plw`, `NEW`/`OLD`, `TG_*`)
 
 ## Aufruf aus verschiedenen Clients
 
@@ -252,12 +262,10 @@ klaren Fehlermeldung.
 
 Für die erste Version sind folgende PL/pgSQL-Features nicht geplant:
 
-- Exception-Handler (`BEGIN ... EXCEPTION ... END`)
 - Arrays und Composite-Typen
-- Trigger-Funktionen
-- Systemvariablen wie `SQLSTATE`, `SQLERRM`
+- BEFORE-Trigger, die `NEW`-Werte modifizieren (read-only Trigger-Variablen)
+- Trigger auf `TRUNCATE`
 - Prozedur-Überladung
-- Format-Platzhalter in `RAISE NOTICE` / `RAISE EXCEPTION`
 
 ## Weitere Dokumentation
 

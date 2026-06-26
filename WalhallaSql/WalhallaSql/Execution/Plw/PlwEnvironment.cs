@@ -15,6 +15,12 @@ internal sealed class PlwEnvironment
     public const string FoundVariableName = "found";
     public const string SqlStateVariableName = "sqlstate";
     public const string SqlErrmVariableName = "sqlerrm";
+    public const string NewVariableName = "new";
+    public const string OldVariableName = "old";
+    public const string TgOpVariableName = "tg_op";
+    public const string TgTableNameVariableName = "tg_table_name";
+    public const string TgWhenVariableName = "tg_when";
+    public const string TgNameVariableName = "tg_name";
 
     private readonly Dictionary<string, PlwVariable> _variables;
     private readonly Dictionary<string, PlwCursor> _cursors;
@@ -22,6 +28,12 @@ internal sealed class PlwEnvironment
     private bool _found;
     private string _sqlState = "00000";
     private string _sqlErrm = string.Empty;
+    private object? _triggerNewRow;
+    private object? _triggerOldRow;
+    private string _triggerOperation = string.Empty;
+    private string _triggerTableName = string.Empty;
+    private string _triggerWhen = string.Empty;
+    private string _triggerName = string.Empty;
 
     public PlwEnvironment(PlwEnvironment? parent = null)
     {
@@ -30,10 +42,33 @@ internal sealed class PlwEnvironment
         _parent = parent;
     }
 
+    /// <summary>
+    /// Setzt die Trigger-Kontextvariablen (NEW, OLD, TG_OP, TG_TABLE_NAME, TG_WHEN, TG_NAME).
+    /// Wird von PlwInterpreter.ExecuteTrigger vor dem Body aufgerufen.
+    /// </summary>
+    public void SetTriggerContext(
+        object? newRow,
+        object? oldRow,
+        string operation,
+        string tableName,
+        string when,
+        string triggerName)
+    {
+        _triggerNewRow = newRow;
+        _triggerOldRow = oldRow;
+        _triggerOperation = operation;
+        _triggerTableName = tableName;
+        _triggerWhen = when;
+        _triggerName = triggerName;
+
+        if (_parent != null)
+            _parent.SetTriggerContext(newRow, oldRow, operation, tableName, when, triggerName);
+    }
+
     public void Declare(string name, string typeName, object? value, bool allowOverwrite = false)
     {
         var key = Normalize(name);
-        if (IsSystemVariable(key))
+        if (IsSystemVariable(key) || IsTriggerContextVariable(key))
             throw new WalhallaException($"PLW-Variable '{name}' ist eine reservierte Systemvariable und darf nicht deklariert werden.");
 
         if (!allowOverwrite && _variables.ContainsKey(key))
@@ -87,6 +122,12 @@ internal sealed class PlwEnvironment
             return;
         }
 
+        if (IsTriggerContextVariable(key))
+        {
+            // Trigger-Kontextvariablen sind read-only; Zuweisungen werden ignoriert.
+            return;
+        }
+
         if (_variables.TryGetValue(key, out var variable))
         {
             variable.Value = value;
@@ -113,6 +154,9 @@ internal sealed class PlwEnvironment
 
         if (IsSqlErrmVariable(key))
             return _sqlErrm;
+
+        if (IsTriggerContextVariable(key))
+            return GetTriggerContextVariable(key);
 
         if (_variables.TryGetValue(key, out var variable))
             return variable.Value;
@@ -144,6 +188,12 @@ internal sealed class PlwEnvironment
             return true;
         }
 
+        if (IsTriggerContextVariable(key))
+        {
+            value = GetTriggerContextVariable(key);
+            return true;
+        }
+
         if (_variables.TryGetValue(key, out var variable))
         {
             value = variable.Value;
@@ -160,7 +210,7 @@ internal sealed class PlwEnvironment
     public bool Contains(string name)
     {
         var key = Normalize(name);
-        return IsSystemVariable(key) || _variables.ContainsKey(key) || (_parent?.Contains(name) ?? false);
+        return IsSystemVariable(key) || IsTriggerContextVariable(key) || _variables.ContainsKey(key) || (_parent?.Contains(name) ?? false);
     }
 
     public string? TryGetTypeName(string name)
@@ -172,11 +222,37 @@ internal sealed class PlwEnvironment
         if (IsSqlStateVariable(key) || IsSqlErrmVariable(key))
             return "STRING";
 
+        if (IsTriggerContextVariable(key))
+            return "RECORD";
+
         if (_variables.TryGetValue(key, out var variable))
             return variable.TypeName;
 
         if (_parent != null)
             return _parent.TryGetTypeName(name);
+
+        return null;
+    }
+
+    private object? GetTriggerContextVariable(string key)
+    {
+        if (string.Equals(key, NewVariableName, StringComparison.OrdinalIgnoreCase))
+            return _triggerNewRow;
+
+        if (string.Equals(key, OldVariableName, StringComparison.OrdinalIgnoreCase))
+            return _triggerOldRow;
+
+        if (string.Equals(key, TgOpVariableName, StringComparison.OrdinalIgnoreCase))
+            return _triggerOperation;
+
+        if (string.Equals(key, TgTableNameVariableName, StringComparison.OrdinalIgnoreCase))
+            return _triggerTableName;
+
+        if (string.Equals(key, TgWhenVariableName, StringComparison.OrdinalIgnoreCase))
+            return _triggerWhen;
+
+        if (string.Equals(key, TgNameVariableName, StringComparison.OrdinalIgnoreCase))
+            return _triggerName;
 
         return null;
     }
@@ -224,6 +300,14 @@ internal sealed class PlwEnvironment
 
     private static bool IsSqlErrmVariable(string key)
         => string.Equals(key, SqlErrmVariableName, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsTriggerContextVariable(string key)
+        => string.Equals(key, NewVariableName, StringComparison.OrdinalIgnoreCase)
+           || string.Equals(key, OldVariableName, StringComparison.OrdinalIgnoreCase)
+           || string.Equals(key, TgOpVariableName, StringComparison.OrdinalIgnoreCase)
+           || string.Equals(key, TgTableNameVariableName, StringComparison.OrdinalIgnoreCase)
+           || string.Equals(key, TgWhenVariableName, StringComparison.OrdinalIgnoreCase)
+           || string.Equals(key, TgNameVariableName, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsSystemVariable(string key)
         => IsFoundVariable(key) || IsSqlStateVariable(key) || IsSqlErrmVariable(key);
