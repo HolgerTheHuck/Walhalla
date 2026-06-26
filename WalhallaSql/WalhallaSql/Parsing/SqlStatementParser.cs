@@ -2538,8 +2538,10 @@ internal static class SqlStatementParser
                 direction = trailingDir;
 
             object? defaultValue = null;
+            var hasDefaultValue = false;
             if (tail.StartsWith("=", StringComparison.Ordinal))
             {
+                hasDefaultValue = true;
                 var valText = tail[1..].Trim();
                 // Direction may also appear after the default literal, e.g. "= 1 OUT"
                 var (cleanVal, defaultDir) = StripTrailingDirection(valText);
@@ -2552,7 +2554,7 @@ internal static class SqlStatementParser
             }
 
             var isOutput = direction != SqlParameterDirection.In;
-            result.Add(new SqlProcedureParameter(paramName, type, isOutput, true, defaultValue) { Direction = direction });
+            result.Add(new SqlProcedureParameter(paramName, type, isOutput, true, defaultValue) { Direction = direction, HasDefaultValue = hasDefaultValue });
         }
         return result;
     }

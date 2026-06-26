@@ -35,7 +35,7 @@ public sealed class WalhallaEngine : IDisposable
     // Held for the engine lifetime via FileShare.None on '<RootPath>/wal.lock'.
     private readonly FileStream? _rootLock;
     private readonly Dictionary<string, SqlCreateViewStatement> _views = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, SqlStoredProcedureDefinition> _procedures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<SqlStoredProcedureDefinition>> _procedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, WalhallaResultSet>> _compiledProcedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>> _compiledStreamingProcedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, CancellationToken, IAsyncEnumerable<WalhallaRow>>> _compiledStreamingRowProcedures = new(StringComparer.OrdinalIgnoreCase);
@@ -619,7 +619,10 @@ public sealed class WalhallaEngine : IDisposable
     {
         lock (_metaSync)
         {
-            return _procedures.Values.ToList();
+            var result = new List<SqlStoredProcedureDefinition>();
+            foreach (var overloads in _procedures.Values)
+                result.AddRange(overloads);
+            return result;
         }
     }
 
@@ -4852,17 +4855,32 @@ public sealed class WalhallaEngine : IDisposable
         EnsureSuperuser("CREATE PROCEDURE");
         lock (_metaSync)
         {
-            if (_procedures.ContainsKey(stmt.ProcedureName) && !stmt.OrReplace)
-                throw new WalhallaException(
-                    $"Procedure '{stmt.ProcedureName}' already exists. Use OR REPLACE to overwrite.");
-
             var proc = new SqlStoredProcedureDefinition(
                 stmt.ProcedureName, stmt.Parameters, stmt.Body, stmt.Language);
-            _procedures[stmt.ProcedureName] = proc;
-            _compiledProcedures.Remove(stmt.ProcedureName);
-            _compiledStreamingProcedures.Remove(stmt.ProcedureName);
-            _compiledStreamingRowProcedures.Remove(stmt.ProcedureName);
-            _plwPrograms.Remove(stmt.ProcedureName);
+            var signatureKey = GetProcedureSignatureKey(proc);
+
+            if (!_procedures.TryGetValue(stmt.ProcedureName, out var overloads))
+            {
+                overloads = new List<SqlStoredProcedureDefinition>();
+                _procedures[stmt.ProcedureName] = overloads;
+            }
+
+            var existingIndex = overloads.FindIndex(
+                p => string.Equals(GetProcedureSignatureKey(p), signatureKey, StringComparison.OrdinalIgnoreCase));
+
+            if (existingIndex >= 0 && !stmt.OrReplace)
+                throw new WalhallaException(
+                    $"Procedure '{stmt.ProcedureName}' with signature {signatureKey} already exists. Use OR REPLACE to overwrite.");
+
+            if (existingIndex >= 0)
+                overloads[existingIndex] = proc;
+            else
+                overloads.Add(proc);
+
+            _compiledProcedures.Remove(signatureKey);
+            _compiledStreamingProcedures.Remove(signatureKey);
+            _compiledStreamingRowProcedures.Remove(signatureKey);
+            _plwPrograms.Remove(signatureKey);
         }
         return WalhallaResultSet.Affected(0);
     }
@@ -4874,14 +4892,201 @@ public sealed class WalhallaEngine : IDisposable
         {
             if (!_procedures.Remove(stmt.ProcedureName) && !stmt.IfExists)
                 throw new WalhallaException($"Procedure '{stmt.ProcedureName}' not found.");
-            _compiledProcedures.Remove(stmt.ProcedureName);
-            _compiledStreamingProcedures.Remove(stmt.ProcedureName);
-            _compiledStreamingRowProcedures.Remove(stmt.ProcedureName);
-            _plwPrograms.Remove(stmt.ProcedureName);
+            RemoveCompiledProcedureCaches(stmt.ProcedureName);
         }
 
         _grantCatalog.RevokeAllForObject(GrantObjectType.Procedure, stmt.ProcedureName);
         return WalhallaResultSet.Affected(0);
+    }
+
+    private static string GetProcedureSignatureKey(SqlStoredProcedureDefinition proc)
+    {
+        var types = string.Join(",", proc.Parameters.Select(p => p.Type.ToString().ToLowerInvariant()));
+        return $"{proc.Name}({types})";
+    }
+
+    private void RemoveCompiledProcedureCaches(string procedureName)
+    {
+        var prefix = procedureName + "(";
+        foreach (var key in _compiledProcedures.Keys.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList())
+            _compiledProcedures.Remove(key);
+        foreach (var key in _compiledStreamingProcedures.Keys.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList())
+            _compiledStreamingProcedures.Remove(key);
+        foreach (var key in _compiledStreamingRowProcedures.Keys.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList())
+            _compiledStreamingRowProcedures.Remove(key);
+        foreach (var key in _plwPrograms.Keys.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList())
+            _plwPrograms.Remove(key);
+    }
+
+    private SqlStoredProcedureDefinition ResolveProcedure(string procedureName, IReadOnlyList<SqlExecArgument> args)
+    {
+        lock (_metaSync)
+        {
+            if (!_procedures.TryGetValue(procedureName, out var overloads))
+                throw new WalhallaException($"Procedure '{procedureName}' not found.");
+
+            var candidates = new List<SqlStoredProcedureDefinition>(overloads);
+
+            // Map arguments to parameters and filter by availability / count.
+            var mappedCandidates = new List<(SqlStoredProcedureDefinition Proc, SqlScalarType?[] ArgTypes)>();
+            foreach (var proc in candidates)
+            {
+                if (TryMapArguments(proc, args, out var argTypes))
+                    mappedCandidates.Add((proc, argTypes));
+            }
+
+            if (mappedCandidates.Count == 0)
+                throw new WalhallaException($"Procedure '{procedureName}' hat keine passende Ueberladung fuer die angegebenen Argumente.");
+
+            if (mappedCandidates.Count == 1)
+                return mappedCandidates[0].Proc;
+
+            // Try to disambiguate using inferred argument types.
+            var exactMatches = mappedCandidates.Where(
+                m => m.ArgTypes.Zip(m.Proc.Parameters, (argType, param) =>
+                {
+                    if (argType == null) return true;
+                    return argType.Value == param.Type;
+                }).All(ok => ok)).ToList();
+
+            if (exactMatches.Count == 1)
+                return exactMatches[0].Proc;
+
+            if (exactMatches.Count > 1)
+            {
+                // Tie-Break: spezifischste Ueberladung bevorzugen (weniger Parameter,
+                // weniger fehlende optionale Parameter).
+                var ordered = exactMatches
+                    .OrderBy(m => m.Proc.Parameters.Count)
+                    .ThenBy(m => m.ArgTypes.Count(t => t == null))
+                    .ToList();
+
+                var best = ordered[0];
+                if (ordered.Count > 1)
+                {
+                    var second = ordered[1];
+                    var bestMissing = best.ArgTypes.Count(t => t == null);
+                    var secondMissing = second.ArgTypes.Count(t => t == null);
+                    if (second.Proc.Parameters.Count == best.Proc.Parameters.Count && secondMissing == bestMissing)
+                        throw new WalhallaException($"Procedure '{procedureName}' ist mehrdeutig fuer die angegebenen Argumente.");
+                }
+                return best.Proc;
+            }
+
+            throw new WalhallaException($"Procedure '{procedureName}' hat keine passende Ueberladung fuer die angegebenen Argumenttypen.");
+        }
+    }
+
+    private static bool TryMapArguments(
+        SqlStoredProcedureDefinition proc,
+        IReadOnlyList<SqlExecArgument> args,
+        out SqlScalarType?[] argTypes)
+    {
+        argTypes = new SqlScalarType?[proc.Parameters.Count];
+        var provided = new bool[proc.Parameters.Count];
+
+        // Named arguments first.
+        for (int i = 0; i < args.Count; i++)
+        {
+            var arg = args[i];
+            if (arg.ParameterName != null)
+            {
+                var paramIndex = proc.Parameters
+                    .Select((p, idx) => (p, idx))
+                    .FirstOrDefault(x => string.Equals(x.p.Name, arg.ParameterName, StringComparison.OrdinalIgnoreCase));
+                if (paramIndex.p == null)
+                    return false;
+                if (provided[paramIndex.idx])
+                    return false;
+                provided[paramIndex.idx] = true;
+                argTypes[paramIndex.idx] = InferArgumentType(arg.ValueExpression);
+            }
+        }
+
+        // Positional arguments fill remaining slots.
+        int positionalIndex = 0;
+        for (int i = 0; i < args.Count; i++)
+        {
+            var arg = args[i];
+            if (arg.ParameterName != null)
+                continue;
+
+            while (positionalIndex < proc.Parameters.Count && provided[positionalIndex])
+                positionalIndex++;
+
+            if (positionalIndex >= proc.Parameters.Count)
+                return false;
+
+            provided[positionalIndex] = true;
+            argTypes[positionalIndex] = InferArgumentType(arg.ValueExpression);
+            positionalIndex++;
+        }
+
+        // Ensure all required parameters are supplied. Output-Parameter und nullable
+        // Input-Parameter duerfen fehlen (werden spaeter mit NULL gebunden).
+        for (int i = 0; i < proc.Parameters.Count; i++)
+        {
+            if (provided[i])
+                continue;
+
+            var param = proc.Parameters[i];
+            if (param.HasDefaultValue)
+                continue;
+            if (param.Direction != SqlParameterDirection.In)
+                continue;
+            if (param.IsNullable)
+                continue;
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private static SqlScalarType? InferArgumentType(string valueExpression)
+    {
+        try
+        {
+            var expr = SqlWhereParser.ParseValueExpression(valueExpression);
+            return InferTypeFromValueExpression(expr);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static SqlScalarType? InferTypeFromValueExpression(SqlWhereValueExpression expr)
+    {
+        switch (expr)
+        {
+            case SqlWhereLiteralExpression literal:
+                return InferTypeFromLiteral(literal.Value);
+            case SqlWhereUnaryValueExpression unary when unary.Operator == SqlWhereUnaryOperator.Minus:
+                return InferTypeFromValueExpression(unary.Operand);
+            case SqlWhereCastExpression cast:
+                return cast.TargetType;
+            case SqlWhereParameterExpression param:
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    private static SqlScalarType? InferTypeFromLiteral(object? value)
+    {
+        if (value == null || value is DBNull) return null;
+        return value switch
+        {
+            int or uint or short or ushort or sbyte or byte => SqlScalarType.Int32,
+            long or ulong => SqlScalarType.Int64,
+            double or float or decimal => SqlScalarType.Double,
+            bool => SqlScalarType.Boolean,
+            string => SqlScalarType.String,
+            DateTime or DateTimeOffset or TimeSpan => SqlScalarType.DateTime,
+            Guid => SqlScalarType.Guid,
+            _ => null
+        };
     }
 
     private WalhallaResultSet ExecuteCreateFunction(SqlCreateFunctionStatement stmt)
@@ -4953,12 +5158,7 @@ public sealed class WalhallaEngine : IDisposable
     {
         EnsureProcedurePrivilege(exec.ProcedureName, GrantPrivilege.Execute);
 
-        SqlStoredProcedureDefinition? proc;
-        lock (_metaSync)
-        {
-            if (!_procedures.TryGetValue(exec.ProcedureName, out proc))
-                throw new WalhallaException($"Procedure '{exec.ProcedureName}' not found.");
-        }
+        var proc = ResolveProcedure(exec.ProcedureName, exec.Arguments);
 
         if (IsCSharpProcedureLanguage(proc.Language))
         {
@@ -4994,12 +5194,7 @@ public sealed class WalhallaEngine : IDisposable
     {
         EnsureProcedurePrivilege(procedureName, GrantPrivilege.Execute);
 
-        SqlStoredProcedureDefinition? proc;
-        lock (_metaSync)
-        {
-            if (!_procedures.TryGetValue(procedureName, out proc))
-                throw new WalhallaException($"Procedure '{procedureName}' not found.");
-        }
+        var proc = ResolveProcedure(procedureName, args);
 
         if (IsCSharpProcedureLanguage(proc.Language))
         {
@@ -5034,9 +5229,10 @@ public sealed class WalhallaEngine : IDisposable
 
     private PlwProgram GetOrParsePlwProgram(SqlStoredProcedureDefinition proc)
     {
+        var signatureKey = GetProcedureSignatureKey(proc);
         lock (_metaSync)
         {
-            if (_plwPrograms.TryGetValue(proc.Name, out var cached))
+            if (_plwPrograms.TryGetValue(signatureKey, out var cached))
                 return cached;
         }
 
@@ -5046,7 +5242,7 @@ public sealed class WalhallaEngine : IDisposable
             var program = WalhallaSql.Parsing.Plw.PlwParser.Parse(tokens);
             lock (_metaSync)
             {
-                _plwPrograms[proc.Name] = program;
+                _plwPrograms[signatureKey] = program;
             }
             return program;
         }
@@ -5181,11 +5377,12 @@ public sealed class WalhallaEngine : IDisposable
         Func<SqlNativeProcedureContext, WalhallaResultSet>? compiled;
         Func<SqlNativeProcedureContext, CancellationToken, Task<WalhallaStreamResult>>? compiledStreaming;
         Func<SqlNativeProcedureContext, CancellationToken, IAsyncEnumerable<WalhallaRow>>? compiledStreamingRows;
+        var signatureKey = GetProcedureSignatureKey(proc);
         lock (_metaSync)
         {
-            _compiledProcedures.TryGetValue(proc.Name, out compiled);
-            _compiledStreamingProcedures.TryGetValue(proc.Name, out compiledStreaming);
-            _compiledStreamingRowProcedures.TryGetValue(proc.Name, out compiledStreamingRows);
+            _compiledProcedures.TryGetValue(signatureKey, out compiled);
+            _compiledStreamingProcedures.TryGetValue(signatureKey, out compiledStreaming);
+            _compiledStreamingRowProcedures.TryGetValue(signatureKey, out compiledStreamingRows);
         }
 
         if (compiled == null || compiledStreaming == null || compiledStreamingRows == null)
@@ -5205,11 +5402,11 @@ public sealed class WalhallaEngine : IDisposable
             lock (_metaSync)
             {
                 if (compiled != null)
-                    _compiledProcedures[proc.Name] = compiled;
+                    _compiledProcedures[signatureKey] = compiled;
                 if (compiledStreaming != null)
-                    _compiledStreamingProcedures[proc.Name] = compiledStreaming;
+                    _compiledStreamingProcedures[signatureKey] = compiledStreaming;
                 if (compiledStreamingRows != null)
-                    _compiledStreamingRowProcedures[proc.Name] = compiledStreamingRows;
+                    _compiledStreamingRowProcedures[signatureKey] = compiledStreamingRows;
             }
         }
 

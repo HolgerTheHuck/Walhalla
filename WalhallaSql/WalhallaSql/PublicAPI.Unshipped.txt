@@ -347,6 +347,8 @@ WalhallaSql.Sql.SqlProcedureParameter.DefaultValue.get -> object?
 WalhallaSql.Sql.SqlProcedureParameter.DefaultValue.init -> void
 WalhallaSql.Sql.SqlProcedureParameter.Direction.get -> WalhallaSql.Sql.SqlParameterDirection
 WalhallaSql.Sql.SqlProcedureParameter.Direction.init -> void
+WalhallaSql.Sql.SqlProcedureParameter.HasDefaultValue.get -> bool
+WalhallaSql.Sql.SqlProcedureParameter.HasDefaultValue.init -> void
 WalhallaSql.Sql.SqlProcedureParameter.IsNullable.get -> bool
 WalhallaSql.Sql.SqlProcedureParameter.IsNullable.init -> void
 WalhallaSql.Sql.SqlProcedureParameter.IsOutput.get -> bool

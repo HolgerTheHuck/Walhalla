@@ -171,6 +171,7 @@ public sealed record SqlProcedureParameter(
     object? DefaultValue = null)
 {
     public SqlParameterDirection Direction { get; init; } = IsOutput ? SqlParameterDirection.Out : SqlParameterDirection.In;
+    public bool HasDefaultValue { get; init; }
 }
 
 public sealed record SqlStoredProcedureDefinition(

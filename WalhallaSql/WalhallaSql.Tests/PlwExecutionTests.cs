@@ -1176,4 +1176,133 @@ public sealed class PlwExecutionTests
         Assert.Single(result.Rows);
         Assert.Equal(17, Convert.ToInt32(result.Rows[0]["result"]));
     }
+
+    [Fact]
+    public void Procedure_Overload_By_Argument_Count()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE OverloadCount(@result INT OUT)
+            LANGUAGE plw
+            AS $$
+            BEGIN
+                result := 0;
+            END;
+            $$;
+            """);
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE OverloadCount(IN @x INT, @result INT OUT)
+            LANGUAGE plw
+            AS $$
+            BEGIN
+                result := x;
+            END;
+            $$;
+            """);
+
+        var noArg = engine.Execute("EXEC OverloadCount @result = 0 OUTPUT");
+        Assert.Single(noArg.OutputParameters!);
+        Assert.Equal(0, Convert.ToInt32(noArg.OutputParameters!["result"]));
+
+        var oneArg = engine.Execute("EXEC OverloadCount @x = 42, @result = 0 OUTPUT");
+        Assert.Single(oneArg.OutputParameters!);
+        Assert.Equal(42, Convert.ToInt32(oneArg.OutputParameters!["result"]));
+    }
+
+    [Fact]
+    public void Procedure_Overload_By_Argument_Type()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE OverloadType(IN @x INT, @result INT OUT)
+            LANGUAGE plw
+            AS $$
+            BEGIN
+                result := x * 2;
+            END;
+            $$;
+            """);
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE OverloadType(IN @x TEXT, @result INT OUT)
+            LANGUAGE plw
+            AS $$
+            BEGIN
+                result := length(x);
+            END;
+            $$;
+            """);
+
+        var intResult = engine.Execute("EXEC OverloadType @x = 5, @result = 0 OUTPUT");
+        Assert.Single(intResult.OutputParameters!);
+        Assert.Equal(10, Convert.ToInt32(intResult.OutputParameters!["result"]));
+
+        var textResult = engine.Execute("EXEC OverloadType @x = 'abcdef', @result = 0 OUTPUT");
+        Assert.Single(textResult.OutputParameters!);
+        Assert.Equal(6, Convert.ToInt32(textResult.OutputParameters!["result"]));
+    }
+
+    [Fact]
+    public void Procedure_Overload_OR_REPLACE_Same_Signature()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE OverloadReplace(IN @x INT, @result INT OUT)
+            LANGUAGE plw
+            AS $$
+            BEGIN
+                result := x;
+            END;
+            $$;
+            """);
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE OverloadReplace(IN @x INT, @result INT OUT)
+            LANGUAGE plw
+            AS $$
+            BEGIN
+                result := x * 10;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC OverloadReplace @x = 7, @result = 0 OUTPUT");
+        Assert.Single(result.OutputParameters!);
+        Assert.Equal(70, Convert.ToInt32(result.OutputParameters!["result"]));
+    }
+
+    [Fact]
+    public void Procedure_Overload_Drop_Removes_All_Overloads()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE OverloadDrop(IN @x INT)
+            LANGUAGE plw
+            AS $$
+            BEGIN
+                NULL;
+            END;
+            $$;
+            """);
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE OverloadDrop(IN @x TEXT)
+            LANGUAGE plw
+            AS $$
+            BEGIN
+                NULL;
+            END;
+            $$;
+            """);
+
+        engine.Execute("DROP PROCEDURE OverloadDrop");
+
+        var ex = Assert.Throws<WalhallaException>(() => engine.Execute("EXEC OverloadDrop @x = 1"));
+        Assert.Contains("not found", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }
