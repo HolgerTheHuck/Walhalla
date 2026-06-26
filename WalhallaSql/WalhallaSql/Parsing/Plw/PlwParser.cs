@@ -692,6 +692,10 @@ internal static class PlwParser
             case PlwTokenKind.Null:
                 reader.Advance();
                 return new PlwNullExpression();
+            case PlwTokenKind.RecordFound:
+                // FOUND ist die boolesche Systemvariable des PLW-Interpreters.
+                reader.Advance();
+                return new PlwIdentifierExpression("FOUND");
             case PlwTokenKind.Identifier:
                 reader.Advance();
                 var name = token.Text;

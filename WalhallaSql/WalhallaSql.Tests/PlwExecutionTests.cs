@@ -493,4 +493,115 @@ public sealed class PlwExecutionTests
         var result = engine.Execute("EXEC LoopShadow @o_result = 0 OUTPUT");
         Assert.Equal(3, Convert.ToInt32(result.OutputParameters["o_result"]));
     }
+
+    [Fact]
+    public void Plw_Procedure_Found_Insert_And_SelectInto_True()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("INSERT INTO Customers (Id, Name) VALUES (1, 'Dyn')");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE FoundDemo(OUT @o_found BOOLEAN)
+            LANGUAGE plw AS $$
+            DECLARE
+                v_name STRING;
+            BEGIN
+                SELECT Name INTO v_name FROM Customers WHERE Id = 1;
+                o_found := FOUND;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC FoundDemo @o_found = false OUTPUT");
+        Assert.Equal(true, Convert.ToBoolean(result.OutputParameters["o_found"]));
+    }
+
+    [Fact]
+    public void Plw_Procedure_Found_SelectInto_NoRow_False()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name STRING)");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE FoundDemo(OUT @o_found BOOLEAN)
+            LANGUAGE plw AS $$
+            DECLARE
+                v_name STRING;
+            BEGIN
+                SELECT Name INTO v_name FROM Customers WHERE Id = 1;
+                o_found := FOUND;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC FoundDemo @o_found = true OUTPUT");
+        Assert.Equal(false, Convert.ToBoolean(result.OutputParameters["o_found"]));
+    }
+
+    [Fact]
+    public void Plw_Procedure_Found_Update_AffectedRows()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Items (Id INT PRIMARY KEY, Amount INT)");
+        engine.Execute("INSERT INTO Items (Id, Amount) VALUES (1, 10)");
+        engine.Execute("INSERT INTO Items (Id, Amount) VALUES (2, 20)");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE FoundUpdate(IN @p_threshold INT, OUT @o_found BOOLEAN)
+            LANGUAGE plw AS $$
+            BEGIN
+                UPDATE Items SET Amount = 99 WHERE Amount >= p_threshold;
+                o_found := FOUND;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC FoundUpdate @p_threshold = 15, @o_found = false OUTPUT");
+        Assert.Equal(true, Convert.ToBoolean(result.OutputParameters["o_found"]));
+    }
+
+    [Fact]
+    public void Plw_Procedure_Found_Delete_NoMatch_False()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Items (Id INT PRIMARY KEY)");
+        engine.Execute("INSERT INTO Items (Id) VALUES (1)");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE FoundDelete(OUT @o_found BOOLEAN)
+            LANGUAGE plw AS $$
+            BEGIN
+                DELETE FROM Items WHERE Id = 99;
+                o_found := FOUND;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC FoundDelete @o_found = true OUTPUT");
+        Assert.Equal(false, Convert.ToBoolean(result.OutputParameters["o_found"]));
+    }
+
+    [Fact]
+    public void Plw_Procedure_Found_ExecuteInto_True()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Items (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("INSERT INTO Items (Id, Name) VALUES (1, 'Alpha')");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE FoundExecuteInto(OUT @o_found BOOLEAN)
+            LANGUAGE plw AS $$
+            DECLARE
+                v_name STRING;
+            BEGIN
+                EXECUTE 'SELECT Name FROM Items WHERE Id = $1' INTO v_name USING 1;
+                o_found := FOUND;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC FoundExecuteInto @o_found = false OUTPUT");
+        Assert.Equal(true, Convert.ToBoolean(result.OutputParameters["o_found"]));
+    }
 }

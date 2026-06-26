@@ -235,11 +235,12 @@ internal sealed class PlwInterpreter
             case PlwReturnQuery returnQuery:
             {
                 var result = _executor.Execute(returnQuery.Query, _env);
+                _env.SetFound(result.Rows.Count > 0);
                 throw new PlwFlowControlException(result);
             }
 
             case PlwPerform perform:
-                _executor.Execute(perform.Statement, _env);
+                SetFoundFromResult(_executor.Execute(perform.Statement, _env));
                 break;
 
             case PlwSelectInto selectInto:
@@ -255,7 +256,7 @@ internal sealed class PlwInterpreter
                 break;
 
             case PlwSqlStatement sqlStatement:
-                _executor.Execute(sqlStatement.Sql, _env);
+                SetFoundFromResult(_executor.Execute(sqlStatement.Sql, _env));
                 break;
 
             default:
@@ -375,6 +376,7 @@ internal sealed class PlwInterpreter
     private void ExecuteForQueryLoop(PlwForQueryLoop loop)
     {
         var result = _executor.Execute(loop.Query, _env);
+        _env.SetFound(result.Rows.Count > 0);
 
         foreach (var row in result.Rows)
         {
@@ -421,6 +423,8 @@ internal sealed class PlwInterpreter
                 "P0003");
         }
 
+        _env.SetFound(result.Rows.Count > 0);
+
         var row = result.Rows[0];
         for (var i = 0; i < Math.Min(targets.Length, result.ColumnNames.Count); i++)
         {
@@ -458,11 +462,19 @@ internal sealed class PlwInterpreter
                 "P0003");
         }
 
+        _env.SetFound(result.Rows.Count > 0);
+
         var row = result.Rows[0];
         for (var i = 0; i < Math.Min(targets.Length, result.ColumnNames.Count); i++)
         {
             _env.Set(targets[i].Name, row.GetValue(i));
         }
+    }
+
+    private void SetFoundFromResult(WalhallaResultSet result)
+    {
+        bool found = result.AffectedRows > 0 || result.Rows.Count > 0;
+        _env.SetFound(found);
     }
 
     private void ExecuteRaise(PlwRaise raise)

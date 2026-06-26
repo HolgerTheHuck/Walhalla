@@ -46,6 +46,9 @@ eingebetteten Betrieb und für den Client/Server-Betrieb über PgWire gedacht.
   - `RETURN` mit Ausdruck wird abgelehnt (nur `RETURN` für Prozeduren, `RETURN QUERY` für Ergebnismengen)
   - Numerische Operationen vermeiden stille `int`-Überläufe durch automatische Promotion zu `long`/`double`
   - Fehlermeldungen für unvollständige Dollar-Quotes enthalten Zeile/Spalte
+- ✅ Phase 10a: `FOUND`-Systemvariable abgeschlossen
+  - `FOUND` zeigt nach DML (`INSERT`/`UPDATE`/`DELETE`), `SELECT INTO`, `EXECUTE ... INTO`, `PERFORM` und `FOR ... IN SELECT ... LOOP` an, ob Zeilen betroffen oder gefunden wurden
+  - `FOUND` kann gelesen und über Zuweisung (`FOUND := ...`) gesetzt werden, darf aber nicht deklariert werden
 
 Das technische Design-Dokument liegt unter `WalhallaSql/docs/plw-design.md`; der
 Migrations-Guide von PL/pgSQL unter `WalhallaSql/docs/plw/from-plpgsql.md`;
@@ -117,6 +120,7 @@ Console.WriteLine(result.OutputParameters["p_name"]); // Dyn
 - `RAISE NOTICE` und `RAISE EXCEPTION`
 - `IN`, `OUT`, `INOUT`-Parameter
 - `%TYPE` für Tabellenspalten (v1)
+- `FOUND`-Systemvariable
 
 ## Aufruf aus verschiedenen Clients
 
@@ -182,6 +186,7 @@ In Phase 9 wurden gezielt Korrektheitslücken geschlossen:
 | `EXECUTE ... INTO` liefert mehr als eine Zeile | `WalhallaException` | `P0003` |
 | `RETURN` mit Ausdruck in einer Prozedur | `WalhallaException` | – |
 | `int`-Überlauf bei einer arithmetischen Operation | automatische Promotion zu `long` oder `double` | – |
+| `FOUND` nach einer SQL-Operation | `true`, wenn Zeilen betroffen oder gefunden wurden; sonst `false` | – |
 
 Schleifenvariablen (`FOR i IN ...`, `FOR rec IN SELECT ...`) dürfen dagegen
 Block-Variablen gleichen Namens temporär überschatten.
@@ -235,7 +240,7 @@ Für die erste Version sind folgende PL/pgSQL-Features nicht geplant:
 - Exception-Handler (`BEGIN ... EXCEPTION ... END`)
 - Arrays und Composite-Typen
 - Trigger-Funktionen
-- Systemvariablen wie `FOUND`, `SQLSTATE`, `SQLERRM`
+- Systemvariablen wie `SQLSTATE`, `SQLERRM`
 - Prozedur-Überladung
 - Format-Platzhalter in `RAISE NOTICE` / `RAISE EXCEPTION`
 

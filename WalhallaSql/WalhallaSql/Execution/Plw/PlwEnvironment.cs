@@ -6,11 +6,15 @@ namespace WalhallaSql.Execution.Plw;
 /// <summary>
 /// Variablen-Scope fuer einen PLW-Aufruf. Variablennamen werden case-insensitiv
 /// behandelt und koennen wahlweise mit oder ohne fuehrendes '@' angesprochen werden.
+/// Enthaelt zusaetzlich die implizite Systemvariable FOUND.
 /// </summary>
 internal sealed class PlwEnvironment
 {
+    public const string FoundVariableName = "found";
+
     private readonly Dictionary<string, PlwVariable> _variables;
     private readonly PlwEnvironment? _parent;
+    private bool _found;
 
     public PlwEnvironment(PlwEnvironment? parent = null)
     {
@@ -21,6 +25,9 @@ internal sealed class PlwEnvironment
     public void Declare(string name, string typeName, object? value, bool allowOverwrite = false)
     {
         var key = Normalize(name);
+        if (IsSystemVariable(key))
+            throw new WalhallaException($"PLW-Variable '{name}' ist eine reservierte Systemvariable und darf nicht deklariert werden.");
+
         if (!allowOverwrite && _variables.ContainsKey(key))
             throw new WalhallaException($"PLW-Variable '{name}' ist bereits deklariert.");
 
@@ -30,6 +37,12 @@ internal sealed class PlwEnvironment
     public void Set(string name, object? value)
     {
         var key = Normalize(name);
+        if (IsFoundVariable(key))
+        {
+            SetFound(PlwExpressionEvaluator.ToBoolean(value));
+            return;
+        }
+
         if (_variables.TryGetValue(key, out var variable))
         {
             variable.Value = value;
@@ -48,6 +61,9 @@ internal sealed class PlwEnvironment
     public object? Get(string name)
     {
         var key = Normalize(name);
+        if (IsFoundVariable(key))
+            return _found;
+
         if (_variables.TryGetValue(key, out var variable))
             return variable.Value;
 
@@ -60,6 +76,12 @@ internal sealed class PlwEnvironment
     public bool TryGet(string name, out object? value)
     {
         var key = Normalize(name);
+        if (IsFoundVariable(key))
+        {
+            value = _found;
+            return true;
+        }
+
         if (_variables.TryGetValue(key, out var variable))
         {
             value = variable.Value;
@@ -76,12 +98,15 @@ internal sealed class PlwEnvironment
     public bool Contains(string name)
     {
         var key = Normalize(name);
-        return _variables.ContainsKey(key) || (_parent?.Contains(name) ?? false);
+        return IsFoundVariable(key) || _variables.ContainsKey(key) || (_parent?.Contains(name) ?? false);
     }
 
     public string? TryGetTypeName(string name)
     {
         var key = Normalize(name);
+        if (IsFoundVariable(key))
+            return "BOOLEAN";
+
         if (_variables.TryGetValue(key, out var variable))
             return variable.TypeName;
 
@@ -90,6 +115,22 @@ internal sealed class PlwEnvironment
 
         return null;
     }
+
+    /// <summary>
+    /// Setzt die Systemvariable FOUND. Wird nach jeder SQL-Operation aufgerufen.
+    /// </summary>
+    public void SetFound(bool value)
+    {
+        _found = value;
+        if (_parent != null)
+            _parent.SetFound(value);
+    }
+
+    private static bool IsFoundVariable(string key)
+        => string.Equals(key, FoundVariableName, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSystemVariable(string key)
+        => IsFoundVariable(key);
 
     private static string Normalize(string name)
         => name.TrimStart('@').Trim();
