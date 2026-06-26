@@ -264,7 +264,17 @@ internal static class SqlWhereParser
             return new SqlWhereComparisonExpression(left, op, right);
         }
 
-        private SqlWhereValueExpression ParseValueExpression() => ParseAdditiveValueExpression();
+        private SqlWhereValueExpression ParseValueExpression() => ParseConcatValueExpression();
+
+        private SqlWhereValueExpression ParseConcatValueExpression()
+        {
+            var left = ParseAdditiveValueExpression();
+            while (TryConsumeConcat())
+            {
+                left = new SqlWhereBinaryValueExpression(left, SqlWhereBinaryOperator.Concat, ParseAdditiveValueExpression());
+            }
+            return left;
+        }
 
         private SqlWhereValueExpression ParseAdditiveValueExpression()
         {
@@ -777,6 +787,16 @@ internal static class SqlWhereParser
             if (IsEnd() || CurrentChar != '|' || (_position + 1 < _text.Length && _text[_position + 1] == '|'))
                 return false;
             _position++;
+            SkipWhitespace();
+            return true;
+        }
+
+        private bool TryConsumeConcat()
+        {
+            SkipWhitespace();
+            if (IsEnd() || CurrentChar != '|' || _position + 1 >= _text.Length || _text[_position + 1] != '|')
+                return false;
+            _position += 2;
             SkipWhitespace();
             return true;
         }

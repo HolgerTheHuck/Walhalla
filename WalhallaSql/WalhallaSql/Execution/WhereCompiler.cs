@@ -772,21 +772,28 @@ internal static class WhereCompiler
         };
     }
 
-    private static object ApplyBinaryOp(object? left, object? right, SqlWhereBinaryOperator op)
+    private static object? ApplyBinaryOp(object? left, object? right, SqlWhereBinaryOperator op)
     {
         if (left == null || right == null) return DBNull.Value;
         try
         {
+            if (op == SqlWhereBinaryOperator.Concat)
+            {
+                var lv = ExtractString(left);
+                var rv = ExtractString(right);
+                return string.Concat(lv, rv);
+            }
+
             // Promote both to double for arithmetic
-            var lv = Convert.ToDouble(left);
-            var rv = Convert.ToDouble(right);
+            var lvDouble = Convert.ToDouble(left);
+            var rvDouble = Convert.ToDouble(right);
             var result = op switch
             {
-                SqlWhereBinaryOperator.Add => lv + rv,
-                SqlWhereBinaryOperator.Subtract => lv - rv,
-                SqlWhereBinaryOperator.Multiply => lv * rv,
-                SqlWhereBinaryOperator.Divide => lv / rv,
-                SqlWhereBinaryOperator.Modulo => lv % rv,
+                SqlWhereBinaryOperator.Add => lvDouble + rvDouble,
+                SqlWhereBinaryOperator.Subtract => lvDouble - rvDouble,
+                SqlWhereBinaryOperator.Multiply => lvDouble * rvDouble,
+                SqlWhereBinaryOperator.Divide => lvDouble / rvDouble,
+                SqlWhereBinaryOperator.Modulo => lvDouble % rvDouble,
                 _ => throw new NotSupportedException($"Unknown binary operator {op}.")
             };
             return result;

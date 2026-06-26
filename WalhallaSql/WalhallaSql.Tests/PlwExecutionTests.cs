@@ -1115,4 +1115,17 @@ public sealed class PlwExecutionTests
         Assert.Single(result.Rows);
         Assert.Equal("truncated", result.Rows[0]["msg"]);
     }
+
+    [Fact]
+    public void Sql_Concat_Operator_In_Select()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE Users (Id INT PRIMARY KEY, FirstName STRING, LastName STRING)");
+        engine.Execute("INSERT INTO Users (Id, FirstName, LastName) VALUES (1, 'Ada', 'Lovelace')");
+
+        var result = engine.Execute("SELECT FirstName || ' ' || LastName AS FullName FROM Users WHERE Id = 1");
+        Assert.Single(result.Rows);
+        Assert.Equal("Ada Lovelace", result.Rows[0]["FullName"]);
+    }
 }

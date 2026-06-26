@@ -102,7 +102,8 @@ public enum SqlWhereBinaryOperator
     Subtract,
     Multiply,
     Divide,
-    Modulo
+    Modulo,
+    Concat
 }
 
 public sealed record SqlWhereBinaryValueExpression(
