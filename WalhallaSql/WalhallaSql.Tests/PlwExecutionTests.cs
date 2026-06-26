@@ -1305,4 +1305,153 @@ public sealed class PlwExecutionTests
         var ex = Assert.Throws<WalhallaException>(() => engine.Execute("EXEC OverloadDrop @x = 1"));
         Assert.Contains("not found", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Plw_Array_Literal_And_Subscript()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE ArrayDemo(OUT @o_first INT, OUT @o_last INT)
+            LANGUAGE plw
+            AS $$
+            DECLARE
+                arr INT[] := ARRAY[10, 20, 30];
+            BEGIN
+                o_first := arr[1];
+                o_last := arr[3];
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC ArrayDemo @o_first = 0 OUTPUT, @o_last = 0 OUTPUT");
+        Assert.Equal(10, Convert.ToInt32(result.OutputParameters!["o_first"]));
+        Assert.Equal(30, Convert.ToInt32(result.OutputParameters!["o_last"]));
+    }
+
+    [Fact]
+    public void Plw_Foreach_Loop_Sums_Array()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE ForeachSum(IN @numbers INT[], OUT @o_sum INT)
+            LANGUAGE plw
+            AS $$
+            DECLARE
+                x INT;
+            BEGIN
+                o_sum := 0;
+                FOREACH x IN numbers LOOP
+                    o_sum := o_sum + x;
+                END LOOP;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC ForeachSum @numbers = ARRAY[1, 2, 3, 4], @o_sum = 0 OUTPUT");
+        Assert.Equal(10, Convert.ToInt32(result.OutputParameters!["o_sum"]));
+    }
+
+    [Fact]
+    public void Plw_Forall_Inserts_Batched()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE ForallTest (Id INT PRIMARY KEY)");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE ForallInsert(OUT @o_count INT)
+            LANGUAGE plw
+            AS $$
+            DECLARE
+                idx INT;
+            BEGIN
+                o_count := 0;
+                FORALL idx IN 1..3 LOOP
+                    o_count := o_count + 1;
+                    INSERT INTO ForallTest (Id) VALUES (idx);
+                END LOOP;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC ForallInsert @o_count = 0 OUTPUT");
+        Assert.Equal(3, Convert.ToInt32(result.OutputParameters!["o_count"]));
+        Assert.Equal(3, Convert.ToInt32(engine.Execute("SELECT COUNT(*) AS c FROM ForallTest").Rows[0]["c"]));
+    }
+
+    [Fact]
+    public void Plw_Forall_Indices_Of_Array()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE IndicesTest (Id INT PRIMARY KEY)");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE ForallIndices(IN @arr INT[], OUT @o_count INT)
+            LANGUAGE plw
+            AS $$
+            DECLARE
+                idx INT;
+            BEGIN
+                FORALL idx IN INDICES OF arr LOOP
+                    INSERT INTO IndicesTest (Id) VALUES (arr[idx]);
+                END LOOP;
+                SELECT COUNT(*) INTO o_count FROM IndicesTest;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC ForallIndices @arr = ARRAY[5, 6, 7], @o_count = 0 OUTPUT");
+        Assert.Equal(3, Convert.ToInt32(result.OutputParameters!["o_count"]));
+        Assert.Equal(5, Convert.ToInt32(engine.Execute("SELECT Id FROM IndicesTest ORDER BY Id").Rows[0]["Id"]));
+        Assert.Equal(7, Convert.ToInt32(engine.Execute("SELECT Id FROM IndicesTest ORDER BY Id DESC").Rows[0]["Id"]));
+    }
+
+    [Fact]
+    public void Plw_Row_Literal_And_Field_Access()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE RowDemo(OUT @o_name STRING, OUT @o_age INT)
+            LANGUAGE plw
+            AS $$
+            DECLARE
+                r RECORD := ROW('Alice', 30);
+            BEGIN
+                o_name := r.f1;
+                o_age := r.f2;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC RowDemo @o_name = '' OUTPUT, @o_age = 0 OUTPUT");
+        Assert.Equal("Alice", result.OutputParameters!["o_name"]);
+        Assert.Equal(30, Convert.ToInt32(result.OutputParameters!["o_age"]));
+    }
+
+    [Fact]
+    public void Plw_RowType_SelectInto_Record()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Employees (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("INSERT INTO Employees (Id, Name) VALUES (1, 'Bob')");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE RowtypeDemo(OUT @o_name STRING)
+            LANGUAGE plw
+            AS $$
+            DECLARE
+                rec Employees%ROWTYPE;
+            BEGIN
+                SELECT * INTO rec FROM Employees WHERE Id = 1;
+                o_name := rec.Name;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC RowtypeDemo @o_name = '' OUTPUT");
+        Assert.Equal("Bob", result.OutputParameters!["o_name"]);
+    }
 }
+

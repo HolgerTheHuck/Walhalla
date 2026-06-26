@@ -27,6 +27,8 @@ internal sealed class PlwSqlExecutor
     public WalhallaResultSet Execute(PlwSqlFragment fragment, PlwEnvironment env)
     {
         var sql = BuildSql(fragment, env);
+        if (sql.Contains("IndicesTest"))
+            System.Console.WriteLine("[PLW SQL] '" + sql + "'");
         return _engine.Execute(sql);
     }
 
@@ -135,6 +137,20 @@ internal sealed class PlwSqlExecutor
 
                 if (env.Contains(token) || env.Contains(normalized))
                 {
+                    var subscriptEnd = TryFindArraySubscriptEnd(sql, i);
+                    if (subscriptEnd > 0)
+                    {
+                        var subscriptSource = sql[start..subscriptEnd];
+                        var expr = PlwParser.TryParseExpression(subscriptSource);
+                        if (expr != null)
+                        {
+                            var subscriptValue = _evaluator.Evaluate(expr, env);
+                            sb.Append(FormatSqlValue(subscriptValue, null));
+                            i = subscriptEnd;
+                            continue;
+                        }
+                    }
+
                     var value = env.Get(token);
                     var typeName = env.TryGetTypeName(token) ?? env.TryGetTypeName(normalized);
                     var type = TryParseScalarType(typeName);
@@ -151,6 +167,41 @@ internal sealed class PlwSqlExecutor
         }
 
         return sb.ToString();
+    }
+
+    private static int TryFindArraySubscriptEnd(string sql, int startIndex)
+    {
+        var i = startIndex;
+        while (i < sql.Length && char.IsWhiteSpace(sql[i]))
+            i++;
+
+        if (i >= sql.Length || sql[i] != '[')
+            return -1;
+
+        i++; // hinter [
+        var depth = 1;
+        var inString = false;
+        while (i < sql.Length && depth > 0)
+        {
+            var c = sql[i];
+            if (c == '\'')
+            {
+                if (inString && i + 1 < sql.Length && sql[i + 1] == '\'')
+                {
+                    i += 2;
+                    continue;
+                }
+                inString = !inString;
+            }
+            else if (!inString)
+            {
+                if (c == '[') depth++;
+                else if (c == ']') depth--;
+            }
+            i++;
+        }
+
+        return depth == 0 ? i : -1;
     }
 
     private static string BindPositionalArguments(string sql, IReadOnlyList<object?> arguments)

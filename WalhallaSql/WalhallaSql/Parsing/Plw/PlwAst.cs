@@ -107,6 +107,29 @@ internal sealed record PlwForQueryLoop(
     string? Label = null) : PlwNode;
 
 /// <summary>
+/// FOREACH item IN array LOOP ... END LOOP
+/// </summary>
+internal sealed record PlwForeachLoop(
+    string VariableName,
+    PlwExpression ArrayExpression,
+    PlwNode Body,
+    string? Label = null) : PlwNode;
+
+/// <summary>
+/// FORALL idx IN lower..upper LOOP DML; END LOOP
+/// oder FORALL idx IN INDICES OF arr LOOP DML; END LOOP
+/// </summary>
+internal sealed record PlwForallLoop(
+    string VariableName,
+    PlwForallRange Range,
+    PlwNode Body,
+    string? Label = null) : PlwNode;
+
+internal abstract record PlwForallRange : PlwNode;
+internal sealed record PlwForallIntegerRange(PlwExpression Lower, PlwExpression Upper) : PlwForallRange;
+internal sealed record PlwForallIndicesOfRange(PlwExpression ArrayExpression) : PlwForallRange;
+
+/// <summary>
 /// EXIT [label] [WHEN condition]
 /// </summary>
 internal sealed record PlwExit(
@@ -196,7 +219,24 @@ internal sealed record PlwUnaryExpression(PlwTokenKind Operator, PlwExpression O
 internal sealed record PlwParameterReference(int Index) : PlwExpression;
 
 /// <summary>
-/// Feldzugriff auf eine Record/Row-Variable, z. B. NEW.Id oder OLD.Name.
+/// Array-Literal: ARRAY[expr1, expr2, ...]
+/// </summary>
+internal sealed record PlwArrayLiteralExpression(IReadOnlyList<PlwExpression> Elements) : PlwExpression;
+
+/// <summary>
+/// Array-Elementzugriff: arr[expr]
+/// </summary>
+internal sealed record PlwArraySubscriptExpression(
+    PlwExpression Array,
+    PlwExpression Index) : PlwExpression;
+
+/// <summary>
+/// Record-Literal: ROW(expr1, expr2, ...)
+/// </summary>
+internal sealed record PlwRowLiteralExpression(IReadOnlyList<PlwExpression> Elements) : PlwExpression;
+
+/// <summary>
+/// Record-Elementzugriff: rec.field
 /// </summary>
 internal sealed record PlwFieldAccessExpression(
     PlwExpression Record,

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace WalhallaSql.Parsing.Plw;
 
@@ -29,7 +30,7 @@ internal static class PlwParser
             {
                 var direction = ParseOptionalDirection(ref reader);
                 var name = reader.Expect(PlwTokenKind.Identifier).Text;
-                var typeName = reader.Expect(PlwTokenKind.Identifier).Text;
+                var typeName = ParseTypeName(ref reader);
                 PlwExpression? defaultValue = null;
                 if (reader.Current.Kind == PlwTokenKind.Equals)
                 {
@@ -142,6 +143,44 @@ internal static class PlwParser
         return reader.Expect(PlwTokenKind.Identifier).Text;
     }
 
+    private static string ParseTypeName(ref TokenReader reader)
+    {
+        var sb = new StringBuilder();
+        if (reader.Current.Kind == PlwTokenKind.Record)
+        {
+            sb.Append(reader.Current.Text);
+            reader.Advance();
+        }
+        else
+        {
+            sb.Append(reader.Expect(PlwTokenKind.Identifier).Text);
+        }
+
+        if (reader.Current.Kind == PlwTokenKind.Percent)
+        {
+            reader.Advance();
+            if (reader.Current.Kind == PlwTokenKind.Row)
+            {
+                sb.Append("%ROWTYPE");
+                reader.Advance();
+            }
+            else
+            {
+                var typeOrName = reader.Expect(PlwTokenKind.Identifier).Text;
+                sb.Append($"%{typeOrName}");
+            }
+        }
+
+        while (reader.Current.Kind == PlwTokenKind.LeftBracket)
+        {
+            reader.Advance();
+            reader.Expect(PlwTokenKind.RightBracket);
+            sb.Append("[]");
+        }
+
+        return sb.ToString();
+    }
+
     private static PlwNode? ParseVariableDeclaration(ref TokenReader reader)
     {
         if (reader.Current.Kind == PlwTokenKind.Begin)
@@ -159,11 +198,7 @@ internal static class PlwParser
             return new PlwCursorDeclaration(name, query);
         }
 
-        var typeName = reader.Current.Kind == PlwTokenKind.Record
-            ? reader.Current.Text
-            : reader.Expect(PlwTokenKind.Identifier).Text;
-        if (reader.Current.Kind == PlwTokenKind.Record)
-            reader.Advance();
+        var typeName = ParseTypeName(ref reader);
 
         PlwExpression? defaultValue = null;
         if (reader.Current.Kind == PlwTokenKind.ColonEquals)
@@ -194,6 +229,10 @@ internal static class PlwParser
                 return ParseWhileLoop(ref reader, label);
             case PlwTokenKind.For:
                 return ParseForLoop(ref reader, label);
+            case PlwTokenKind.Foreach:
+                return ParseForeachLoop(ref reader, label);
+            case PlwTokenKind.Forall:
+                return ParseForallLoop(ref reader, label);
             case PlwTokenKind.Exit:
                 return ParseExit(ref reader);
             case PlwTokenKind.Continue:
@@ -360,6 +399,44 @@ internal static class PlwParser
         reader.Expect(PlwTokenKind.Loop);
         var loopBody = ParseLoopBody(ref reader, label);
         return new PlwForQueryLoop(variable, query, loopBody, label);
+    }
+
+    private static PlwNode ParseForeachLoop(ref TokenReader reader, string? label = null)
+    {
+        reader.Advance(); // FOREACH
+        var variable = reader.Expect(PlwTokenKind.Identifier).Text;
+        reader.Expect(PlwTokenKind.In);
+        var arrayExpr = ParseExpression(ref reader);
+        reader.Expect(PlwTokenKind.Loop);
+        var body = ParseLoopBody(ref reader, label);
+        return new PlwForeachLoop(variable, arrayExpr, body, label);
+    }
+
+    private static PlwNode ParseForallLoop(ref TokenReader reader, string? label = null)
+    {
+        reader.Advance(); // FORALL
+        var variable = reader.Expect(PlwTokenKind.Identifier).Text;
+        reader.Expect(PlwTokenKind.In);
+
+        PlwForallRange range;
+        if (reader.Current.Kind == PlwTokenKind.Indices)
+        {
+            reader.Advance();
+            reader.Expect(PlwTokenKind.Of);
+            var arrayExpr = ParseExpression(ref reader);
+            range = new PlwForallIndicesOfRange(arrayExpr);
+        }
+        else
+        {
+            var lower = ParseExpression(ref reader);
+            reader.Expect(PlwTokenKind.DoubleDot);
+            var upper = ParseExpression(ref reader);
+            range = new PlwForallIntegerRange(lower, upper);
+        }
+
+        reader.Expect(PlwTokenKind.Loop);
+        var body = ParseLoopBody(ref reader, label);
+        return new PlwForallLoop(variable, range, body, label);
     }
 
     private static bool LooksLikeIntegerLoop(TokenReader reader)
@@ -633,20 +710,25 @@ internal static class PlwParser
 
     private static bool ContainsIntoBeforeFrom(string sql)
     {
-        var intoIndex = sql.IndexOf(" INTO ", StringComparison.OrdinalIgnoreCase);
-        var fromIndex = sql.IndexOf(" FROM ", StringComparison.OrdinalIgnoreCase);
-        return intoIndex >= 0 && (fromIndex < 0 || intoIndex < fromIndex);
+        var intoMatch = Regex.Match(sql, @"\bINTO\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!intoMatch.Success)
+            return false;
+
+        var fromMatch = Regex.Match(sql, @"\bFROM\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return !fromMatch.Success || intoMatch.Index < fromMatch.Index;
     }
 
     private static (PlwSqlFragment selectSql, IReadOnlyList<PlwExpression> targets) SplitSelectInto(PlwSqlFragment sql)
     {
         var text = sql.Text;
-        var intoIndex = text.IndexOf(" INTO ", StringComparison.OrdinalIgnoreCase);
-        var fromIndex = text.IndexOf(" FROM ", StringComparison.OrdinalIgnoreCase);
-        if (intoIndex < 0)
+        var intoMatch = Regex.Match(text, @"\bINTO\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var fromMatch = Regex.Match(text, @"\bFROM\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!intoMatch.Success)
             return (sql, Array.Empty<PlwExpression>());
 
-        int intoEnd = intoIndex + 6;
+        var intoIndex = intoMatch.Index;
+        var fromIndex = fromMatch.Success ? fromMatch.Index : -1;
+        int intoEnd = intoMatch.Index + intoMatch.Length;
         var targetSection = fromIndex > intoIndex ? text[intoEnd..fromIndex] : text[intoEnd..];
         var targetNames = targetSection.Split(',');
         var targets = new List<PlwExpression>();
@@ -846,34 +928,74 @@ internal static class PlwParser
     private static PlwExpression ParsePrimary(ref TokenReader reader)
     {
         var token = reader.Current;
+        PlwExpression expr;
         switch (token.Kind)
         {
             case PlwTokenKind.Number:
                 reader.Advance();
-                return new PlwNumberExpression(token.Text);
+                expr = new PlwNumberExpression(token.Text);
+                break;
             case PlwTokenKind.String:
                 reader.Advance();
-                return new PlwStringExpression(token.Text);
+                expr = new PlwStringExpression(token.Text);
+                break;
             case PlwTokenKind.True:
                 reader.Advance();
-                return new PlwBooleanExpression(true);
+                expr = new PlwBooleanExpression(true);
+                break;
             case PlwTokenKind.False:
                 reader.Advance();
-                return new PlwBooleanExpression(false);
+                expr = new PlwBooleanExpression(false);
+                break;
             case PlwTokenKind.Null:
                 reader.Advance();
-                return new PlwNullExpression();
+                expr = new PlwNullExpression();
+                break;
             case PlwTokenKind.RecordFound:
                 // FOUND ist die boolesche Systemvariable des PLW-Interpreters.
                 reader.Advance();
-                return new PlwIdentifierExpression("FOUND");
+                expr = new PlwIdentifierExpression("FOUND");
+                break;
             case PlwTokenKind.SqlState:
                 // SQLSTATE ist die Systemvariable fuer den aktuellen SQLSTATE.
                 reader.Advance();
-                return new PlwIdentifierExpression("SQLSTATE");
+                expr = new PlwIdentifierExpression("SQLSTATE");
+                break;
+            case PlwTokenKind.Row:
+                reader.Advance();
+                reader.Expect(PlwTokenKind.LeftParen);
+                var rowArgs = new List<PlwExpression>();
+                if (reader.Current.Kind != PlwTokenKind.RightParen)
+                {
+                    do
+                    {
+                        rowArgs.Add(ParseExpression(ref reader));
+                    }
+                    while (reader.Current.Kind == PlwTokenKind.Comma && reader.AdvanceComma());
+                }
+                reader.Expect(PlwTokenKind.RightParen);
+                expr = new PlwRowLiteralExpression(rowArgs);
+                break;
             case PlwTokenKind.Identifier:
                 reader.Advance();
                 var name = token.Text;
+                if (name.Equals("ARRAY", StringComparison.OrdinalIgnoreCase)
+                    && reader.Current.Kind == PlwTokenKind.LeftBracket)
+                {
+                    reader.Advance(); // [
+                    var elements = new List<PlwExpression>();
+                    if (reader.Current.Kind != PlwTokenKind.RightBracket)
+                    {
+                        do
+                        {
+                            elements.Add(ParseExpression(ref reader));
+                        }
+                        while (reader.Current.Kind == PlwTokenKind.Comma && reader.AdvanceComma());
+                    }
+                    reader.Expect(PlwTokenKind.RightBracket);
+                    expr = new PlwArrayLiteralExpression(elements);
+                    break;
+                }
                 if (reader.Current.Kind == PlwTokenKind.LeftParen)
                 {
                     // Funktionsaufruf
@@ -889,27 +1011,62 @@ internal static class PlwParser
                     }
                     reader.Expect(PlwTokenKind.RightParen);
                     PlwExpression callArgs = args.Count == 1 ? args[0] : new PlwSqlFragment(string.Empty, args);
-                    return new PlwBinaryExpression(
+                    expr = new PlwBinaryExpression(
                         new PlwIdentifierExpression(name),
                         PlwTokenKind.LeftParen,
                         callArgs);
+                    break;
                 }
-                if (reader.Current.Kind == PlwTokenKind.Dot)
-                {
-                    reader.Advance();
-                    var member = reader.Expect(PlwTokenKind.Identifier).Text;
-                    return new PlwFieldAccessExpression(
-                        new PlwIdentifierExpression(name),
-                        member);
-                }
-                return new PlwIdentifierExpression(name);
+                expr = new PlwIdentifierExpression(name);
+                break;
             case PlwTokenKind.LeftParen:
                 reader.Advance();
-                var expr = ParseExpression(ref reader);
+                expr = ParseExpression(ref reader);
                 reader.Expect(PlwTokenKind.RightParen);
-                return expr;
+                break;
             default:
                 throw new WalhallaSyntaxException($"Unerwarteter Token '{token.Text}' in Ausdruck bei Zeile {token.Line}, Spalte {token.Column}.");
+        }
+
+        // Postfix-Operatoren: Feldzugriff und Array-Index
+        while (reader.Current.Kind is PlwTokenKind.Dot or PlwTokenKind.LeftBracket)
+        {
+            if (reader.Current.Kind == PlwTokenKind.Dot)
+            {
+                reader.Advance();
+                var member = reader.Expect(PlwTokenKind.Identifier).Text;
+                expr = new PlwFieldAccessExpression(expr, member);
+            }
+            else
+            {
+                reader.Advance(); // [
+                var index = ParseExpression(ref reader);
+                reader.Expect(PlwTokenKind.RightBracket);
+                expr = new PlwArraySubscriptExpression(expr, index);
+            }
+        }
+
+        return expr;
+    }
+
+    /// <summary>
+    /// Parst einen einzelnen PLW-Ausdruck aus einer Zeichenkette.
+    /// Liefert null, wenn der Text kein gueltiger Ausdruck ist.
+    /// </summary>
+    internal static PlwExpression? TryParseExpression(string source)
+    {
+        try
+        {
+            var tokens = PlwTokenizer.Tokenize(source);
+            var reader = new TokenReader(tokens);
+            var expr = ParseExpression(ref reader);
+            if (!reader.IsAtEnd)
+                return null;
+            return expr;
+        }
+        catch
+        {
+            return null;
         }
     }
 

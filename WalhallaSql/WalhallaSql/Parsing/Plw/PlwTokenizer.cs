@@ -63,6 +63,11 @@ internal enum PlwTokenKind
     SqlState,
     Hint,
     Detail,
+    Foreach,
+    Forall,
+    Indices,
+    Of,
+    Row,
 
     // Operatoren und Satzzeichen
     ColonEquals,    // :=
@@ -70,6 +75,8 @@ internal enum PlwTokenKind
     Comma,          // ,
     LeftParen,      // (
     RightParen,     // )
+    LeftBracket,    // [
+    RightBracket,   // ]
     Dot,            // .
 
     Plus,           // +
@@ -296,6 +303,12 @@ internal static class PlwTokenizer
             case ')':
                 reader.Advance();
                 return CreateToken(PlwTokenKind.RightParen, ")", startPos, 1, startLine, startCol);
+            case '[':
+                reader.Advance();
+                return CreateToken(PlwTokenKind.LeftBracket, "[", startPos, 1, startLine, startCol);
+            case ']':
+                reader.Advance();
+                return CreateToken(PlwTokenKind.RightBracket, "]", startPos, 1, startLine, startCol);
             case '.':
                 if (reader.Peek(1) == '.')
                 {
@@ -455,6 +468,11 @@ internal static class PlwTokenizer
             "SQLSTATE" => PlwTokenKind.SqlState,
             "HINT" => PlwTokenKind.Hint,
             "DETAIL" => PlwTokenKind.Detail,
+            "FOREACH" => PlwTokenKind.Foreach,
+            "FORALL" => PlwTokenKind.Forall,
+            "INDICES" => PlwTokenKind.Indices,
+            "OF" => PlwTokenKind.Of,
+            "ROW" => PlwTokenKind.Row,
 
             "NULL" => PlwTokenKind.Null,
             "TRUE" => PlwTokenKind.True,

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
+using WalhallaSql.Parsing;
 using WalhallaSql.Parsing.Plw;
 using WalhallaSql.Sql;
 
@@ -224,7 +225,88 @@ internal sealed class PlwInterpreter
                 return _env.Get(varName);
         }
 
+        if (expression.StartsWith("ARRAY[", StringComparison.OrdinalIgnoreCase)
+            && expression.EndsWith("]"))
+        {
+            return ParseArrayLiteral(expression, parameter.Type);
+        }
+
+        if (expression.StartsWith("ROW(", StringComparison.OrdinalIgnoreCase)
+            && expression.EndsWith(")"))
+        {
+            return ParseRowLiteral(expression);
+        }
+
         return ParseLiteral(expression, parameter.Type);
+    }
+
+    private List<object?> ParseArrayLiteral(string expression, SqlScalarType elementType)
+    {
+        var inner = expression.Substring(6, expression.Length - 7).Trim();
+        var list = new List<object?>();
+        if (string.IsNullOrEmpty(inner))
+            return list;
+
+        foreach (var part in SqlSyntaxText.SplitTopLevel(inner, ','))
+        {
+            var element = part.Trim();
+            if (element.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+            {
+                list.Add(null);
+                continue;
+            }
+
+            list.Add(ParseLiteral(element, elementType));
+        }
+
+        return list;
+    }
+
+    private static Dictionary<string, object?> ParseRowLiteral(string expression)
+    {
+        var inner = expression.Substring(4, expression.Length - 5).Trim();
+        var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(inner))
+            return dict;
+
+        var parts = SqlSyntaxText.SplitTopLevel(inner, ',');
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var element = parts[i].Trim();
+            if (element.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+            {
+                dict[$"f{i + 1}"] = null;
+            }
+            else
+            {
+                dict[$"f{i + 1}"] = ParseLiteralStatic(element);
+            }
+        }
+
+        return dict;
+    }
+
+    private static object? ParseLiteralStatic(string expression)
+    {
+        var trimmed = expression.Trim();
+        if (trimmed.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+            return intValue;
+
+        if (double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
+            return doubleValue;
+
+        if (trimmed.Equals("TRUE", StringComparison.OrdinalIgnoreCase) || trimmed == "1")
+            return true;
+        if (trimmed.Equals("FALSE", StringComparison.OrdinalIgnoreCase) || trimmed == "0")
+            return false;
+
+        if (trimmed.Length >= 2 && trimmed[0] == '\'' && trimmed[^1] == '\'')
+            return trimmed[1..^1].Replace("''", "'");
+
+        return trimmed;
     }
 
     private void BindScalarParameters(IReadOnlyList<object?> values)
@@ -361,6 +443,14 @@ internal sealed class PlwInterpreter
 
             case PlwForQueryLoop forQuery:
                 ExecuteForQueryLoop(forQuery);
+                break;
+
+            case PlwForeachLoop foreachLoop:
+                ExecuteForeachLoop(foreachLoop);
+                break;
+
+            case PlwForallLoop forallLoop:
+                ExecuteForallLoop(forallLoop);
                 break;
 
             case PlwExit exit:
@@ -604,6 +694,63 @@ internal sealed class PlwInterpreter
         }
     }
 
+    private void ExecuteForeachLoop(PlwForeachLoop loop)
+    {
+        var arrayValue = _evaluator.Evaluate(loop.ArrayExpression, _env);
+        if (arrayValue is not IEnumerable<object?> enumerable)
+            throw new WalhallaException("FOREACH erfordert einen Array-Wert.");
+
+        foreach (var item in enumerable)
+        {
+            _env.Declare(loop.VariableName, "RECORD", item, allowOverwrite: true);
+            try
+            {
+                ExecuteNode(loop.Body);
+            }
+            catch (PlwFlowControlException ex)
+            {
+                if (!FlowControlMatchesLabel(ex, loop.Label))
+                    throw;
+                if (ex.Kind == PlwFlowControlKind.Exit)
+                    break;
+                if (ex.Kind == PlwFlowControlKind.Continue)
+                    continue;
+                throw;
+            }
+        }
+    }
+
+    private void ExecuteForallLoop(PlwForallLoop loop)
+    {
+        IReadOnlyList<int> indices;
+        if (loop.Range is PlwForallIndicesOfRange indicesRange)
+        {
+            var arrayValue = _evaluator.Evaluate(indicesRange.ArrayExpression, _env);
+            if (arrayValue is not IList<object?> list)
+                throw new WalhallaException("FORALL INDICES OF erfordert einen Array-Wert.");
+            indices = Enumerable.Range(1, list.Count).ToList();
+        }
+        else if (loop.Range is PlwForallIntegerRange intRange)
+        {
+            var lower = Convert.ToInt32(_evaluator.Evaluate(intRange.Lower, _env), CultureInfo.InvariantCulture);
+            var upper = Convert.ToInt32(_evaluator.Evaluate(intRange.Upper, _env), CultureInfo.InvariantCulture);
+            if (upper < lower)
+                indices = Array.Empty<int>();
+            else
+                indices = Enumerable.Range(lower, upper - lower + 1).ToList();
+        }
+        else
+        {
+            throw new WalhallaException("Unbekannter FORALL-Bereich.");
+        }
+
+        foreach (var index in indices)
+        {
+            _env.Declare(loop.VariableName, "INT32", index, allowOverwrite: true);
+            ExecuteNode(loop.Body);
+        }
+    }
+
     private void ExecuteSelectInto(PlwSelectInto selectInto)
     {
         var result = _executor.Execute(selectInto.SelectSql, _env);
@@ -629,9 +776,20 @@ internal sealed class PlwInterpreter
         _env.SetFound(result.Rows.Count > 0);
 
         var row = result.Rows[0];
-        for (var i = 0; i < Math.Min(targets.Length, result.ColumnNames.Count); i++)
+        if (targets.Length == 1 && result.ColumnNames.Count > 1)
         {
-            _env.Set(targets[i].Name, row.GetValue(i));
+            var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < result.ColumnNames.Count; i++)
+                dict[result.ColumnNames[i]] = row.GetValue(i);
+
+            _env.Set(targets[0].Name, dict);
+        }
+        else
+        {
+            for (var i = 0; i < Math.Min(targets.Length, result.ColumnNames.Count); i++)
+            {
+                _env.Set(targets[i].Name, row.GetValue(i));
+            }
         }
     }
 

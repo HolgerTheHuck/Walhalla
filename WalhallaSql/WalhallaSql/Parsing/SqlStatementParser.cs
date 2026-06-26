@@ -1651,6 +1651,10 @@ internal static class SqlStatementParser
         var parenIdx = typeName.IndexOf('(');
         if (parenIdx >= 0) baseType = typeName[..parenIdx];
 
+        // Array-Typen wie INT[] sollen wie ihr Basistyp behandelt werden.
+        while (baseType.EndsWith("[]", StringComparison.Ordinal))
+            baseType = baseType[..^2];
+
         return baseType.ToUpperInvariant() switch
         {
             "INT" or "INT32" or "INTEGER" => SqlScalarType.Int32,

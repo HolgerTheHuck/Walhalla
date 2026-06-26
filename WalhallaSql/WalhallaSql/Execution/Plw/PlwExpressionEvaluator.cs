@@ -28,6 +28,9 @@ internal sealed class PlwExpressionEvaluator
             PlwFieldAccessExpression fa => EvaluateFieldAccess(fa, env),
             PlwUnaryExpression u => EvaluateUnary(u, env),
             PlwBinaryExpression b => EvaluateBinary(b, env),
+            PlwArrayLiteralExpression arr => arr.Elements.Select(e => Evaluate(e, env)).ToList(),
+            PlwArraySubscriptExpression sub => EvaluateArraySubscript(sub, env),
+            PlwRowLiteralExpression row => EvaluateRowLiteral(row, env),
             _ => throw new WalhallaException($"Nicht unterstuetzter PLW-Ausdruck: {expression.GetType().Name}")
         };
     }
@@ -122,6 +125,31 @@ internal sealed class PlwExpressionEvaluator
             "CURRENT_TIME" => TimeOnly.FromDateTime(DateTime.Now),
             _ => throw new WalhallaException($"Unbekannte PLW-Funktion '{name}'.")
         };
+    }
+
+    private object? EvaluateArraySubscript(PlwArraySubscriptExpression sub, PlwEnvironment env)
+    {
+        var array = Evaluate(sub.Array, env);
+        var rawIndex = Evaluate(sub.Index, env);
+        if (array is not IList<object?> list)
+            throw new WalhallaException("Array-Indexzugriff erfordert einen Array-Wert.");
+
+        var index = Convert.ToInt32(rawIndex, CultureInfo.InvariantCulture);
+        if (index < 1 || index > list.Count)
+            throw new WalhallaException($"Array-Index {index} ausserhalb des gueltigen Bereichs 1..{list.Count}.");
+
+        return list[index - 1];
+    }
+
+    private object? EvaluateRowLiteral(PlwRowLiteralExpression row, PlwEnvironment env)
+    {
+        var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < row.Elements.Count; i++)
+        {
+            var value = Evaluate(row.Elements[i], env);
+            dict[$"f{i + 1}"] = value;
+        }
+        return dict;
     }
 
     private object? EvaluateFieldAccess(PlwFieldAccessExpression access, PlwEnvironment env)
