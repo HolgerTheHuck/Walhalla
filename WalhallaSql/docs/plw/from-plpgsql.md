@@ -43,6 +43,14 @@ INSERT INTO Customers (Id, Name, Region) VALUES (2, 'Alice', 'US');
 | `SELECT ... INTO ...` | identisch; genau eine Zeile erwartet |
 | `EXECUTE '...';` dynamisches SQL | identisch, mit `USING $1` |
 | `EXECUTE '...' INTO ... USING $1` | identisch; genau eine Zeile erwartet |
+| `FOREACH item IN array LOOP ... END LOOP` | identisch |
+| `FORALL idx IN lower..upper LOOP DML; END LOOP` | identisch |
+| `FORALL idx IN INDICES OF arr LOOP DML; END LOOP` | identisch |
+| `ARRAY[...]` und `arr[i]` (1-basiert) | identisch |
+| `ROW(...)` und Feldzugriff `rec.field` | identisch |
+| `%ROWTYPE` für Tabellenzeilen | identisch |
+| Skalare PLW-Funktionen (`CREATE FUNCTION ... RETURNS scalar`) | `CREATE FUNCTION ... RETURNS scalar LANGUAGE plw` |
+| Prozedur-Überladung | mehrere Prozeduren gleichen Namens mit unterschiedlicher Signatur |
 
 ### Beispiel: Einfache Prozedur mit OUT-Parameter
 
@@ -137,7 +145,7 @@ PostgreSQL-Typen müssen auf WalhallaSql-Typen abgebildet werden:
 | `DATE` | `DATE` |
 | `TIMESTAMP` | `DATETIME` |
 
-### `RAISE` ohne Format-Platzhalter
+### `RAISE` mit Format-Platzhaltern
 
 PL/pgSQL:
 
@@ -146,14 +154,16 @@ RAISE NOTICE 'Customer % not found', p_id;
 RAISE EXCEPTION 'Customer % not found', p_id;
 ```
 
-PLW (v1):
+PLW:
 
 ```sql
-RAISE NOTICE 'Customer not found';
-RAISE EXCEPTION 'Customer not found';
+RAISE NOTICE 'Customer % not found', p_id;
+RAISE EXCEPTION 'Customer % not found', p_id;
 ```
 
-Für variable Werte können Werte per `||` an den String angehängt werden:
+`%%` wird zu `%` escaped. Zu wenige Argumente für `%` führen zu einem Laufzeitfehler.
+
+Alternativ können Werte weiterhin per `||` an den String angehängt werden:
 
 ```sql
 RAISE NOTICE 'Customer ' || p_id || ' not found';
@@ -178,17 +188,126 @@ Beim Aufruf bleiben die `@`-Namen aber erhalten:
 EXEC DoubleValue @p_value = @value OUTPUT;
 ```
 
+## Arrays, Records und Bulk-DML
+
+### Array-Literale und Indizierung
+
+PL/pgSQL:
+
+```sql
+DECLARE
+    arr INT[] := ARRAY[10, 20, 30];
+    first INT := arr[1];
+```
+
+PLW:
+
+```sql
+DECLARE
+    arr INT[] := ARRAY[10, 20, 30];
+    first INT := arr[1]; -- 1-basiert
+```
+
+### FOREACH
+
+PL/pgSQL:
+
+```sql
+FOREACH item IN ARRAY arr LOOP
+    RAISE NOTICE 'Item: %', item;
+END LOOP;
+```
+
+PLW:
+
+```sql
+FOREACH item IN arr LOOP
+    RAISE NOTICE 'Item: %', item;
+END LOOP;
+```
+
+### FORALL
+
+PL/pgSQL:
+
+```sql
+FORALL i IN 1..3
+    INSERT INTO AuditLog (Message) VALUES ('bulk ' || i);
+
+FORALL i IN INDICES OF arr
+    INSERT INTO AuditLog (Message) VALUES ('value ' || arr[i]);
+```
+
+PLW:
+
+```sql
+FORALL i IN 1..3 LOOP
+    INSERT INTO AuditLog (Message) VALUES ('bulk ' || i);
+END LOOP;
+
+FORALL i IN INDICES OF arr LOOP
+    INSERT INTO AuditLog (Message) VALUES ('value ' || arr[i]);
+END LOOP;
+```
+
+### Records und %ROWTYPE
+
+PL/pgSQL:
+
+```sql
+DECLARE
+    rec Customers%ROWTYPE;
+BEGIN
+    SELECT * INTO rec FROM Customers WHERE Id = 1;
+    RAISE NOTICE 'Name: %', rec.Name;
+END;
+```
+
+PLW:
+
+```sql
+DECLARE
+    rec Customers%ROWTYPE;
+BEGIN
+    SELECT * INTO rec FROM Customers WHERE Id = 1;
+    RAISE NOTICE 'Name: %', rec.Name;
+END;
+```
+
+### ROW-Literale
+
+PLW unterstützt anonyme `ROW(...)`-Literale:
+
+```sql
+DECLARE
+    r RECORD := ROW(1, 'Alice');
+BEGIN
+    RAISE NOTICE 'Id=%, Name=%', r.f1, r.f2;
+END;
+```
+
+Felder anonymer Records heißen `f1`, `f2`, ...
+
 ## Konzepte, die nicht verfügbar sind
+
+Die folgenden Features sind inzwischen implementiert:
 
 | Feature | Status |
 | --- | --- |
-| Cursor-Variablen (`OPEN`, `FETCH`, `CLOSE`) | nach v1 |
-| Exception-Handler (`BEGIN ... EXCEPTION ... END`) | nach v1 |
-| Arrays und Composite-Typen | nach v1 |
-| Trigger-Funktionen | nach v1 |
-| Systemvariablen wie `FOUND`, `SQLERRM`, `SQLSTATE` | nach v1 |
-| Prozedur-Überladung | nicht geplant |
+| Cursor-Variablen (`OPEN`, `FETCH`, `CLOSE`) | ✅ verfügbar |
+| Exception-Handler (`BEGIN ... EXCEPTION ... END`) | ✅ verfügbar |
+| Arrays und Composite-Typen | ✅ verfügbar |
+| Trigger-Funktionen | ✅ verfügbar |
+| Systemvariablen wie `FOUND`, `SQLERRM`, `SQLSTATE` | ✅ verfügbar |
+| Prozedur-Überladung | ✅ verfügbar |
+
+Weiterhin nicht geplant oder nicht unterstützt:
+
+| Feature | Status |
+| --- | --- |
 | `GET DIAGNOSTICS` | nicht geplant |
+| Anonyme Record-Typen mit benannten Feldern | nicht geplant |
+| Multidimensionale Arrays | nicht geplant |
 
 ## Typische Fehler beim Migrieren
 

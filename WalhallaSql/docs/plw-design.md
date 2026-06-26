@@ -2,7 +2,8 @@
 
 > Benutzerdokumentation: [`PLW-README.md`](../PLW-README.md) ·
 > [Migration von PL/pgSQL](./plw/from-plpgsql.md) ·
-> [Client-Beispiele](./plw/ado-net-and-pgwire-examples.md)
+> [Client-Beispiele](./plw/ado-net-and-pgwire-examples.md) ·
+> [Arrays, Records und Bulk-DML](./plw/arrays-and-bulk-dml.md)
 
 ## Ziel
 
@@ -30,21 +31,24 @@ PLW orientiert sich bewusst an PL/pgSQL, um bestehende Postgres-Migrationen und 
 | `FOR rec IN SELECT ... LOOP ... END LOOP;` | identisch |
 | `RETURN QUERY SELECT ...;` | identisch (Functions) |
 | `RETURN;` für Procedures | identisch |
-| `RAISE NOTICE / EXCEPTION` | identisch, ohne Format-Platzhalter in v1 |
+| `RAISE NOTICE / EXCEPTION` | identisch, inklusive `%`-Format-Platzhalter |
 | `EXECUTE '...';` dynamisches SQL | identisch, mit Parameterbindung |
 | `IN`, `OUT`, `INOUT` Parameter | identisch |
-| `%ROWTYPE`, `%TYPE` | v1: nur `%TYPE` für einfache Spalten |
-| Cursor-Variablen `CURSOR FOR` | nach v1 |
-| Trigger-Funktionen | nach v1 |
+| `%ROWTYPE`, `%TYPE` | vollständig |
+| Cursor-Variablen `CURSOR FOR` | verfügbar |
+| Trigger-Funktionen | verfügbar |
+| Arrays (`INT[]`, `STRING[]`, ...) | verfügbar |
+| `FOREACH`, `FORALL` | verfügbar |
+| Skalare PLW-Funktionen | verfügbar |
+| Prozedur-Überladung | verfügbar |
 
 ### Bewusst abweichende / fehlende Konzepte
 
-- **Overload**: Keine Prozedur-Überladung vorerst.
-- **Record-Typen**: `RECORD` wird durch `TABLE%ROWTYPE` ersetzt; anonyme Records kommen später.
-- **Arrays & Composite-Typen**: Nicht in v1.
+- **Record-Typen**: `RECORD` wird durch `TABLE%ROWTYPE` oder anonyme `ROW(...)`-Literale ersetzt; benannte Composite-Typen sind nicht geplant.
+- **Arrays**: Nur eindimensionale Listen als PLW-Laufzeitstruktur; keine Array-Spaltentypen im Storage.
 - **`PERFORM`**: Wird durch `PERFORM query;` unterstützt, aber ohne Rückgabewert.
-- **`GET DIAGNOSTICS`**: Nicht in v1.
-- **Exceptions mit `SQLSTATE`**: Eigene Fehlerklasse; SQLSTATE-Mapping nach v1.
+- **`GET DIAGNOSTICS`**: Nicht geplant.
+- **Exceptions mit `SQLSTATE`**: Eigene Fehlerklasse; `SQLSTATE`- und `SQLERRM`-Systemvariablen im Handler verfügbar.
 
 ## Sprache
 

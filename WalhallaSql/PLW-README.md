@@ -67,11 +67,27 @@ eingebetteten Betrieb und für den Client/Server-Betrieb über PgWire gedacht.
   - `RAISE NOTICE 'Count: %', 42` ersetzt `%` durch das Argument
   - `%%` wird zu `%` escaped
   - Zu wenige Argumente fuer `%` fuehren zu einem Laufzeitfehler
+- ✅ Phase D.1: Skalare PLW-Funktionen abgeschlossen
+  - `CREATE FUNCTION ... RETURNS scalar LANGUAGE plw` kann in SELECT/WHERE aufgerufen werden
+  - Rueckgabetypen: `INT`, `STRING`, `BOOL`, `DOUBLE`, `LONG`, `DATE`, `DATETIME`
+- ✅ Phase D.2: Prozedur-Überladung abgeschlossen
+  - Mehrere Prozeduren gleichen Namens mit unterschiedlicher Signatur
+  - Automatische Auflösung anhand der Argumenttypen; optionale Default-Parameter berücksichtigt
+- ✅ Phase D.3: Arrays und Composite-Typen abgeschlossen
+  - Array-Typen: `INT[]`, `STRING[]`, `BOOL[]`, `DOUBLE[]`, `LONG[]` etc.
+  - Array-Literale `ARRAY[1, 2, 3]` und 1-basierte Indizierung `arr[i]`
+  - `FOREACH item IN arr LOOP ... END LOOP`
+  - `ROW(...)`-Literale, Feldzugriff `rec.field`, `%ROWTYPE` für Tabellenzeilen
+- ✅ Phase D.4: FORALL / Bulk-DML abgeschlossen
+  - `FORALL idx IN lower..upper LOOP DML; END LOOP`
+  - `FORALL idx IN INDICES OF arr LOOP DML; END LOOP`
 
 Das technische Design-Dokument liegt unter `WalhallaSql/docs/plw-design.md`; der
 Migrations-Guide von PL/pgSQL unter `WalhallaSql/docs/plw/from-plpgsql.md`;
 Client-Beispiele für ADO.NET, Dapper und PgWire unter
 `WalhallaSql/docs/plw/ado-net-and-pgwire-examples.md`.
+Eine detaillierte Anleitung zu Arrays, Records und Bulk-DML liegt unter
+`WalhallaSql/docs/plw/arrays-and-bulk-dml.md`.
 
 ## Warum PLW?
 
@@ -137,12 +153,19 @@ Console.WriteLine(result.OutputParameters["p_name"]); // Dyn
 - `PERFORM` für Queries ohne Rückgabewert
 - `RAISE NOTICE` und `RAISE EXCEPTION` mit `%`-Platzhaltern
 - `IN`, `OUT`, `INOUT`-Parameter
-- `%TYPE` für Tabellenspalten (v1)
+- `%TYPE` für Tabellenspalten
+- `%ROWTYPE` für Tabellenzeilen
 - `FOUND`-Systemvariable
 - Cursor-Variablen (`CURSOR FOR`, `OPEN`, `FETCH INTO`, `CLOSE`)
 - Exception-Handler (`BEGIN ... EXCEPTION ... END`)
 - `SQLSTATE`- und `SQLERRM`-Systemvariablen
 - Trigger-Funktionen (`CREATE TRIGGER ... LANGUAGE plw`, `NEW`/`OLD`, `TG_*`)
+- Arrays (`ARRAY[...]`, `arr[i]`, `INT[]` etc.)
+- `FOREACH item IN array LOOP ... END LOOP`
+- `FORALL idx IN lower..upper LOOP ... END LOOP` und `FORALL idx IN INDICES OF arr LOOP ... END LOOP`
+- `ROW(...)`-Literale und Record-Feldzugriff `rec.field`
+- Prozedur-Überladung
+- Skalare PLW-Funktionen (`CREATE FUNCTION ... RETURNS scalar LANGUAGE plw`)
 
 ## Aufruf aus verschiedenen Clients
 
@@ -196,6 +219,34 @@ Console.WriteLine(reader.GetString(0));
 > gibt entweder ihre `RETURN QUERY`-Zeilen oder ihre Output-Parameter zurück,
 > nicht beides gleichzeitig. Details siehe
 > `WalhallaSql/docs/plw/ado-net-and-pgwire-examples.md`.
+
+## Arrays, Records und Bulk-DML
+
+```sql
+CREATE OR REPLACE PROCEDURE sum_and_insert(
+    p_values IN INT[],
+    p_sum OUT INT
+)
+LANGUAGE plw AS $$
+DECLARE
+    v_sum INT := 0;
+    v_value INT;
+BEGIN
+    FOREACH v_value IN p_values LOOP
+        v_sum := v_sum + v_value;
+    END LOOP;
+
+    FORALL i IN 1..3 LOOP
+        INSERT INTO AuditLog (Message) VALUES ('bulk ' || i);
+    END LOOP;
+
+    p_sum := v_sum;
+END;
+$$;
+```
+
+Details zu 1-basierter Indizierung, `ROW(...)`, `%ROWTYPE` und `FORALL INDICES OF`
+siehe `WalhallaSql/docs/plw/arrays-and-bulk-dml.md`.
 
 ## Stabile Laufzeitsemantik
 
