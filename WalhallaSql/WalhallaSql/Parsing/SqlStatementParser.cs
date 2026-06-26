@@ -93,6 +93,13 @@ internal static class SqlStatementParser
         if (SqlSyntaxText.StartsWithKeyword(normalized, "DROP PROCEDURE"))
             return ParseDropProcedureStatement(normalized);
 
+        if (SqlSyntaxText.StartsWithKeyword(normalized, "CREATE FUNCTION")
+            || SqlSyntaxText.StartsWithKeyword(normalized, "CREATE OR REPLACE FUNCTION"))
+            return ParseCreateFunctionStatement(normalized);
+
+        if (SqlSyntaxText.StartsWithKeyword(normalized, "DROP FUNCTION"))
+            return ParseDropFunctionStatement(normalized);
+
         if (SqlSyntaxText.StartsWithKeyword(normalized, "EXEC")
             || SqlSyntaxText.StartsWithKeyword(normalized, "EXECUTE")
             || SqlSyntaxText.StartsWithKeyword(normalized, "CALL"))
@@ -2432,6 +2439,74 @@ internal static class SqlStatementParser
         return new SqlCreateProcedureStatement(procName, parameters, body, orReplace, language);
     }
 
+    private static SqlCreateFunctionStatement ParseCreateFunctionStatement(string sql)
+    {
+        var orReplace = false;
+        var remaining = sql;
+        if (remaining.StartsWith("CREATE OR REPLACE FUNCTION", StringComparison.OrdinalIgnoreCase))
+        {
+            orReplace = true;
+            remaining = remaining["CREATE OR REPLACE FUNCTION".Length..].TrimStart();
+        }
+        else
+        {
+            remaining = remaining["CREATE FUNCTION".Length..].TrimStart();
+        }
+
+        // Parse function name — first whitespace-delimited token (or up to '(')
+        var nameEnd = remaining.Length;
+        var spaceIdx = remaining.IndexOf(' ');
+        var tabIdx = remaining.IndexOf('\t');
+        var nlIdx = remaining.IndexOf('\n');
+        var parenIdx = remaining.IndexOf('(');
+        if (spaceIdx >= 0) nameEnd = Math.Min(nameEnd, spaceIdx);
+        if (tabIdx >= 0) nameEnd = Math.Min(nameEnd, tabIdx);
+        if (nlIdx >= 0) nameEnd = Math.Min(nameEnd, nlIdx);
+        if (parenIdx >= 0) nameEnd = Math.Min(nameEnd, parenIdx);
+        var funcName = SqlSyntaxText.NormalizeIdentifier(remaining[..nameEnd].Trim());
+        remaining = remaining[nameEnd..].TrimStart();
+
+        var parameters = new List<SqlProcedureParameter>();
+        if (remaining.Length > 0 && remaining[0] == '(')
+        {
+            var closeIdx = SqlSyntaxText.FindMatchingParen(remaining, 0);
+            var paramsText = remaining[1..closeIdx].Trim();
+            if (!string.IsNullOrWhiteSpace(paramsText))
+                parameters.AddRange(ParseProcedureParameters(paramsText));
+            remaining = remaining[(closeIdx + 1)..].TrimStart();
+        }
+
+        // Expect RETURNS type
+        if (!remaining.StartsWith("RETURNS", StringComparison.OrdinalIgnoreCase))
+            throw new NotSupportedException("CREATE FUNCTION requires RETURNS clause.");
+        remaining = remaining["RETURNS".Length..].TrimStart();
+
+        var typeEnd = remaining.IndexOfAny(new[] { ' ', '\t', '\n' });
+        var typeStr = typeEnd >= 0 ? remaining[..typeEnd].Trim() : remaining;
+        var returnType = ParseSqlType(typeStr);
+        remaining = typeEnd >= 0 ? remaining[typeEnd..].TrimStart() : string.Empty;
+
+        // Optional AS before LANGUAGE/body
+        if (remaining.StartsWith("AS", StringComparison.OrdinalIgnoreCase))
+            remaining = remaining[2..].TrimStart();
+
+        var language = "sql";
+        if (remaining.StartsWith("LANGUAGE", StringComparison.OrdinalIgnoreCase))
+        {
+            remaining = remaining["LANGUAGE".Length..].TrimStart();
+            (language, remaining) = ReadLanguageToken(remaining);
+        }
+
+        if (remaining.StartsWith("AS", StringComparison.OrdinalIgnoreCase))
+            remaining = remaining[2..].TrimStart();
+
+        var body = ExtractProcedureBody(remaining, language, out var trailingLanguage);
+        if (trailingLanguage is not null)
+            language = trailingLanguage;
+
+        return new SqlCreateFunctionStatement(funcName, parameters, returnType, body, orReplace, language);
+    }
+
     private static List<SqlProcedureParameter> ParseProcedureParameters(string paramsText)
     {
         var result = new List<SqlProcedureParameter>();
@@ -2548,6 +2623,19 @@ internal static class SqlStatementParser
             remaining = remaining["IF EXISTS".Length..].TrimStart();
         }
         return new SqlDropProcedureStatement(
+            SqlSyntaxText.NormalizeIdentifier(remaining.Trim()), ifExists);
+    }
+
+    private static SqlDropFunctionStatement ParseDropFunctionStatement(string sql)
+    {
+        var remaining = sql["DROP FUNCTION".Length..].TrimStart();
+        var ifExists = false;
+        if (remaining.StartsWith("IF EXISTS", StringComparison.OrdinalIgnoreCase))
+        {
+            ifExists = true;
+            remaining = remaining["IF EXISTS".Length..].TrimStart();
+        }
+        return new SqlDropFunctionStatement(
             SqlSyntaxText.NormalizeIdentifier(remaining.Trim()), ifExists);
     }
 

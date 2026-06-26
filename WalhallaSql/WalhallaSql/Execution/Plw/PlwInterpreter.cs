@@ -21,13 +21,16 @@ internal sealed class PlwInterpreter
     private readonly SqlStoredProcedureDefinition _procedure;
     private readonly IReadOnlyList<SqlExecArgument> _arguments;
 
+    private readonly bool _isScalarFunction;
+
     public PlwInterpreter(
         PlwEnvironment env,
         PlwSqlExecutor executor,
         PlwExpressionEvaluator evaluator,
         PlwExecutionContext context,
         SqlStoredProcedureDefinition procedure,
-        IReadOnlyList<SqlExecArgument> arguments)
+        IReadOnlyList<SqlExecArgument> arguments,
+        bool isScalarFunction = false)
     {
         _env = env;
         _executor = executor;
@@ -35,6 +38,7 @@ internal sealed class PlwInterpreter
         _context = context;
         _procedure = procedure;
         _arguments = arguments;
+        _isScalarFunction = isScalarFunction;
     }
 
     public static WalhallaResultSet Execute(
@@ -77,6 +81,35 @@ internal sealed class PlwInterpreter
             result = result.WithOutputParameters(outputs);
 
         return result;
+    }
+
+    /// <summary>
+    /// Fuehrt eine skalare PLW-Funktion aus und liefert ihren RETURN-Wert.
+    /// </summary>
+    public static object? ExecuteScalar(
+        SqlScalarFunctionDefinition function,
+        PlwProgram program,
+        IReadOnlyList<object?> argumentValues,
+        WalhallaEngine engine,
+        PlwExecutionContext context)
+    {
+        var env = new PlwEnvironment();
+        var evaluator = new PlwExpressionEvaluator();
+        var executor = new PlwSqlExecutor(engine, evaluator);
+        var fakeProc = new SqlStoredProcedureDefinition(function.Name, function.Parameters, function.Body, function.Language);
+        var interpreter = new PlwInterpreter(env, executor, evaluator, context, fakeProc, Array.Empty<SqlExecArgument>(), isScalarFunction: true);
+        interpreter.BindScalarParameters(argumentValues);
+
+        try
+        {
+            interpreter.ExecuteBlock(program.Body);
+        }
+        catch (PlwFlowControlException ex) when (ex.Kind == PlwFlowControlKind.Return && ex.ReturnValue is not null)
+        {
+            return ex.ReturnValue;
+        }
+
+        throw new WalhallaException($"Funktion '{function.Name}' endete ohne RETURN.");
     }
 
     /// <summary>
@@ -192,6 +225,34 @@ internal sealed class PlwInterpreter
         }
 
         return ParseLiteral(expression, parameter.Type);
+    }
+
+    private void BindScalarParameters(IReadOnlyList<object?> values)
+    {
+        for (int i = 0; i < _procedure.Parameters.Count; i++)
+        {
+            var parameter = _procedure.Parameters[i];
+            object? value;
+            if (i < values.Count)
+            {
+                value = values[i];
+            }
+            else if (parameter.DefaultValue is not null)
+            {
+                value = parameter.DefaultValue;
+            }
+            else if (parameter.IsNullable)
+            {
+                value = null;
+            }
+            else
+            {
+                throw new WalhallaException($"Parameter '{parameter.Name}' wurde fuer Funktion '{_procedure.Name}' nicht angegeben.");
+            }
+
+            var typeName = TypeNameFromScalarType(parameter.Type);
+            _env.Declare(parameter.Name, typeName, value, allowOverwrite: true);
+        }
     }
 
     private void ExecuteBlock(PlwBlock block)
@@ -318,6 +379,15 @@ internal sealed class PlwInterpreter
 
             case PlwReturn returnStmt:
             {
+                if (_isScalarFunction)
+                {
+                    if (returnStmt.Value == null)
+                        throw new WalhallaException("RETURN ohne Ausdruck ist in skalaren PLW-Funktionen nicht erlaubt.");
+
+                    var returnValue = _evaluator.Evaluate(returnStmt.Value, _env);
+                    throw new PlwFlowControlException(returnValue);
+                }
+
                 if (returnStmt.Value != null)
                     throw new WalhallaException("RETURN mit Ausdruck ist in PLW-Prozeduren nicht erlaubt. Verwenden Sie OUT-Parameter oder RETURN QUERY.");
 
@@ -326,6 +396,9 @@ internal sealed class PlwInterpreter
 
             case PlwReturnQuery returnQuery:
             {
+                if (_isScalarFunction)
+                    throw new WalhallaException("RETURN QUERY ist in skalaren PLW-Funktionen nicht erlaubt.");
+
                 var result = _executor.Execute(returnQuery.Query, _env);
                 _env.SetFound(result.Rows.Count > 0);
                 throw new PlwFlowControlException(result);

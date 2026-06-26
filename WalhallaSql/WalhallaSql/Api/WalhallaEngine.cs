@@ -41,6 +41,8 @@ public sealed class WalhallaEngine : IDisposable
     private readonly Dictionary<string, Func<SqlNativeProcedureContext, CancellationToken, IAsyncEnumerable<WalhallaRow>>> _compiledStreamingRowProcedures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PlwProgram> _plwPrograms = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PlwProgram> _plwTriggerPrograms = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, SqlScalarFunctionDefinition> _scalarFunctions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PlwProgram> _plwScalarPrograms = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<SqlTriggerDefinition>> _triggersByTable = new(StringComparer.OrdinalIgnoreCase);
     // Guards _views, _procedures, _compiledProcedures, _triggersByTable, _cursors, _cursorDefinitions.
     // Held only while reading/mutating these dictionaries (and trigger lists), never while
@@ -415,6 +417,12 @@ public sealed class WalhallaEngine : IDisposable
             case SqlDropProcedureStatement dropProc:
                 return ExecuteDropProcedure(dropProc);
 
+            case SqlCreateFunctionStatement createFunc:
+                return ExecuteCreateFunction(createFunc);
+
+            case SqlDropFunctionStatement dropFunc:
+                return ExecuteDropFunction(dropFunc);
+
             case SqlExecStatement exec:
                 return ExecuteExec(exec);
 
@@ -498,7 +506,7 @@ public sealed class WalhallaEngine : IDisposable
             else
             {
                 Interlocked.Increment(ref _planCacheMisses);
-                plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+                plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
                 _planCache?.Set(cacheKey, plan);
             }
 
@@ -1230,7 +1238,7 @@ public sealed class WalhallaEngine : IDisposable
         if (statement is not SqlSelectStatement select)
             throw new NotSupportedException("EXPLAIN currently only supports SELECT statements.");
 
-        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
         var rows = new List<WalhallaRow>();
         var columnNames = new[] { "Operation", "Target", "Details" };
         var schema = new ColumnSchema(columnNames);
@@ -1484,7 +1492,7 @@ public sealed class WalhallaEngine : IDisposable
         {
             if (planCacheKey != null && _planCache != null)
                 Interlocked.Increment(ref _planCacheMisses);
-            plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+            plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
             if (planCacheKey != null && _planCache != null)
                 _planCache.Set(planCacheKey, plan);
         }
@@ -2583,7 +2591,7 @@ public sealed class WalhallaEngine : IDisposable
             // Check optional WHERE clause
             if (onConflict.Where != null)
             {
-                var whereFunc = WhereCompiler.Compile(onConflict.Where, tableDef, 0);
+                var whereFunc = WhereCompiler.Compile(onConflict.Where, tableDef, 0, null, ExecuteScalarFunction);
                 if (whereFunc != null && !whereFunc(existingValues, Array.Empty<object?>()))
                     continue;
             }
@@ -3614,7 +3622,7 @@ public sealed class WalhallaEngine : IDisposable
         Func<object?[], bool>? predicate = null;
         if (update.Where != null)
         {
-            var whereDelegate = WhereCompiler.Compile(update.Where, tableDef, 0);
+            var whereDelegate = WhereCompiler.Compile(update.Where, tableDef, 0, null, ExecuteScalarFunction);
             if (whereDelegate != null)
             {
                 var emptyParams = Array.Empty<object?>();
@@ -3730,7 +3738,7 @@ public sealed class WalhallaEngine : IDisposable
         Func<object?[], bool>? predicate = null;
         if (delete.Where != null)
         {
-            var whereDelegate = WhereCompiler.Compile(delete.Where, tableDef, 0);
+            var whereDelegate = WhereCompiler.Compile(delete.Where, tableDef, 0, null, ExecuteScalarFunction);
             if (whereDelegate != null)
             {
                 var emptyParams = Array.Empty<object?>();
@@ -4177,7 +4185,7 @@ public sealed class WalhallaEngine : IDisposable
         Func<object?[], bool>? predicate = null;
         if (update.Where != null)
         {
-            var whereDelegate = WhereCompiler.Compile(update.Where, tableDef, 0);
+            var whereDelegate = WhereCompiler.Compile(update.Where, tableDef, 0, null, ExecuteScalarFunction);
             if (whereDelegate != null)
             {
                 var emptyParams = Array.Empty<object?>();
@@ -4296,7 +4304,7 @@ public sealed class WalhallaEngine : IDisposable
         Func<object?[], bool>? predicate = null;
         if (delete.Where != null)
         {
-            var whereDelegate = WhereCompiler.Compile(delete.Where, tableDef, 0);
+            var whereDelegate = WhereCompiler.Compile(delete.Where, tableDef, 0, null, ExecuteScalarFunction);
             if (whereDelegate != null)
             {
                 var emptyParams = Array.Empty<object?>();
@@ -4365,7 +4373,7 @@ public sealed class WalhallaEngine : IDisposable
                 var rawResult = ExecuteSelect(rawSelect, transaction, planCacheKey: null);
                 var rawRows = rawResult.Rows.Select(r => r.Values is object?[] a ? a : r.Values.ToArray()).ToList();
 
-                var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+                var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
                 var aggregated = AggregateExecutor.ExecuteGroupBy(rawRows, select.GroupByColumns, select.Columns, plan.TableDefinition, plan.OutputColumnNames);
                 aggregated = AggregateExecutor.ApplyHaving(aggregated, select.Having, plan.OutputColumnNames);
 
@@ -4467,7 +4475,7 @@ public sealed class WalhallaEngine : IDisposable
             // Apply WHERE filter if present
             if (select.Where != null)
             {
-                var whereDelegate = WhereCompiler.Compile(select.Where, tableDef, 0);
+                var whereDelegate = WhereCompiler.Compile(select.Where, tableDef, 0, null, ExecuteScalarFunction);
                 if (whereDelegate != null)
                 {
                     var emptyParams = Array.Empty<object?>();
@@ -4480,7 +4488,7 @@ public sealed class WalhallaEngine : IDisposable
         }
 
         // Re-apply ORDER BY, projection, paging
-        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
         return ApplyPostProcessing(filteredRows, plan, select);
     }
 
@@ -4504,7 +4512,7 @@ public sealed class WalhallaEngine : IDisposable
             var decoded = RowCodec.DecodeToPooledArray(encoded, tableDef);
             if (select.Where != null)
             {
-                var whereDelegate = WhereCompiler.Compile(select.Where, tableDef, 0);
+                var whereDelegate = WhereCompiler.Compile(select.Where, tableDef, 0, null, ExecuteScalarFunction);
                 if (whereDelegate != null)
                 {
                     var emptyParams = Array.Empty<object?>();
@@ -4521,7 +4529,7 @@ public sealed class WalhallaEngine : IDisposable
         if (rows.Count == 0)
             return committed;
 
-        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
         return ApplyPostProcessing(rows, plan, select);
     }
 
@@ -4874,6 +4882,71 @@ public sealed class WalhallaEngine : IDisposable
 
         _grantCatalog.RevokeAllForObject(GrantObjectType.Procedure, stmt.ProcedureName);
         return WalhallaResultSet.Affected(0);
+    }
+
+    private WalhallaResultSet ExecuteCreateFunction(SqlCreateFunctionStatement stmt)
+    {
+        EnsureSuperuser("CREATE FUNCTION");
+        if (!IsPlwProcedureLanguage(stmt.Language))
+            throw new WalhallaException($"LANGUAGE '{stmt.Language}' wird fuer skalare Funktionen nicht unterstuetzt. Verwenden Sie LANGUAGE plw.");
+
+        lock (_metaSync)
+        {
+            if (_scalarFunctions.ContainsKey(stmt.FunctionName) && !stmt.OrReplace)
+                throw new WalhallaException(
+                    $"Function '{stmt.FunctionName}' already exists. Use OR REPLACE to overwrite.");
+
+            var func = new SqlScalarFunctionDefinition(
+                stmt.FunctionName, stmt.Parameters, stmt.ReturnType, stmt.Body, stmt.Language);
+            _scalarFunctions[stmt.FunctionName] = func;
+            _plwScalarPrograms.Remove(stmt.FunctionName);
+        }
+        return WalhallaResultSet.Affected(0);
+    }
+
+    private WalhallaResultSet ExecuteDropFunction(SqlDropFunctionStatement stmt)
+    {
+        EnsureSuperuser("DROP FUNCTION");
+        lock (_metaSync)
+        {
+            if (!_scalarFunctions.Remove(stmt.FunctionName) && !stmt.IfExists)
+                throw new WalhallaException($"Function '{stmt.FunctionName}' not found.");
+            _plwScalarPrograms.Remove(stmt.FunctionName);
+        }
+        _grantCatalog.RevokeAllForObject(GrantObjectType.Procedure, stmt.FunctionName);
+        return WalhallaResultSet.Affected(0);
+    }
+
+    internal object? ExecuteScalarFunction(string functionName, IReadOnlyList<object?> argumentValues)
+    {
+        EnsureFunctionPrivilege(functionName, GrantPrivilege.Execute);
+
+        SqlScalarFunctionDefinition? func;
+        PlwProgram? program;
+        lock (_metaSync)
+        {
+            if (!_scalarFunctions.TryGetValue(functionName, out func))
+                throw new WalhallaException($"Function '{functionName}' not found.");
+            if (!_plwScalarPrograms.TryGetValue(functionName, out program))
+            {
+                program = WalhallaSql.Parsing.Plw.PlwParser.Parse(
+                    WalhallaSql.Parsing.Plw.PlwTokenizer.Tokenize(func.Body));
+                _plwScalarPrograms[functionName] = program;
+            }
+        }
+
+        var context = new PlwExecutionContext(_options);
+        return PlwInterpreter.ExecuteScalar(func, program, argumentValues, this, context);
+    }
+
+    private void EnsureFunctionPrivilege(string functionName, GrantPrivilege privilege)
+    {
+        if (!_authIdCatalog.TryGetRole(CurrentRole, out var role))
+            return;
+        if (role.IsSuperuser || _grantCatalog.HasPrivilege(CurrentRole, GrantObjectType.Procedure, functionName, privilege))
+            return;
+        throw new WalhallaException(
+            $"Role '{CurrentRole}' lacks {privilege} privilege on function '{functionName}'.");
     }
 
     private WalhallaResultSet ExecuteExec(SqlExecStatement exec)
@@ -6110,7 +6183,7 @@ public sealed class WalhallaEngine : IDisposable
 
         EnsureTablePrivilege(select.TableName, GrantPrivilege.Select);
 
-        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
 
         if (!plan.IsStreamable)
             throw new WalhallaException(
@@ -6156,7 +6229,7 @@ public sealed class WalhallaEngine : IDisposable
             return Task.FromException<WalhallaStreamResult>(ex);
         }
 
-        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog);
+        var plan = QueryPlanner.Build(select, _store, ResolveSubquery, _statisticsCatalog, ExecuteScalarFunction);
 
         if (!plan.IsStreamable)
             return Task.FromException<WalhallaStreamResult>(

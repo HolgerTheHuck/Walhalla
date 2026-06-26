@@ -1128,4 +1128,52 @@ public sealed class PlwExecutionTests
         Assert.Single(result.Rows);
         Assert.Equal("Ada Lovelace", result.Rows[0]["FullName"]);
     }
+
+    [Fact]
+    public void Plw_Scalar_Function_In_Select()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE Dummies (Id INT PRIMARY KEY)");
+        engine.Execute("INSERT INTO Dummies (Id) VALUES (1)");
+
+        engine.Execute("""
+            CREATE OR REPLACE FUNCTION double_it(IN @x INT)
+            RETURNS INT
+            LANGUAGE plw
+            AS $$
+            BEGIN
+                RETURN x * 2;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("SELECT double_it(5) AS doubled FROM Dummies");
+        Assert.Single(result.Rows);
+        Assert.Equal(10, Convert.ToInt32(result.Rows[0]["doubled"]));
+    }
+
+    [Fact]
+    public void Plw_Scalar_Function_With_Column_Argument()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("CREATE TABLE Items (Id INT PRIMARY KEY, Value INT)");
+        engine.Execute("INSERT INTO Items (Id, Value) VALUES (1, 7)");
+
+        engine.Execute("""
+            CREATE OR REPLACE FUNCTION add_ten(IN @v INT)
+            RETURNS INT
+            LANGUAGE plw
+            AS $$
+            BEGIN
+                RETURN v + 10;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("SELECT add_ten(Value) AS result FROM Items WHERE Id = 1");
+        Assert.Single(result.Rows);
+        Assert.Equal(17, Convert.ToInt32(result.Rows[0]["result"]));
+    }
 }

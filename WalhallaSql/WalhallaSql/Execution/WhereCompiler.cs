@@ -14,7 +14,8 @@ internal static class WhereCompiler
         SqlWhereExpression? expression,
         SqlTableDefinition table,
         int parameterCount,
-        Func<string, IReadOnlyList<object?[]>>? resolveSubquery = null)
+        Func<string, IReadOnlyList<object?[]>>? resolveSubquery = null,
+        Func<string, IReadOnlyList<object?>, object?>? scalarFunctionInvoker = null)
     {
         if (expression == null)
             return null;
@@ -22,7 +23,7 @@ internal static class WhereCompiler
         var rowParam = Expression.Parameter(typeof(object?[]), "row");
         var paramsParam = Expression.Parameter(typeof(object?[]), "params");
 
-        var body = BuildExpression(expression, table, rowParam, paramsParam, resolveSubquery);
+        var body = BuildExpression(expression, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
         if (body == null)
             return null;
 
@@ -52,11 +53,12 @@ internal static class WhereCompiler
 
     public static Func<object?[], object?>? CompileValue(
         SqlWhereValueExpression value,
-        SqlTableDefinition table)
+        SqlTableDefinition table,
+        Func<string, IReadOnlyList<object?>, object?>? scalarFunctionInvoker = null)
     {
         var rowParam = Expression.Parameter(typeof(object?[]), "row");
         var nullParams = Expression.Parameter(typeof(object?[]), "nullParams");
-        var body = BuildValue(value, table, rowParam, nullParams, null);
+        var body = BuildValue(value, table, rowParam, nullParams, null, scalarFunctionInvoker);
         if (body == null)
             return null;
         var lambda = Expression.Lambda<Func<object?[], object?>>(body, rowParam);
@@ -68,7 +70,8 @@ internal static class WhereCompiler
         SqlTableDefinition table,
         ParameterExpression rowParam,
         ParameterExpression paramsParam,
-        Func<string, IReadOnlyList<object?[]>>? resolveSubquery)
+        Func<string, IReadOnlyList<object?[]>>? resolveSubquery,
+        Func<string, IReadOnlyList<object?>, object?>? scalarFunctionInvoker = null)
     {
         switch (expr)
         {
@@ -77,7 +80,7 @@ internal static class WhereCompiler
                 Expression? acc = null;
                 foreach (var child in and.Children)
                 {
-                    var childExpr = BuildExpression(child, table, rowParam, paramsParam, resolveSubquery);
+                    var childExpr = BuildExpression(child, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                     if (childExpr == null) return null;
                     acc = acc == null ? childExpr : Expression.AndAlso(acc, childExpr);
                 }
@@ -89,7 +92,7 @@ internal static class WhereCompiler
                 Expression? acc = null;
                 foreach (var child in or.Children)
                 {
-                    var childExpr = BuildExpression(child, table, rowParam, paramsParam, resolveSubquery);
+                    var childExpr = BuildExpression(child, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                     if (childExpr == null) return null;
                     acc = acc == null ? childExpr : Expression.OrElse(acc, childExpr);
                 }
@@ -98,14 +101,14 @@ internal static class WhereCompiler
 
             case SqlWhereNotExpression not:
             {
-                var inner = BuildExpression(not.Inner, table, rowParam, paramsParam, resolveSubquery);
+                var inner = BuildExpression(not.Inner, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 return inner == null ? null : Expression.Not(inner);
             }
 
             case SqlWhereComparisonExpression cmp:
             {
-                var left = BuildValue(cmp.Left, table, rowParam, paramsParam, resolveSubquery);
-                var right = BuildValue(cmp.Right, table, rowParam, paramsParam, resolveSubquery);
+                var left = BuildValue(cmp.Left, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
+                var right = BuildValue(cmp.Right, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 if (left == null || right == null) return null;
                 return Expression.Call(
                     typeof(WhereCompiler).GetMethod(nameof(CompareValues),
@@ -116,9 +119,9 @@ internal static class WhereCompiler
 
             case SqlWhereBetweenExpression between:
             {
-                var value = BuildValue(between.Value, table, rowParam, paramsParam, resolveSubquery);
-                var lower = BuildValue(between.Lower, table, rowParam, paramsParam, resolveSubquery);
-                var upper = BuildValue(between.Upper, table, rowParam, paramsParam, resolveSubquery);
+                var value = BuildValue(between.Value, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
+                var lower = BuildValue(between.Lower, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
+                var upper = BuildValue(between.Upper, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 if (value == null || lower == null || upper == null) return null;
 
                 var geExpr = Expression.Call(
@@ -139,7 +142,7 @@ internal static class WhereCompiler
 
             case SqlWhereNullCheckExpression nullCheck:
             {
-                var value = BuildValue(nullCheck.Value, table, rowParam, paramsParam, resolveSubquery);
+                var value = BuildValue(nullCheck.Value, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 if (value == null) return null;
                 var nullConst = Expression.Constant(null, typeof(object));
                 return nullCheck.Negated
@@ -149,8 +152,8 @@ internal static class WhereCompiler
 
             case SqlWhereDistinctFromExpression distinct:
             {
-                var left = BuildValue(distinct.Left, table, rowParam, paramsParam, resolveSubquery);
-                var right = BuildValue(distinct.Right, table, rowParam, paramsParam, resolveSubquery);
+                var left = BuildValue(distinct.Left, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
+                var right = BuildValue(distinct.Right, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 if (left == null || right == null) return null;
                 return Expression.Call(
                     typeof(WhereCompiler).GetMethod(nameof(IsDistinctFrom),
@@ -160,7 +163,7 @@ internal static class WhereCompiler
 
             case SqlWhereTruthyExpression truthy:
             {
-                var value = BuildValue(truthy.Value, table, rowParam, paramsParam, resolveSubquery);
+                var value = BuildValue(truthy.Value, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 if (value == null) return null;
                 if (value.Type == typeof(bool))
                     return value;
@@ -175,7 +178,7 @@ internal static class WhereCompiler
 
             case SqlWhereInListExpression inList:
             {
-                var left = BuildValue(inList.Left, table, rowParam, paramsParam, resolveSubquery);
+                var left = BuildValue(inList.Left, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 if (left == null) return null;
 
                 // Only support literal-only lists
@@ -200,7 +203,7 @@ internal static class WhereCompiler
             }
 
             case SqlWhereInSubqueryExpression inSub:
-                return BuildInSubqueryExpression(inSub, table, rowParam, paramsParam, resolveSubquery);
+                return BuildInSubqueryExpression(inSub, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
 
             case SqlWhereExistsExpression exists:
                 return BuildExistsExpression(exists, resolveSubquery);
@@ -209,12 +212,12 @@ internal static class WhereCompiler
                 return BuildLikeExpression(like, table, rowParam, paramsParam);
 
             case SqlWhereQuantifiedComparisonExpression quantified:
-                return BuildQuantifiedComparisonExpression(quantified, table, rowParam, paramsParam, resolveSubquery);
+                return BuildQuantifiedComparisonExpression(quantified, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
 
             case SqlWhereJsonContainsExpression contains:
             {
-                var left = BuildValue(contains.Left, table, rowParam, paramsParam, resolveSubquery);
-                var right = BuildValue(contains.Right, table, rowParam, paramsParam, resolveSubquery);
+                var left = BuildValue(contains.Left, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
+                var right = BuildValue(contains.Right, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 if (left == null || right == null) return null;
                 return Expression.Call(
                     typeof(WhereCompiler).GetMethod(nameof(JsonContains),
@@ -224,8 +227,8 @@ internal static class WhereCompiler
 
             case SqlWhereJsonKeyExistsExpression keyExists:
             {
-                var left = BuildValue(keyExists.Left, table, rowParam, paramsParam, resolveSubquery);
-                var right = BuildValue(keyExists.Right, table, rowParam, paramsParam, resolveSubquery);
+                var left = BuildValue(keyExists.Left, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
+                var right = BuildValue(keyExists.Right, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 if (left == null || right == null) return null;
                 return Expression.Call(
                     typeof(WhereCompiler).GetMethod(nameof(JsonKeyExists),
@@ -243,7 +246,8 @@ internal static class WhereCompiler
         SqlTableDefinition table,
         ParameterExpression rowParam,
         ParameterExpression paramsParam,
-        Func<string, IReadOnlyList<object?[]>>? resolveSubquery)
+        Func<string, IReadOnlyList<object?[]>>? resolveSubquery,
+        Func<string, IReadOnlyList<object?>, object?>? scalarFunctionInvoker = null)
     {
         switch (value)
         {
@@ -284,7 +288,7 @@ internal static class WhereCompiler
 
             case SqlWhereUnaryValueExpression unary:
             {
-                var operand = BuildValue(unary.Operand, table, rowParam, paramsParam, resolveSubquery);
+                var operand = BuildValue(unary.Operand, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 if (operand == null) return null;
                 if (unary.Operator == SqlWhereUnaryOperator.Minus)
                 {
@@ -298,8 +302,8 @@ internal static class WhereCompiler
 
             case SqlWhereBinaryValueExpression binary:
             {
-                var left = BuildValue(binary.Left, table, rowParam, paramsParam, resolveSubquery);
-                var right = BuildValue(binary.Right, table, rowParam, paramsParam, resolveSubquery);
+                var left = BuildValue(binary.Left, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
+                var right = BuildValue(binary.Right, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 if (left == null || right == null) return null;
                 return Expression.Call(
                     typeof(WhereCompiler).GetMethod(nameof(ApplyBinaryOp),
@@ -309,7 +313,7 @@ internal static class WhereCompiler
 
             case SqlWhereCastExpression cast:
             {
-                var inner = BuildValue(cast.Inner, table, rowParam, paramsParam, resolveSubquery);
+                var inner = BuildValue(cast.Inner, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 if (inner == null) return null;
                 return Expression.Call(
                     typeof(WhereCompiler).GetMethod(nameof(ConvertCast),
@@ -318,14 +322,14 @@ internal static class WhereCompiler
             }
 
             case SqlWhereCaseExpression caseExpr:
-                return BuildCaseExpression(caseExpr.ExpressionText, table, rowParam, paramsParam, resolveSubquery);
+                return BuildCaseExpression(caseExpr.ExpressionText, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
 
             case SqlWhereFunctionCallExpression funcCall:
-                return BuildFunctionCall(funcCall, table, rowParam, paramsParam, resolveSubquery);
+                return BuildFunctionCall(funcCall, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
 
             case SqlWhereJsonArrowExpression arrow:
             {
-                var src = BuildValue(arrow.Source, table, rowParam, paramsParam, resolveSubquery);
+                var src = BuildValue(arrow.Source, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
                 if (src == null) return null;
                 return Expression.Call(
                     typeof(WhereCompiler).GetMethod(nameof(JsonArrowValue),
@@ -348,11 +352,12 @@ internal static class WhereCompiler
         SqlTableDefinition table,
         ParameterExpression rowParam,
         ParameterExpression paramsParam,
-        Func<string, IReadOnlyList<object?[]>>? resolveSubquery)
+        Func<string, IReadOnlyList<object?[]>>? resolveSubquery,
+        Func<string, IReadOnlyList<object?>, object?>? scalarFunctionInvoker = null)
     {
         if (resolveSubquery == null) return null;
 
-        var left = BuildValue(inSub.Left, table, rowParam, paramsParam, resolveSubquery);
+        var left = BuildValue(inSub.Left, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
         if (left == null) return null;
 
         // Resolve uncorrelated subquery once at compile time.
@@ -388,11 +393,12 @@ internal static class WhereCompiler
         SqlTableDefinition table,
         ParameterExpression rowParam,
         ParameterExpression paramsParam,
-        Func<string, IReadOnlyList<object?[]>>? resolveSubquery)
+        Func<string, IReadOnlyList<object?[]>>? resolveSubquery,
+        Func<string, IReadOnlyList<object?>, object?>? scalarFunctionInvoker = null)
     {
         if (resolveSubquery == null) return null;
 
-        var left = BuildValue(quantified.Left, table, rowParam, paramsParam, resolveSubquery);
+        var left = BuildValue(quantified.Left, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
         if (left == null) return null;
 
         // Resolve uncorrelated subquery once at compile time.
@@ -464,7 +470,8 @@ internal static class WhereCompiler
         SqlTableDefinition table,
         ParameterExpression rowParam,
         ParameterExpression paramsParam,
-        Func<string, IReadOnlyList<object?[]>>? resolveSubquery)
+        Func<string, IReadOnlyList<object?[]>>? resolveSubquery,
+        Func<string, IReadOnlyList<object?>, object?>? scalarFunctionInvoker = null)
     {
         var parts = ParseCaseParts(caseText);
 
@@ -473,7 +480,7 @@ internal static class WhereCompiler
         if (parts.Else != null)
         {
             var elseValueExpr = SqlWhereParser.ParseValueExpression(parts.Else);
-            result = BuildValue(elseValueExpr, table, rowParam, paramsParam, resolveSubquery)
+            result = BuildValue(elseValueExpr, table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker)
                      ?? Expression.Constant(null, typeof(object));
         }
         else
@@ -485,12 +492,12 @@ internal static class WhereCompiler
         {
             var (whenText, thenText) = parts.WhenThenPairs[i];
             var condition = BuildExpression(
-                SqlWhereParser.Parse(whenText), table, rowParam, paramsParam, resolveSubquery);
+                SqlWhereParser.Parse(whenText), table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
             if (condition == null)
                 return Expression.Constant(null, typeof(object));
 
             var thenValue = BuildValue(
-                SqlWhereParser.ParseValueExpression(thenText), table, rowParam, paramsParam, resolveSubquery);
+                SqlWhereParser.ParseValueExpression(thenText), table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
             if (thenValue == null)
                 thenValue = Expression.Constant(null, typeof(object));
 
@@ -961,12 +968,13 @@ internal static class WhereCompiler
         SqlTableDefinition table,
         ParameterExpression rowParam,
         ParameterExpression paramsParam,
-        Func<string, IReadOnlyList<object?[]>>? resolveSubquery)
+        Func<string, IReadOnlyList<object?[]>>? resolveSubquery,
+        Func<string, IReadOnlyList<object?>, object?>? scalarFunctionInvoker = null)
     {
         var args = new Expression[func.Arguments.Count];
         for (int i = 0; i < func.Arguments.Count; i++)
         {
-            var arg = BuildValue(func.Arguments[i], table, rowParam, paramsParam, resolveSubquery);
+            var arg = BuildValue(func.Arguments[i], table, rowParam, paramsParam, resolveSubquery, scalarFunctionInvoker);
             if (arg == null) return null;
             args[i] = arg;
         }
@@ -1004,12 +1012,35 @@ internal static class WhereCompiler
             _ => null
         };
 
-        if (methodName == null) return null;
+        if (methodName != null)
+        {
+            var method = typeof(WhereCompiler).GetMethod(methodName,
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
 
-        var method = typeof(WhereCompiler).GetMethod(methodName,
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+            return Expression.Call(method, Expression.NewArrayInit(typeof(object), args));
+        }
 
-        return Expression.Call(method, Expression.NewArrayInit(typeof(object), args));
+        if (scalarFunctionInvoker != null)
+        {
+            var invokerExpr = Expression.Constant(scalarFunctionInvoker);
+            var argsArray = Expression.NewArrayInit(typeof(object), args);
+            return Expression.Call(
+                typeof(WhereCompiler).GetMethod(nameof(EvaluateScalarFunction),
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!,
+                invokerExpr,
+                Expression.Constant(func.FunctionName),
+                argsArray);
+        }
+
+        return null;
+    }
+
+    private static object? EvaluateScalarFunction(
+        Func<string, IReadOnlyList<object?>, object?> invoker,
+        string functionName,
+        object?[] args)
+    {
+        return invoker(functionName, args);
     }
 
     private static object? ScalarConcat(object?[] args)

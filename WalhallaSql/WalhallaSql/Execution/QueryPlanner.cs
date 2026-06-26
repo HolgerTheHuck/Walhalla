@@ -11,12 +11,13 @@ internal static class QueryPlanner
 {
     public static CompiledPlan Build(SqlStatement statement, Storage.TableStore store,
         Func<string, IReadOnlyList<object?[]>>? resolveSubquery = null,
-        StatisticsCatalog? statisticsCatalog = null)
+        StatisticsCatalog? statisticsCatalog = null,
+        Func<string, IReadOnlyList<object?>, object?>? scalarFunctionInvoker = null)
     {
         switch (statement)
         {
             case SqlSelectStatement select:
-                return BuildSelect(select, store, resolveSubquery, statisticsCatalog);
+                return BuildSelect(select, store, resolveSubquery, statisticsCatalog, scalarFunctionInvoker);
 
             case SqlInsertStatement insert:
                 return BuildInsert(insert, store);
@@ -29,7 +30,8 @@ internal static class QueryPlanner
 
     private static CompiledPlan BuildSelect(SqlSelectStatement select, Storage.TableStore store,
         Func<string, IReadOnlyList<object?[]>>? resolveSubquery = null,
-        StatisticsCatalog? statisticsCatalog = null)
+        StatisticsCatalog? statisticsCatalog = null,
+        Func<string, IReadOnlyList<object?>, object?>? scalarFunctionInvoker = null)
     {
         var tableId = store.GetTableId(select.TableName);
         if (tableId < 0)
@@ -43,8 +45,8 @@ internal static class QueryPlanner
         if (select.Joins != null && select.Joins.Count > 0)
         {
             var (joinPlan, joinProjection, joinNames, joinComputed) = BuildJoinPlan(
-                select, tableId, tableDef, store, resolveSubquery);
-            var joinWhere = WhereCompiler.Compile(select.Where, tableDef, select.Parameters?.Count ?? 0, resolveSubquery);
+                select, tableId, tableDef, store, resolveSubquery, scalarFunctionInvoker);
+            var joinWhere = WhereCompiler.Compile(select.Where, tableDef, select.Parameters?.Count ?? 0, resolveSubquery, scalarFunctionInvoker);
             return new CompiledPlan(
                 tableId, tableDef,
                 joinProjection, joinNames,
@@ -60,7 +62,7 @@ internal static class QueryPlanner
                 ComputedProjections: joinComputed);
         }
 
-        var projection = ProjectionPlanner.Build(select.Columns, tableDef);
+        var projection = ProjectionPlanner.Build(select.Columns, tableDef, scalarFunctionInvoker);
 
         var parameterCount = select.Parameters?.Count ?? 0;
 
@@ -72,7 +74,7 @@ internal static class QueryPlanner
         // path, so they need the compiled delegate for row filtering during the scan.
         bool hasAggregates = select.Columns.Any(c => c.Aggregate != null && c.WindowFunction == null);
         var whereDelegate = (pkConst == null && pkParamIdx == null) || hasAggregates
-            ? WhereCompiler.Compile(select.Where, tableDef, parameterCount, resolveSubquery)
+            ? WhereCompiler.Compile(select.Where, tableDef, parameterCount, resolveSubquery, scalarFunctionInvoker)
             : null;
 
         // Try PK range scan (BETWEEN, >, >=, <, <= on PK column).
@@ -123,7 +125,8 @@ internal static class QueryPlanner
         int baseTableId,
         SqlTableDefinition baseTableDef,
         Storage.TableStore store,
-        Func<string, IReadOnlyList<object?[]>>? resolveSubquery)
+        Func<string, IReadOnlyList<object?[]>>? resolveSubquery,
+        Func<string, IReadOnlyList<object?>, object?>? scalarFunctionInvoker = null)
     {
         var steps = new List<JoinStep>();
         var tables = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -290,7 +293,7 @@ internal static class QueryPlanner
             if (step.Kind != SqlJoinKind.Cross && select.Joins![i].OnPredicate != null)
             {
                 var onDelegate = WhereCompiler.Compile(
-                    select.Joins[i].OnPredicate!, combinedDef, parameterCount, resolveSubquery);
+                    select.Joins[i].OnPredicate!, combinedDef, parameterCount, resolveSubquery, scalarFunctionInvoker);
                 steps[i] = step with { WhereDelegate = onDelegate };
             }
         }

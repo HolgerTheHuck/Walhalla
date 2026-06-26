@@ -180,6 +180,14 @@ public sealed record SqlStoredProcedureDefinition(
     string Language = "sql",
     string? Description = null);
 
+internal sealed record SqlScalarFunctionDefinition(
+    string Name,
+    IReadOnlyList<SqlProcedureParameter> Parameters,
+    SqlScalarType ReturnType,
+    string Body,
+    string Language = "sql",
+    string? Description = null);
+
 public sealed record SqlTriggerDefinition(
     string Name,
     string TableName,
@@ -198,6 +206,18 @@ public sealed record SqlCreateProcedureStatement(
 
 public sealed record SqlDropProcedureStatement(
     string ProcedureName,
+    bool IfExists = false) : SqlStatement;
+
+internal sealed record SqlCreateFunctionStatement(
+    string FunctionName,
+    IReadOnlyList<SqlProcedureParameter> Parameters,
+    SqlScalarType ReturnType,
+    string Body,
+    bool OrReplace = false,
+    string Language = "sql") : SqlStatement;
+
+internal sealed record SqlDropFunctionStatement(
+    string FunctionName,
     bool IfExists = false) : SqlStatement;
 
 public sealed record SqlExecStatement(
