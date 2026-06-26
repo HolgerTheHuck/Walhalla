@@ -42,7 +42,7 @@ public sealed class PlwAstTests
 
         var block = Assert.IsType<PlwBlock>(program.Body);
         Assert.Single(block.Declarations);
-        var decl = block.Declarations[0];
+        var decl = Assert.IsType<PlwVariableDeclaration>(block.Declarations[0]);
         Assert.Equal("x", decl.Name);
         Assert.Equal("INT", decl.TypeName);
         Assert.NotNull(decl.DefaultValue);

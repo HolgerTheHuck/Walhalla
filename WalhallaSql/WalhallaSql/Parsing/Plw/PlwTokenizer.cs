@@ -57,6 +57,7 @@ internal enum PlwTokenKind
     Open,
     Fetch,
     Close,
+    Cursor,
 
     // Operatoren und Satzzeichen
     ColonEquals,    // :=
@@ -423,6 +424,7 @@ internal static class PlwTokenizer
             "OPEN" => PlwTokenKind.Open,
             "FETCH" => PlwTokenKind.Fetch,
             "CLOSE" => PlwTokenKind.Close,
+            "CURSOR" => PlwTokenKind.Cursor,
 
             "NULL" => PlwTokenKind.Null,
             "TRUE" => PlwTokenKind.True,

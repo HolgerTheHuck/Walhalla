@@ -604,4 +604,109 @@ public sealed class PlwExecutionTests
         var result = engine.Execute("EXEC FoundExecuteInto @o_found = false OUTPUT");
         Assert.Equal(true, Convert.ToBoolean(result.OutputParameters["o_found"]));
     }
+
+    [Fact]
+    public void Plw_Procedure_Cursor_OpenFetchClose_Record()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("INSERT INTO Customers (Id, Name) VALUES (1, 'Alice')");
+        engine.Execute("INSERT INTO Customers (Id, Name) VALUES (2, 'Bob')");
+        engine.Execute("INSERT INTO Customers (Id, Name) VALUES (3, 'Carol')");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE CursorSumNames(OUT @o_count INT)
+            LANGUAGE plw AS $$
+            DECLARE
+                cur CURSOR FOR SELECT Id, Name FROM Customers ORDER BY Id;
+                rec RECORD;
+            BEGIN
+                o_count := 0;
+                OPEN cur;
+                LOOP
+                    FETCH cur INTO rec;
+                    EXIT WHEN NOT FOUND;
+                    o_count := o_count + 1;
+                END LOOP;
+                CLOSE cur;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC CursorSumNames @o_count = 0 OUTPUT");
+        Assert.Equal(3, Convert.ToInt32(result.OutputParameters["o_count"]));
+    }
+
+    [Fact]
+    public void Plw_Procedure_Cursor_FetchScalarVariables()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name STRING)");
+        engine.Execute("INSERT INTO Customers (Id, Name) VALUES (7, 'Dyn')");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE CursorFetchScalars(OUT @o_id INT, OUT @o_name STRING)
+            LANGUAGE plw AS $$
+            DECLARE
+                cur CURSOR FOR SELECT Id, Name FROM Customers WHERE Id = 7;
+            BEGIN
+                OPEN cur;
+                FETCH cur INTO o_id, o_name;
+                CLOSE cur;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC CursorFetchScalars @o_id = 0 OUTPUT, @o_name = '' OUTPUT");
+        Assert.Equal(7, Convert.ToInt32(result.OutputParameters["o_id"]));
+        Assert.Equal("Dyn", result.OutputParameters["o_name"]);
+    }
+
+    [Fact]
+    public void Plw_Procedure_Cursor_Empty_FoundFalse()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY, Name STRING)");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE CursorEmpty(OUT @o_found BOOLEAN)
+            LANGUAGE plw AS $$
+            DECLARE
+                cur CURSOR FOR SELECT Id FROM Customers;
+                v_id INT;
+            BEGIN
+                OPEN cur;
+                FETCH cur INTO v_id;
+                o_found := FOUND;
+                CLOSE cur;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC CursorEmpty @o_found = true OUTPUT");
+        Assert.Equal(false, Convert.ToBoolean(result.OutputParameters["o_found"]));
+    }
+
+    [Fact]
+    public void Plw_Procedure_Cursor_DoubleOpen_Throws()
+    {
+        using var engine = WalhallaEngine.InMemory();
+        engine.Execute("CREATE TABLE Customers (Id INT PRIMARY KEY)");
+        engine.Execute("INSERT INTO Customers (Id) VALUES (1)");
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE CursorDoubleOpen()
+            LANGUAGE plw AS $$
+            DECLARE
+                cur CURSOR FOR SELECT Id FROM Customers;
+            BEGIN
+                OPEN cur;
+                OPEN cur;
+            END;
+            $$;
+            """);
+
+        var ex = Assert.Throws<WalhallaException>(() => engine.Execute("EXEC CursorDoubleOpen"));
+        Assert.Contains("bereits geoeffnet", ex.Message);
+    }
 }

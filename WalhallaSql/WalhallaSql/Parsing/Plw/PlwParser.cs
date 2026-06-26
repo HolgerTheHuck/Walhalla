@@ -70,7 +70,7 @@ internal static class PlwParser
 
     private static PlwBlock ParseBlock(ref TokenReader reader)
     {
-        var declarations = new List<PlwVariableDeclaration>();
+        var declarations = new List<PlwNode>();
         if (reader.Current.Kind == PlwTokenKind.Declare)
         {
             reader.Advance();
@@ -95,13 +95,29 @@ internal static class PlwParser
         return new PlwBlock(declarations, body);
     }
 
-    private static PlwVariableDeclaration? ParseVariableDeclaration(ref TokenReader reader)
+    private static PlwNode? ParseVariableDeclaration(ref TokenReader reader)
     {
         if (reader.Current.Kind == PlwTokenKind.Begin)
             return null;
 
         var name = reader.Expect(PlwTokenKind.Identifier).Text;
-        var typeName = reader.Expect(PlwTokenKind.Identifier).Text;
+
+        // Cursor-Deklaration: name CURSOR FOR query;
+        if (reader.Current.Kind == PlwTokenKind.Cursor)
+        {
+            reader.Advance();
+            reader.Expect(PlwTokenKind.For);
+            var query = ParseSqlFragment(ref reader, PlwTokenKind.Semicolon, PlwTokenKind.End);
+            SkipOptionalSemicolon(ref reader);
+            return new PlwCursorDeclaration(name, query);
+        }
+
+        var typeName = reader.Current.Kind == PlwTokenKind.Record
+            ? reader.Current.Text
+            : reader.Expect(PlwTokenKind.Identifier).Text;
+        if (reader.Current.Kind == PlwTokenKind.Record)
+            reader.Advance();
+
         PlwExpression? defaultValue = null;
         if (reader.Current.Kind == PlwTokenKind.ColonEquals)
         {
@@ -407,12 +423,32 @@ internal static class PlwParser
 
     private static PlwNode ParseCursorStatement(ref TokenReader reader)
     {
-        // OPEN/FETCH/CLOSE: als eingebettetes SQL weitergeben.
-        var keyword = reader.Current.Text;
+        var kind = reader.Current.Kind;
         reader.Advance();
-        var sql = ParseSqlFragment(ref reader, PlwTokenKind.Semicolon, PlwTokenKind.End);
+        var cursorName = reader.Expect(PlwTokenKind.Identifier).Text;
+
+        if (kind == PlwTokenKind.Open)
+        {
+            SkipOptionalSemicolon(ref reader);
+            return new PlwOpenCursor(cursorName);
+        }
+
+        if (kind == PlwTokenKind.Close)
+        {
+            SkipOptionalSemicolon(ref reader);
+            return new PlwCloseCursor(cursorName);
+        }
+
+        // FETCH cursor INTO target1, target2, ...
+        reader.Expect(PlwTokenKind.Into);
+        var targets = new List<PlwExpression>();
+        do
+        {
+            targets.Add(new PlwIdentifierExpression(reader.Expect(PlwTokenKind.Identifier).Text));
+        }
+        while (reader.Current.Kind == PlwTokenKind.Comma && reader.AdvanceComma());
         SkipOptionalSemicolon(ref reader);
-        return new PlwSqlStatement(new PlwSqlFragment(keyword + " " + sql.Text, sql.Arguments));
+        return new PlwFetchCursor(cursorName, targets);
     }
 
     private static PlwNode ParseAssignmentOrSqlStatement(ref TokenReader reader)

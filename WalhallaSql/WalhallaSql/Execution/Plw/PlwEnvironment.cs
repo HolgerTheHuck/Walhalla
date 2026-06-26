@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using WalhallaSql.Parsing.Plw;
 
 namespace WalhallaSql.Execution.Plw;
 
@@ -13,12 +14,14 @@ internal sealed class PlwEnvironment
     public const string FoundVariableName = "found";
 
     private readonly Dictionary<string, PlwVariable> _variables;
+    private readonly Dictionary<string, PlwCursor> _cursors;
     private readonly PlwEnvironment? _parent;
     private bool _found;
 
     public PlwEnvironment(PlwEnvironment? parent = null)
     {
         _variables = new Dictionary<string, PlwVariable>(StringComparer.OrdinalIgnoreCase);
+        _cursors = new Dictionary<string, PlwCursor>(StringComparer.OrdinalIgnoreCase);
         _parent = parent;
     }
 
@@ -32,6 +35,30 @@ internal sealed class PlwEnvironment
             throw new WalhallaException($"PLW-Variable '{name}' ist bereits deklariert.");
 
         _variables[key] = new PlwVariable(key, typeName, value);
+    }
+
+    public void DeclareCursor(string name, PlwCursor cursor)
+    {
+        var key = Normalize(name);
+        if (_variables.ContainsKey(key))
+            throw new WalhallaException($"PLW-Name '{name}' ist bereits als Variable deklariert.");
+        _cursors[key] = cursor;
+    }
+
+    public PlwCursor GetCursor(string name)
+    {
+        var key = Normalize(name);
+        if (_cursors.TryGetValue(key, out var cursor))
+            return cursor;
+        if (_parent != null)
+            return _parent.GetCursor(name);
+        throw new WalhallaException($"PLW-Cursor '{name}' ist nicht deklariert.");
+    }
+
+    public bool HasCursor(string name)
+    {
+        var key = Normalize(name);
+        return _cursors.ContainsKey(key) || (_parent?.HasCursor(name) ?? false);
     }
 
     public void Set(string name, object? value)
@@ -150,5 +177,62 @@ internal sealed class PlwVariable
         Name = name;
         TypeName = typeName;
         Value = value;
+    }
+}
+
+/// <summary>
+/// Laufzeitzustand eines PLW-Cursors.
+/// </summary>
+internal sealed class PlwCursor
+{
+    public string Name { get; }
+    public PlwSqlFragment Query { get; }
+
+    private WalhallaResultSet? _resultSet;
+    private IEnumerator<WalhallaRow>? _enumerator;
+
+    public PlwCursor(string name, PlwSqlFragment query)
+    {
+        Name = name;
+        Query = query;
+    }
+
+    public bool IsOpen => _enumerator != null;
+
+    public void Open(PlwSqlExecutor executor, PlwEnvironment env)
+    {
+        if (IsOpen)
+            throw new WalhallaException($"PLW-Cursor '{Name}' ist bereits geoeffnet.");
+
+        _resultSet = executor.Execute(Query, env);
+        _enumerator = _resultSet.Rows.GetEnumerator();
+    }
+
+    public bool FetchNext()
+    {
+        if (_enumerator == null)
+            throw new WalhallaException($"PLW-Cursor '{Name}' ist nicht geoeffnet.");
+
+        return _enumerator.MoveNext();
+    }
+
+    public WalhallaRow CurrentRow
+    {
+        get
+        {
+            if (_enumerator == null)
+                throw new WalhallaException($"PLW-Cursor '{Name}' ist nicht geoeffnet.");
+            return _enumerator.Current;
+        }
+    }
+
+    public IReadOnlyList<string> ColumnNames
+        => _resultSet?.ColumnNames ?? Array.Empty<string>();
+
+    public void Close()
+    {
+        _enumerator?.Dispose();
+        _enumerator = null;
+        _resultSet = null;
     }
 }

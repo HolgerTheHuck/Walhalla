@@ -11,7 +11,7 @@ internal abstract record PlwNode;
 /// Deklarationsblock + ausführbarer Body.
 /// </summary>
 internal sealed record PlwBlock(
-    IReadOnlyList<PlwVariableDeclaration> Declarations,
+    IReadOnlyList<PlwNode> Declarations,
     IReadOnlyList<PlwNode> Body) : PlwNode;
 
 /// <summary>
@@ -22,6 +22,32 @@ internal sealed record PlwVariableDeclaration(
     string TypeName,
     PlwExpression? DefaultValue = null,
     bool IsParameter = false) : PlwNode;
+
+/// <summary>
+/// Cursor-Deklaration: name CURSOR FOR query_text
+/// </summary>
+internal sealed record PlwCursorDeclaration(
+    string Name,
+    PlwSqlFragment Query) : PlwNode;
+
+/// <summary>
+/// OPEN cursor_name;
+/// </summary>
+internal sealed record PlwOpenCursor(
+    string CursorName) : PlwNode;
+
+/// <summary>
+/// FETCH cursor_name INTO target1, target2, ...;
+/// </summary>
+internal sealed record PlwFetchCursor(
+    string CursorName,
+    IReadOnlyList<PlwExpression> Targets) : PlwNode;
+
+/// <summary>
+/// CLOSE cursor_name;
+/// </summary>
+internal sealed record PlwCloseCursor(
+    string CursorName) : PlwNode;
 
 /// <summary>
 /// Zuweisung: target := value

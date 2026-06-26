@@ -155,10 +155,7 @@ internal sealed class PlwInterpreter
     {
         foreach (var declaration in block.Declarations)
         {
-            var defaultValue = declaration.DefaultValue != null
-                ? _evaluator.Evaluate(declaration.DefaultValue, _env)
-                : null;
-            _env.Declare(declaration.Name, declaration.TypeName, defaultValue, allowOverwrite: false);
+            ExecuteNode(declaration);
         }
 
         foreach (var statement in block.Body)
@@ -257,6 +254,22 @@ internal sealed class PlwInterpreter
 
             case PlwSqlStatement sqlStatement:
                 SetFoundFromResult(_executor.Execute(sqlStatement.Sql, _env));
+                break;
+
+            case PlwCursorDeclaration cursorDecl:
+                _env.DeclareCursor(cursorDecl.Name, new PlwCursor(cursorDecl.Name, cursorDecl.Query));
+                break;
+
+            case PlwOpenCursor openCursor:
+                _env.GetCursor(openCursor.CursorName).Open(_executor, _env);
+                break;
+
+            case PlwFetchCursor fetchCursor:
+                ExecuteFetchCursor(fetchCursor);
+                break;
+
+            case PlwCloseCursor closeCursor:
+                _env.GetCursor(closeCursor.CursorName).Close();
                 break;
 
             default:
@@ -427,6 +440,26 @@ internal sealed class PlwInterpreter
 
         var row = result.Rows[0];
         for (var i = 0; i < Math.Min(targets.Length, result.ColumnNames.Count); i++)
+        {
+            _env.Set(targets[i].Name, row.GetValue(i));
+        }
+    }
+
+    private void ExecuteFetchCursor(PlwFetchCursor fetch)
+    {
+        var cursor = _env.GetCursor(fetch.CursorName);
+        var hasRow = cursor.FetchNext();
+        _env.SetFound(hasRow);
+
+        if (!hasRow)
+            return;
+
+        var row = cursor.CurrentRow;
+        var targets = fetch.Targets
+            .Select(t => t as PlwIdentifierExpression ?? throw new WalhallaException("FETCH INTO erwartet einfache Variablen als Ziele."))
+            .ToArray();
+
+        for (var i = 0; i < Math.Min(targets.Length, cursor.ColumnNames.Count); i++)
         {
             _env.Set(targets[i].Name, row.GetValue(i));
         }

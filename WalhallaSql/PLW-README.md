@@ -49,6 +49,10 @@ eingebetteten Betrieb und für den Client/Server-Betrieb über PgWire gedacht.
 - ✅ Phase 10a: `FOUND`-Systemvariable abgeschlossen
   - `FOUND` zeigt nach DML (`INSERT`/`UPDATE`/`DELETE`), `SELECT INTO`, `EXECUTE ... INTO`, `PERFORM` und `FOR ... IN SELECT ... LOOP` an, ob Zeilen betroffen oder gefunden wurden
   - `FOUND` kann gelesen und über Zuweisung (`FOUND := ...`) gesetzt werden, darf aber nicht deklariert werden
+- ✅ Phase 10b: Cursor-Variablen abgeschlossen
+  - Deklaration mit `name CURSOR FOR query`
+  - `OPEN`, `FETCH INTO` (einzelne Variablen oder `RECORD`), `CLOSE`
+  - `FETCH` setzt `FOUND` auf `true` bei Erfolg bzw. `false` am Ende
 
 Das technische Design-Dokument liegt unter `WalhallaSql/docs/plw-design.md`; der
 Migrations-Guide von PL/pgSQL unter `WalhallaSql/docs/plw/from-plpgsql.md`;
@@ -121,6 +125,7 @@ Console.WriteLine(result.OutputParameters["p_name"]); // Dyn
 - `IN`, `OUT`, `INOUT`-Parameter
 - `%TYPE` für Tabellenspalten (v1)
 - `FOUND`-Systemvariable
+- Cursor-Variablen (`CURSOR FOR`, `OPEN`, `FETCH INTO`, `CLOSE`)
 
 ## Aufruf aus verschiedenen Clients
 
@@ -187,6 +192,7 @@ In Phase 9 wurden gezielt Korrektheitslücken geschlossen:
 | `RETURN` mit Ausdruck in einer Prozedur | `WalhallaException` | – |
 | `int`-Überlauf bei einer arithmetischen Operation | automatische Promotion zu `long` oder `double` | – |
 | `FOUND` nach einer SQL-Operation | `true`, wenn Zeilen betroffen oder gefunden wurden; sonst `false` | – |
+| `FETCH` am Ende eines Cursors | `FOUND` wird `false`; Ziele werden nicht verändert | – |
 
 Schleifenvariablen (`FOR i IN ...`, `FOR rec IN SELECT ...`) dürfen dagegen
 Block-Variablen gleichen Namens temporär überschatten.
@@ -236,7 +242,6 @@ klaren Fehlermeldung.
 
 Für die erste Version sind folgende PL/pgSQL-Features nicht geplant:
 
-- Cursor-Variablen (`OPEN`, `FETCH`, `CLOSE`)
 - Exception-Handler (`BEGIN ... EXCEPTION ... END`)
 - Arrays und Composite-Typen
 - Trigger-Funktionen
