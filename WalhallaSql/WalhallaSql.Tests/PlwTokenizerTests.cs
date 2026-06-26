@@ -205,4 +205,17 @@ public sealed class PlwTokenizerTests
         Assert.Equal(PlwTokenKind.String, tokens[1].Kind);
         Assert.Equal(PlwTokenKind.Using, tokens[2].Kind);
     }
+
+    [Fact]
+    public void Tokenize_LabelStart_And_LabelEnd()
+    {
+        var tokens = PlwTokenizer.Tokenize("<<x>> FOR");
+
+        Assert.Equal("x", tokens[0].Text);
+        Assert.Equal(0, tokens[0].Position);
+        Assert.Equal(5, tokens[0].Length);
+
+        var kinds = tokens.Select(t => t.Kind).ToArray();
+        Assert.Equal(new[] { PlwTokenKind.LabelStart, PlwTokenKind.For, PlwTokenKind.Eof }, kinds);
+    }
 }

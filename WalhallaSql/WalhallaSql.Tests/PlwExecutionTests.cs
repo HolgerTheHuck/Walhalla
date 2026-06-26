@@ -961,4 +961,114 @@ public sealed class PlwExecutionTests
         var ex = Assert.Throws<WalhallaException>(() => engine.Execute("EXEC RaiseTooFew"));
         Assert.Contains("Zu wenige Argumente", ex.Message);
     }
+
+    [Fact]
+    public void Plw_Raise_Exception_With_Hint_And_Detail()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE RaiseHintDetail()
+            LANGUAGE plw AS $$
+            BEGIN
+                RAISE EXCEPTION 'validation failed'
+                    USING SQLSTATE = '12345', HINT = 'check input', DETAIL = 'id must be positive';
+            END;
+            $$;
+            """);
+
+        var ex = Assert.Throws<WalhallaException>(() => engine.Execute("EXEC RaiseHintDetail"));
+        Assert.Equal("validation failed", ex.Message);
+        Assert.Equal("12345", ex.SqlState);
+        Assert.Equal("check input", ex.Hint);
+        Assert.Equal("id must be positive", ex.Detail);
+    }
+
+    [Fact]
+    public void Plw_Functions_Substring_And_Current_Timestamp()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE FuncDemo(OUT @o_sub STRING, OUT @o_len INT, OUT @o_coalesce STRING)
+            LANGUAGE plw AS $$
+            BEGIN
+                o_sub := SUBSTRING('Hello World', 7, 5);
+                o_len := LENGTH('Hello World');
+                o_coalesce := COALESCE(NULL, 'fallback', 'ignored');
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC FuncDemo @o_sub = NULL OUTPUT, @o_len = 0 OUTPUT, @o_coalesce = NULL OUTPUT");
+        Assert.Equal("World", result.OutputParameters["o_sub"]);
+        Assert.Equal(11, Convert.ToInt32(result.OutputParameters["o_len"]));
+        Assert.Equal("fallback", result.OutputParameters["o_coalesce"]);
+    }
+
+    [Fact]
+    public void Plw_Functions_Trim_And_Abs()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE FuncDemo2(OUT @o_trim STRING, OUT @o_abs DOUBLE)
+            LANGUAGE plw AS $$
+            BEGIN
+                o_trim := TRIM('  x  ');
+                o_abs := ABS(-3.14);
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC FuncDemo2 @o_trim = NULL OUTPUT, @o_abs = 0 OUTPUT");
+        Assert.Equal("x", result.OutputParameters["o_trim"]);
+        Assert.Equal(3.14, Convert.ToDouble(result.OutputParameters["o_abs"]), 2);
+    }
+
+    [Fact]
+    public void Plw_Labeled_Exit_From_Nested_Loop()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE LabelDemo(OUT @o_result INT)
+            LANGUAGE plw AS $$
+            BEGIN
+                o_result := 0;
+                <<outer>>
+                FOR i IN 1..3 LOOP
+                    <<inner>>
+                    FOR j IN 1..3 LOOP
+                        o_result := o_result + 1;
+                        IF j = 2 THEN
+                            EXIT outer;
+                        END IF;
+                    END LOOP inner;
+                END LOOP outer;
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC LabelDemo @o_result = 0 OUTPUT");
+        Assert.Equal(2, Convert.ToInt32(result.OutputParameters["o_result"]));
+    }
+
+    [Fact]
+    public void Plw_Concat_Operator_In_Expression()
+    {
+        using var engine = WalhallaEngine.InMemory();
+
+        engine.Execute("""
+            CREATE OR REPLACE PROCEDURE ConcatDemo(OUT @o_result STRING)
+            LANGUAGE plw AS $$
+            BEGIN
+                o_result := 'Hello' || ' ' || 'World';
+            END;
+            $$;
+            """);
+
+        var result = engine.Execute("EXEC ConcatDemo @o_result = NULL OUTPUT");
+        Assert.Equal("Hello World", result.OutputParameters["o_result"]);
+    }
 }

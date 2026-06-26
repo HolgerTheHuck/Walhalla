@@ -9,13 +9,15 @@ namespace WalhallaSql.Execution.Plw;
 internal sealed class PlwFlowControlException : Exception
 {
     public PlwFlowControlKind Kind { get; }
+    public string? Label { get; }
     public WalhallaResultSet? ReturnResultSet { get; }
     public object? ReturnValue { get; }
 
-    public PlwFlowControlException(PlwFlowControlKind kind)
+    public PlwFlowControlException(PlwFlowControlKind kind, string? label = null)
         : base($"PLW flow control: {kind}")
     {
         Kind = kind;
+        Label = label;
     }
 
     public PlwFlowControlException(WalhallaResultSet returnResultSet)

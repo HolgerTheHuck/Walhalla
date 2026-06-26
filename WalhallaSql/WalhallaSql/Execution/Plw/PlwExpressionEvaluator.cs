@@ -110,6 +110,16 @@ internal sealed class PlwExpressionEvaluator
             "COALESCE" => args.FirstOrDefault(a => a != null),
             "LOWER" => SingleStringArg(args, name)?.ToLowerInvariant(),
             "UPPER" => SingleStringArg(args, name)?.ToUpperInvariant(),
+            "TRIM" => SingleStringArg(args, name)?.Trim(),
+            "LENGTH" => SingleStringArg(args, name)?.Length ?? 0,
+            "SUBSTRING" or "SUBSTR" => ScalarSubstring(args, name),
+            "ABS" => Math.Abs(Convert.ToDouble(SingleArg(args, name), CultureInfo.InvariantCulture)),
+            "ROUND" => Math.Round(Convert.ToDouble(SingleArg(args, name), CultureInfo.InvariantCulture)),
+            "CEILING" or "CEIL" => Math.Ceiling(Convert.ToDouble(SingleArg(args, name), CultureInfo.InvariantCulture)),
+            "FLOOR" => Math.Floor(Convert.ToDouble(SingleArg(args, name), CultureInfo.InvariantCulture)),
+            "NOW" or "CURRENT_TIMESTAMP" => DateTime.Now,
+            "CURRENT_DATE" => DateOnly.FromDateTime(DateTime.Now),
+            "CURRENT_TIME" => TimeOnly.FromDateTime(DateTime.Now),
             _ => throw new WalhallaException($"Unbekannte PLW-Funktion '{name}'.")
         };
     }
@@ -151,6 +161,26 @@ internal sealed class PlwExpressionEvaluator
     {
         var value = SingleArg(args, functionName);
         return value?.ToString();
+    }
+
+    private static object? ScalarSubstring(IReadOnlyList<object?> args, string functionName)
+    {
+        if (args.Count < 2)
+            throw new WalhallaException($"Funktion '{functionName}' erwartet mindestens zwei Argumente (Text, Start [, Laenge]).");
+
+        var text = Convert.ToString(args[0], CultureInfo.InvariantCulture);
+        if (text == null)
+            return null;
+
+        var start = Convert.ToInt32(args[1], CultureInfo.InvariantCulture);
+        var length = args.Count > 2 ? Convert.ToInt32(args[2], CultureInfo.InvariantCulture) : int.MaxValue;
+
+        // SQL-SUBSTRING ist 1-basiert; .NET ist 0-basiert.
+        var netStart = Math.Max(0, start - 1);
+        if (netStart >= text.Length)
+            return string.Empty;
+        var maxLength = Math.Max(0, text.Length - netStart);
+        return text.Substring(netStart, Math.Min(length, maxLength));
     }
 
     private static string QuoteIdentifier(string? value)

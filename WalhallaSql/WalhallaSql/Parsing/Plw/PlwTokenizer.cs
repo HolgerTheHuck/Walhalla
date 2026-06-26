@@ -61,6 +61,8 @@ internal enum PlwTokenKind
     Close,
     Cursor,
     SqlState,
+    Hint,
+    Detail,
 
     // Operatoren und Satzzeichen
     ColonEquals,    // :=
@@ -86,6 +88,8 @@ internal enum PlwTokenKind
 
     Colon,          // :
     DoubleDot,      // ..
+    LabelStart,     // <<label>>
+    LabelEnd,       // <<>> (schliessende Klammer, wird nicht direkt benoetigt)
 }
 
 /// <summary>
@@ -341,6 +345,24 @@ internal static class PlwTokenizer
                     reader.Advance(2);
                     return CreateToken(PlwTokenKind.NotEquals, "<>", startPos, 2, startLine, startCol);
                 }
+                if (reader.Peek(1) == '<')
+                {
+                    reader.Advance(2); // <<
+                    if (reader.Current == '>' && reader.Peek(1) == '>')
+                    {
+                        reader.Advance(2);
+                        return CreateToken(PlwTokenKind.LabelEnd, "<<>>", startPos, 4, startLine, startCol);
+                    }
+                    var labelStart = reader.Position;
+                    while (!reader.IsAtEnd && reader.Current != '>')
+                        reader.Advance();
+                    var labelText = reader.Source.Substring(labelStart, reader.Position - labelStart).Trim();
+                    if (!reader.IsAtEnd && reader.Current == '>')
+                        reader.Advance(); // erstes >
+                    if (!reader.IsAtEnd && reader.Current == '>')
+                        reader.Advance(); // zweites >
+                    return CreateToken(PlwTokenKind.LabelStart, labelText, startPos, reader.Position - startPos, startLine, startCol);
+                }
                 reader.Advance();
                 return CreateToken(PlwTokenKind.LessThan, "<", startPos, 1, startLine, startCol);
             case '>':
@@ -431,6 +453,8 @@ internal static class PlwTokenizer
             "WHEN" => PlwTokenKind.When,
             "OTHERS" => PlwTokenKind.Others,
             "SQLSTATE" => PlwTokenKind.SqlState,
+            "HINT" => PlwTokenKind.Hint,
+            "DETAIL" => PlwTokenKind.Detail,
 
             "NULL" => PlwTokenKind.Null,
             "TRUE" => PlwTokenKind.True,

@@ -8,12 +8,13 @@ namespace WalhallaSql.Parsing.Plw;
 internal abstract record PlwNode;
 
 /// <summary>
-/// Deklarationsblock + ausführbarer Body + optionale Exception-Handler.
+/// Deklarationsblock + ausfuehrbarer Body + optionale Exception-Handler.
 /// </summary>
 internal sealed record PlwBlock(
     IReadOnlyList<PlwNode> Declarations,
     IReadOnlyList<PlwNode> Body,
-    IReadOnlyList<PlwExceptionHandler>? ExceptionHandlers = null) : PlwNode;
+    IReadOnlyList<PlwExceptionHandler>? ExceptionHandlers = null,
+    string? Label = null) : PlwNode;
 
 /// <summary>
 /// Variablen-/Parameter-Deklaration.
@@ -74,14 +75,16 @@ internal sealed record PlwElsif(
 /// LOOP ... END LOOP
 /// </summary>
 internal sealed record PlwSimpleLoop(
-    PlwNode Body) : PlwNode;
+    PlwNode Body,
+    string? Label = null) : PlwNode;
 
 /// <summary>
 /// WHILE condition LOOP ... END LOOP
 /// </summary>
 internal sealed record PlwWhileLoop(
     PlwExpression Condition,
-    PlwNode Body) : PlwNode;
+    PlwNode Body,
+    string? Label = null) : PlwNode;
 
 /// <summary>
 /// FOR var IN [REVERSE] lower..upper LOOP ... END LOOP
@@ -91,7 +94,8 @@ internal sealed record PlwForIntegerLoop(
     PlwExpression Lower,
     PlwExpression Upper,
     PlwNode Body,
-    bool Reverse = false) : PlwNode;
+    bool Reverse = false,
+    string? Label = null) : PlwNode;
 
 /// <summary>
 /// FOR rec IN query LOOP ... END LOOP
@@ -99,19 +103,22 @@ internal sealed record PlwForIntegerLoop(
 internal sealed record PlwForQueryLoop(
     string VariableName,
     PlwSqlFragment Query,
-    PlwNode Body) : PlwNode;
+    PlwNode Body,
+    string? Label = null) : PlwNode;
 
 /// <summary>
-/// EXIT [WHEN condition]
+/// EXIT [label] [WHEN condition]
 /// </summary>
 internal sealed record PlwExit(
-    PlwExpression? WhenCondition) : PlwNode;
+    PlwExpression? WhenCondition,
+    string? Label = null) : PlwNode;
 
 /// <summary>
-/// CONTINUE [WHEN condition]
+/// CONTINUE [label] [WHEN condition]
 /// </summary>
 internal sealed record PlwContinue(
-    PlwExpression? WhenCondition) : PlwNode;
+    PlwExpression? WhenCondition,
+    string? Label = null) : PlwNode;
 
 /// <summary>
 /// RETURN [expression]
@@ -147,14 +154,17 @@ internal sealed record PlwExecute(
     IReadOnlyList<PlwExpression> UsingArguments) : PlwNode;
 
 /// <summary>
-/// RAISE level format [, args] [USING SQLSTATE = 'xxx'];
+/// RAISE level format [, args] [USING option = value, ...];
 /// Level ist ein String-Literal oder Identifier.
+/// Unterstuetzte USING-Optionen: SQLSTATE, HINT, DETAIL.
 /// </summary>
 internal sealed record PlwRaise(
     string Level,
     PlwExpression? Message,
     IReadOnlyList<PlwExpression> Arguments,
-    PlwExpression? SqlStateExpression = null) : PlwNode;
+    PlwExpression? SqlStateExpression = null,
+    PlwExpression? HintExpression = null,
+    PlwExpression? DetailExpression = null) : PlwNode;
 
 /// <summary>
 /// Einzelner WHEN-Zweig in einem Exception-Handler.

@@ -305,14 +305,14 @@ internal sealed class PlwInterpreter
             case PlwExit exit:
             {
                 if (exit.WhenCondition == null || PlwExpressionEvaluator.ToBoolean(_evaluator.Evaluate(exit.WhenCondition, _env)))
-                    throw new PlwFlowControlException(PlwFlowControlKind.Exit);
+                    throw new PlwFlowControlException(PlwFlowControlKind.Exit, exit.Label);
                 break;
             }
 
             case PlwContinue continueStmt:
             {
                 if (continueStmt.WhenCondition == null || PlwExpressionEvaluator.ToBoolean(_evaluator.Evaluate(continueStmt.WhenCondition, _env)))
-                    throw new PlwFlowControlException(PlwFlowControlKind.Continue);
+                    throw new PlwFlowControlException(PlwFlowControlKind.Continue, continueStmt.Label);
                 break;
             }
 
@@ -397,6 +397,14 @@ internal sealed class PlwInterpreter
             ExecuteNode(ifStmt.ElseBranch);
     }
 
+    private static bool FlowControlMatchesLabel(PlwFlowControlException ex, string? loopLabel)
+    {
+        if (string.IsNullOrEmpty(ex.Label))
+            return true; // unbeschrifteter EXIT/CONTINUE bezieht sich auf den innersten Loop
+        return !string.IsNullOrEmpty(loopLabel)
+            && ex.Label.Equals(loopLabel, StringComparison.OrdinalIgnoreCase);
+    }
+
     private void ExecuteSimpleLoop(PlwSimpleLoop loop)
     {
         while (true)
@@ -407,6 +415,8 @@ internal sealed class PlwInterpreter
             }
             catch (PlwFlowControlException ex)
             {
+                if (!FlowControlMatchesLabel(ex, loop.Label))
+                    throw;
                 if (ex.Kind == PlwFlowControlKind.Exit)
                     break;
                 if (ex.Kind == PlwFlowControlKind.Continue)
@@ -426,6 +436,8 @@ internal sealed class PlwInterpreter
             }
             catch (PlwFlowControlException ex)
             {
+                if (!FlowControlMatchesLabel(ex, loop.Label))
+                    throw;
                 if (ex.Kind == PlwFlowControlKind.Exit)
                     break;
                 if (ex.Kind == PlwFlowControlKind.Continue)
@@ -456,6 +468,8 @@ internal sealed class PlwInterpreter
                 }
                 catch (PlwFlowControlException ex)
                 {
+                    if (!FlowControlMatchesLabel(ex, loop.Label))
+                        throw;
                     if (ex.Kind == PlwFlowControlKind.Exit)
                         break;
                     if (ex.Kind == PlwFlowControlKind.Continue)
@@ -475,6 +489,8 @@ internal sealed class PlwInterpreter
                 }
                 catch (PlwFlowControlException ex)
                 {
+                    if (!FlowControlMatchesLabel(ex, loop.Label))
+                        throw;
                     if (ex.Kind == PlwFlowControlKind.Exit)
                         break;
                     if (ex.Kind == PlwFlowControlKind.Continue)
@@ -504,6 +520,8 @@ internal sealed class PlwInterpreter
             }
             catch (PlwFlowControlException ex)
             {
+                if (!FlowControlMatchesLabel(ex, loop.Label))
+                    throw;
                 if (ex.Kind == PlwFlowControlKind.Exit)
                     break;
                 if (ex.Kind == PlwFlowControlKind.Continue)
@@ -623,7 +641,13 @@ internal sealed class PlwInterpreter
             var sqlState = raise.SqlStateExpression != null
                 ? Convert.ToString(_evaluator.Evaluate(raise.SqlStateExpression, _env), CultureInfo.InvariantCulture)
                 : "P0001";
-            throw new WalhallaException(message, sqlState);
+            var hint = raise.HintExpression != null
+                ? Convert.ToString(_evaluator.Evaluate(raise.HintExpression, _env), CultureInfo.InvariantCulture)
+                : null;
+            var detail = raise.DetailExpression != null
+                ? Convert.ToString(_evaluator.Evaluate(raise.DetailExpression, _env), CultureInfo.InvariantCulture)
+                : null;
+            throw new WalhallaException(message, sqlState, hint, detail);
         }
 
         // NOTICE/INFO/WARNING werden vorerst als Diagnose-Ausgabe behandelt.
